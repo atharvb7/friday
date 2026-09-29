@@ -1,0 +1,32 @@
+# Friday local/runtime artifacts — never commit these.
+# data/ holds the bearer token (access-token) and SQLite DB.
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Logs and telemetry
+*.log
+*.jsonl
+
+# Dependencies and build output
+node_modules/
+coverage/
+.nyc_output/
+dist/
+build/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*~
+.vscode/
+.idea/
+*.swp
+*.swo
