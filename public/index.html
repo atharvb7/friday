@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#101310">
+    <meta name="description" content="Private local control panel for Friday.">
+    <title>Friday — local control</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Friday home">
+        <span class="brand-mark" aria-hidden="true">F</span>
+        <span>FRIDAY<span class="brand-sub">LOCAL CONTROL</span></span>
+      </a>
+      <div class="connection" id="connection" role="status" aria-live="polite">
+        <span class="connection-dot" aria-hidden="true"></span><span id="connection-label">Not connected</span>
+      </div>
+    </header>
+
+    <main id="main" class="shell">
+      <section id="access-panel" class="access-panel panel" aria-labelledby="access-title">
+        <div class="eyebrow">PRIVATE INSTANCE</div>
+        <h1 id="access-title">Connect to Friday</h1>
+        <p class="muted">Enter the local access token to connect this browser to the Friday service on your laptop. The token stays in this tab’s session and is never put in a URL.</p>
+        <form id="token-form" class="token-form">
+          <label for="token-input">Access token</label>
+          <div class="token-row">
+            <input id="token-input" name="token" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-describedby="token-help">
+            <button class="button primary" type="submit">Connect</button>
+          </div>
+          <p id="token-help" class="field-help">For this laptop’s local instance only. Use a trusted device and private network.</p>
+        </form>
+        <p id="access-error" class="error" role="alert" hidden></p>
+      </section>
+
+      <div id="app-panel" hidden>
+        <section class="hero">
+          <div>
+            <div class="eyebrow">CONTROL ROOM <span class="separator">/</span> FOUNDATION</div>
+            <h1>Good to see you.</h1>
+            <p class="muted">Friday’s local task core is online. Tasks are saved durably; task execution is not connected yet.</p>
+          </div>
+          <button id="disconnect" class="button quiet" type="button">Clear session token</button>
+        </section>
+
+        <section class="status-grid" aria-label="Friday status">
+          <article class="panel status-card">
+            <div class="card-label">MEMORY MODE</div>
+            <div class="status-value" id="memory-mode">—</div>
+            <p class="card-note" id="memory-note">Reading system pressure…</p>
+            <div class="memory-track" aria-hidden="true"><span id="memory-bar"></span></div>
+            <div class="memory-numbers"><span id="available-memory">— available</span><span id="total-memory">— total</span></div>
+          </article>
+          <article class="panel status-card capability-card">
+            <div class="card-label">CAPABILITIES</div>
+            <div class="capability-list" id="capabilities" aria-live="polite"></div>
+            <p class="card-note">Unavailable means it is not connected in this build.</p>
+          </article>
+        </section>
+
+        <section class="workspace">
+          <div class="section-heading">
+            <div><div class="eyebrow">TASK QUEUE</div><h2>Your tasks</h2></div>
+            <button id="refresh" class="button quiet" type="button" aria-label="Refresh status and tasks">Refresh</button>
+          </div>
+          <div class="task-layout">
+            <section class="panel task-compose" aria-labelledby="new-task-title">
+              <div class="card-label">NEW REQUEST</div>
+              <h3 id="new-task-title">What should Friday track?</h3>
+              <p class="card-note">This records a task only. Friday will not execute it yet.</p>
+              <form id="task-form">
+                <label for="task-title">Short title</label>
+                <input id="task-title" name="title" maxlength="200" required placeholder="e.g. Organize my downloads">
+                <label for="task-instruction">Instructions</label>
+                <textarea id="task-instruction" name="instruction" rows="5" maxlength="20000" required placeholder="Describe what you want Friday to do…"></textarea>
+                <button id="create-task" class="button primary full" type="submit">Add to task queue</button>
+              </form>
+              <p id="task-error" class="error" role="alert" hidden></p>
+              <p id="task-success" class="success" role="status" hidden></p>
+            </section>
+            <section class="panel task-list-panel" aria-labelledby="queue-title">
+              <div class="list-header"><div><div class="card-label">DURABLE TASKS</div><h3 id="queue-title">Queue</h3></div><span class="count" id="task-count">0</span></div>
+              <div id="task-list" class="task-list" aria-live="polite" aria-busy="false"></div>
+              <p id="empty-state" class="empty-state">No tasks yet. Add one when you’re ready.</p>
+            </section>
+          </div>
+        </section>
+        <section class="memory-workspace" aria-labelledby="memory-title">
+          <div class="section-heading">
+            <div><div class="eyebrow">PERSONAL CONTEXT</div><h2 id="memory-title">Memory</h2></div>
+          </div>
+          <div class="memory-layout">
+            <section class="panel memory-compose" aria-labelledby="remember-title">
+              <div class="card-label">SAVE A MEMORY</div>
+              <h3 id="remember-title">What should Friday remember?</h3>
+              <p class="card-note">Saved locally on this laptop. Avoid adding secrets or passwords.</p>
+              <form id="memory-form">
+                <label for="memory-content">Memory</label>
+                <textarea id="memory-content" name="content" rows="4" maxlength="10000" required placeholder="A preference, project detail, or fact you want to keep…"></textarea>
+                <div class="memory-fields">
+                  <div><label for="memory-project">Project (optional)</label><input id="memory-project" name="project" maxlength="200" placeholder="e.g. Friday"></div>
+                  <div><label for="memory-sensitivity">Sensitivity</label><select id="memory-sensitivity" name="sensitivity"><option value="normal">Normal</option><option value="sensitive">Sensitive</option></select></div>
+                </div>
+                <button id="save-memory" class="button primary full" type="submit">Save memory</button>
+              </form>
+              <p id="memory-error" class="error" role="alert" hidden></p>
+              <p id="memory-success" class="success" role="status" hidden></p>
+            </section>
+            <section class="panel memory-list-panel" aria-labelledby="memory-list-title">
+              <div class="list-header"><div><div class="card-label">STORED CONTEXT</div><h3 id="memory-list-title">Memories</h3></div><span class="count" id="memory-count">0</span></div>
+              <form id="memory-search-form" class="memory-search">
+                <label class="visually-hidden" for="memory-search">Search memories</label>
+                <input id="memory-search" type="search" maxlength="200" placeholder="Search saved memories…">
+                <button class="button quiet" type="submit">Search</button>
+                <button id="clear-memory-search" class="button quiet" type="button" hidden>Show all</button>
+              </form>
+              <p id="memory-list-status" class="card-note" role="status" aria-live="polite"></p>
+              <div id="memory-list" class="memory-list" aria-live="polite" aria-busy="false"></div>
+              <p id="memory-empty" class="empty-state">No memories saved yet.</p>
+            </section>
+          </div>
+        </section>
+        <footer class="footer"><span>FRIDAY CORE <span id="build-phase">FOUNDATION</span></span><span>Local control panel · no model loaded</span></footer>
+      </div>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>
