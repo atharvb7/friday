@@ -1,0 +1,16 @@
+[Unit]
+Description=Friday core (local loopback agent control plane)
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /home/atharv-bhosale/Documents/Codex/2026-09-20/i-x20/friday/src/server.mjs
+WorkingDirectory=/home/atharv-bhosale/Documents/Codex/2026-09-20/i-x20/friday
+Restart=on-failure
+RestartSec=5
+MemoryHigh=1536M
+MemoryMax=2048M
+# Environment=FRIDAY_DATA_DIR=/home/atharv-bhosale/Documents/Codex/2026-09-20/i-x20/friday/data
+# Environment=FRIDAY_PORT=4317
+
+[Install]
+WantedBy=default.target
