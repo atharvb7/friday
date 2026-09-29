@@ -88,6 +88,7 @@ export class Store {
 
   getTask(id) { return this.db.prepare('SELECT * FROM tasks WHERE id=?').get(id) ?? null; }
   listTasks() { return this.db.prepare('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100').all(); }
+  countTasks() { return this.db.prepare('SELECT COUNT(*) AS n FROM tasks').get().n; }
   nextQueuedTask() { return this.db.prepare("SELECT * FROM tasks WHERE status='queued' ORDER BY created_at ASC LIMIT 1").get() ?? null; }
   claimNextQueuedTask() {
     this.db.exec('BEGIN IMMEDIATE');
