@@ -1,0 +1,17 @@
+# docker compose up -d   — published on host loopback only; put Tailscale Serve in front.
+services:
+  friday:
+    build: .
+    restart: unless-stopped
+    ports: ["127.0.0.1:4317:4317"]
+    volumes: ["friday-data:/data"]
+    env_file: [{ path: .env, required: false }]
+    mem_limit: 5g
+    memswap_limit: 5g
+    pids_limit: 512
+    read_only: true
+    tmpfs: ["/tmp:size=256m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+volumes:
+  friday-data:

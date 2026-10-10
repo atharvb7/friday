@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const PORT = 43299;
 const serverPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'server.mjs');
-const unitPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'systemd', 'friday.service');
+const unitPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'systemd', 'friday.service.in');
 
 function startServer(dataDir) {
   const child = spawn(process.execPath, [serverPath], {
@@ -82,8 +82,8 @@ test('phase1: status/tools/effects-approval/emergency-stop/systemd', async () =>
     // Systemd unit stays staged with 2G cap, loopback, no auto-enable changes here.
     assert.ok(existsSync(unitPath));
     const unit = readFileSync(unitPath, 'utf8');
-    assert.match(unit, /MemoryMax=2048M/);
-    assert.match(unit, /MemoryHigh=1536M/);
+    assert.match(unit, /MemoryMax=@MEM_MAX@/);
+    assert.match(unit, /MemoryHigh=@MEM_HIGH@/);
     assert.match(unit, /127\.0\.0\.1|src\/server\.mjs/);
   } finally {
     await stopServer(child);

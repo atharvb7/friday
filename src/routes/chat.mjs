@@ -55,6 +55,8 @@ export function chatRoutes(router, ctx) {
     try { audit.append(convo.id, 'chat.reply', { intent: route.intent, brain: brain.name, source: route.source }); } catch {}
     try { pet.transition('wake'); } catch {}
     try { pet.transition('hear'); } catch {}
+    ctx.bus.publish('chat.reply', { conversationId: convo.id, brain: brain.name });
+    try { ctx.bus.publish('pet.state_changed', { state: pet.state }); } catch {}
     return [200, { conversation: chat.getConversation(convo.id), route, reply, brain: brain.name, model: chatModel }];
   });
 }

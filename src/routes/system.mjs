@@ -1,3 +1,5 @@
+import { healthReport } from '../health.mjs';
+
 export function systemRoutes(router, ctx) {
   const { governor, store, worker, dshAdapter, nemotron, state, jev, audit, pet, voice, lease } = ctx;
 
@@ -18,6 +20,8 @@ export function systemRoutes(router, ctx) {
     }];
   });
 
+  router.get('/v1/health', () => [200, healthReport(ctx)]);
+
   router.post('/v1/emergency-stop', () => {
     state.emergencyStopped = true;
     state.emergencyStoppedAt = new Date().toISOString();
@@ -26,6 +30,7 @@ export function systemRoutes(router, ctx) {
       try { store.transition(worker.current.taskId, 'cancelled', { error: 'emergency_stop' }); } catch {}
     }
     worker.stop();
+    ctx.bus.publish('system.emergency_stop', { at: state.emergencyStoppedAt });
     return [200, { emergencyStopped: state.emergencyStopped, emergencyStoppedAt: state.emergencyStoppedAt }];
   });
 
@@ -33,6 +38,7 @@ export function systemRoutes(router, ctx) {
     state.emergencyStopped = false;
     state.emergencyStoppedAt = null;
     worker.start();
+    ctx.bus.publish('system.emergency_cleared', {});
     return [200, { emergencyStopped: false }];
   });
 

@@ -27,6 +27,38 @@ async function api(path) {
   return { status: res.status, body: await res.json().catch(() => null) };
 }
 
+async function call(method, path, body) {
+  const res = await fetch(base + path, { method, headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(5000) });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+async function device(args) {
+  const [sub, a1, a2] = args;
+  try {
+    if (sub === 'add') {
+      if (!a1) { console.error('usage: friday device add <name> [read,chat,tasks,approve]'); return 64; }
+      const r = await call('POST', '/v1/devices', { name: a1, scopes: (a2 ?? 'read,chat,tasks').split(',') });
+      if (r.status !== 201) { console.error(`failed: ${r.body.error}`); return 1; }
+      console.log(`Device "${r.body.device.name}" created (${r.body.device.id}).\nToken (shown once, store it in the device):\n${r.body.device.token}`);
+      return 0;
+    }
+    if (sub === 'revoke') { const r = await call('DELETE', `/v1/devices/${a1}`); console.log(r.body.revoked ? 'Revoked.' : 'No such active device.'); return r.body.revoked ? 0 : 1; }
+    const r = await call('GET', '/v1/devices');
+    for (const d of r.body.devices ?? []) console.log(`${d.id}  ${d.name.padEnd(16)} ${d.scopes.join(',').padEnd(28)} ${d.revoked_at ? 'REVOKED' : `seen ${d.last_seen_at ?? 'never'}`}`);
+    return 0;
+  } catch { console.error('Friday is not reachable. Run: friday start'); return 1; }
+}
+
+async function totpCmd(args) {
+  try {
+    if (args[0] === 'confirm') { const r = await call('POST', '/v1/auth/totp/confirm', { code: args[1] }); console.log(r.body.active ? 'TOTP active. Phone approvals now need a code.' : 'Wrong code.'); return r.body.active ? 0 : 1; }
+    const r = await call('POST', '/v1/auth/totp/enroll');
+    if (r.status !== 201) { console.error(`failed: ${r.body.error}`); return 1; }
+    console.log(`Add this to your authenticator app:\n  secret: ${r.body.secret}\n  uri:    ${r.body.uri}\nThen run: friday totp confirm <6-digit code>`);
+    return 0;
+  } catch { console.error('Friday is not reachable. Run: friday start'); return 1; }
+}
+
 async function status({ quiet = false } = {}) {
   const pid = readPid();
   let s = null;
@@ -50,7 +82,7 @@ async function start() {
   if (readPid()) { console.log('Already running.'); return status(); }
   mkdirSync(logDir, { recursive: true, mode: 0o700 });
   const out = openSync(logFile, 'a', 0o600);
-  const child = spawn(process.execPath, [resolve(appRoot, 'src/server.mjs')], { detached: true, stdio: ['ignore', out, out], cwd: appRoot, env: process.env });
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', resolve(appRoot, 'src/server.mjs')], { detached: true, stdio: ['ignore', out, out], cwd: appRoot, env: process.env });
   child.unref();
   writeFileSync(pidFile, `${child.pid}\n`, { mode: 0o600 });
   for (let i = 0; i < 40; i++) {
@@ -88,6 +120,23 @@ function logs(args) {
   return 0;
 }
 
+async function backup(args) {
+  const { createBackup } = await import('../src/backup.mjs');
+  const outDir = args.find((a) => !a.startsWith('--')) ?? resolve(dataDir, 'backups');
+  const r = createBackup({ dataDir, outDir, withSecrets: args.includes('--with-secrets') });
+  console.log(`Backup written: ${r.file} (${(r.bytes / 1024).toFixed(0)} KiB)${r.withSecrets ? '  — contains secrets, protect it' : ''}`);
+  return 0;
+}
+
+async function restore(args) {
+  const { restoreBackup } = await import('../src/backup.mjs');
+  if (readPid()) { console.error('Stop Friday first: friday stop'); return 1; }
+  const file = args.find((a) => !a.startsWith('--'));
+  if (!file) { console.error('usage: friday restore <file.tgz> [--force]'); return 64; }
+  try { console.log(`Restored from ${restoreBackup({ file, dataDir, force: args.includes('--force') }).restoredFrom}. Run: friday start`); return 0; }
+  catch (e) { console.error(`restore failed: ${e.message}`); return 1; }
+}
+
 async function doctor() {
   let bad = 0;
   const row = (ok, name, detail = '', warn = false) => { console.log(`${ok ? 'OK  ' : warn ? 'WARN' : 'FAIL'} ${name.padEnd(22)} ${detail}`); if (!ok && !warn) bad++; };
@@ -116,6 +165,6 @@ async function doctor() {
 }
 
 const [cmd = 'status', ...rest] = process.argv.slice(2);
-const table = { start, stop, status, logs: () => logs(rest), doctor, restart: async () => { await stop(); return start(); } };
-if (!table[cmd]) { console.error('usage: friday start|stop|restart|status|logs [-f] [N]|doctor'); process.exit(64); }
+const table = { start, stop, status, logs: () => logs(rest), doctor, device: () => device(rest), totp: () => totpCmd(rest), backup: () => backup(rest), restore: () => restore(rest), restart: async () => { await stop(); return start(); } };
+if (!table[cmd]) { console.error('usage: friday start|stop|restart|status|logs [-f] [N]|doctor|device [add|revoke]|totp [confirm]|backup [dir] [--with-secrets]|restore <file> [--force]'); process.exit(64); }
 process.exit(await table[cmd]());

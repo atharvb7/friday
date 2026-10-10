@@ -27,6 +27,8 @@ import { WhatsAppFlow } from './whatsapp.mjs';
 import { ComputerControlLease, AtSpiDriver, PortalInput } from './desktop.mjs';
 import { LiveDesktop } from './desktop-live.mjs';
 import { DueRunner } from './scheduler-runner.mjs';
+import { EventBus } from './events.mjs';
+import { Auth } from './auth.mjs';
 
 export function createContext({ appRoot, env = process.env }) {
   const dataDir = resolve(env.FRIDAY_DATA_DIR ?? resolve(appRoot, 'data'));
@@ -38,6 +40,8 @@ export function createContext({ appRoot, env = process.env }) {
   const token = readFileSync(tokenPath, 'utf8').trim();
 
   const store = new Store(resolve(dataDir, 'friday.sqlite'));
+  const bus = new EventBus();
+  store.onEvent = ({ taskId, kind, detail }) => bus.publish(kind, { taskId, ...detail });
   const memory = new Memory(store);
   const effects = new Effects(store);
 
@@ -56,7 +60,7 @@ export function createContext({ appRoot, env = process.env }) {
   const dshAdapter = new ResilientAdapter({ inner: dshInner });
   const nemotron = new NemotronProvider({});
   const nemotronResilient = new ResilientAdapter({ inner: nemotron });
-  const worker = new WorkerLoop({ store, governor, adapter: dshAdapter });
+  const worker = new WorkerLoop({ store, governor, adapter: dshAdapter, onEvent: (e) => bus.publish(e.kind === 'task.running' ? 'worker.claimed' : e.kind, e) });
 
   const workspaceDir = resolve(env.FRIDAY_WORKSPACE ?? resolve(dataDir, 'workspace'));
   try { mkdirSync(workspaceDir, { recursive: true, mode: 0o700 }); chmodSync(workspaceDir, 0o700); } catch {}
@@ -65,6 +69,7 @@ export function createContext({ appRoot, env = process.env }) {
   const scheduler = new Scheduler(store);
   const ctx = {
     appRoot, env, dataDir, token,
+    bus, auth: new Auth(store, token),
     store, memory, effects, governor, worker, dshAdapter, nemotron, nemotronResilient,
     tools: new ToolRegistry({ workspace: workspaceDir }),
     jev: new JevClient({}),
@@ -100,7 +105,13 @@ export function createContext({ appRoot, env = process.env }) {
 
   let governorTimer = null;
   ctx.start = () => {
-    governorTimer = setInterval(() => { try { governor.sample(); } catch { /* never crash on sampling */ } }, 2000);
+    let lastMode = governor.getSnapshot().mode;
+    governorTimer = setInterval(() => {
+      try {
+        const snap = governor.sample();
+        if (snap.mode !== lastMode) { bus.publish('resource.mode_changed', { from: lastMode, to: snap.mode }); lastMode = snap.mode; }
+      } catch { /* never crash on sampling */ }
+    }, 2000);
     governorTimer.unref();
     worker.start();
     ctx.dueRunner.start();

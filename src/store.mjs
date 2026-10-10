@@ -12,6 +12,9 @@ const ALLOWED = {
 };
 
 export class Store {
+  // Optional hook: ({ taskId, kind, detail }) after each committed task event.
+  onEvent = null;
+
   constructor(filename) {
     this.db = new DatabaseSync(filename);
     chmodSync(filename, 0o600);
@@ -83,8 +86,11 @@ export class Store {
       }
       throw error;
     }
+    this.#emit(id, 'task.created', {});
     return this.getTask(id);
   }
+
+  #emit(taskId, kind, detail) { try { this.onEvent?.({ taskId, kind, detail }); } catch { /* observers never break the store */ } }
 
   getTask(id) { return this.db.prepare('SELECT * FROM tasks WHERE id=?').get(id) ?? null; }
   listTasks() { return this.db.prepare('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100').all(); }
@@ -99,6 +105,7 @@ export class Store {
       this.db.prepare("UPDATE tasks SET status='running', updated_at=? WHERE id=? AND status='queued'").run(now, task.id);
       this.db.prepare('INSERT INTO events (task_id, kind, detail, created_at) VALUES (?, ?, ?, ?)').run(task.id, 'task.running', '{}', now);
       this.db.exec('COMMIT');
+      this.#emit(task.id, 'task.running', {});
       return this.getTask(task.id);
     } catch (error) {
       this.db.exec('ROLLBACK');
@@ -122,6 +129,7 @@ export class Store {
       this.db.exec('ROLLBACK');
       throw error;
     }
+    this.#emit(id, `task.${status}`, detail);
     return { task: this.getTask(id) };
   }
 

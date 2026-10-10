@@ -1,5 +1,4 @@
 import { createServer } from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFile } from './env.mjs';
@@ -13,37 +12,41 @@ import { toolRoutes } from './routes/tools.mjs';
 import { chatRoutes } from './routes/chat.mjs';
 import { workRoutes } from './routes/work.mjs';
 import { computerRoutes } from './routes/computer.mjs';
+import { authRoutes } from './routes/auth.mjs';
+import { openEventStream } from './http/sse.mjs';
+import { requiredScope, needsTotp } from './auth.mjs';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // Local secrets file (gitignored, 0600). Real env vars win. FRIDAY_NO_DOTENV=1 keeps tests hermetic.
 if (process.env.FRIDAY_NO_DOTENV !== '1') loadEnvFile(resolve(appRoot, '.env'));
 
-const host = '127.0.0.1';
+const host = process.env.FRIDAY_HOST ?? '127.0.0.1';
+// Loopback unless explicitly opened (containers); real exposure goes through Tailscale Serve/TLS.
+if (!['127.0.0.1', '::1', 'localhost'].includes(host) && process.env.FRIDAY_ALLOW_NONLOOPBACK !== '1') {
+  console.error(`Refusing to bind ${host}: set FRIDAY_ALLOW_NONLOOPBACK=1 only behind a firewall/proxy.`);
+  process.exit(2);
+}
 const port = Number(process.env.FRIDAY_PORT ?? 4317);
 const ctx = createContext({ appRoot });
 ctx.start();
 
 const router = new Router();
-for (const register of [systemRoutes, taskRoutes, memoryRoutes, toolRoutes, chatRoutes, workRoutes, computerRoutes]) register(router, ctx);
+for (const register of [systemRoutes, taskRoutes, memoryRoutes, toolRoutes, chatRoutes, workRoutes, computerRoutes, authRoutes]) register(router, ctx);
 const serveStatic = makeStaticServer(resolve(appRoot, 'public'));
 
-// One bucket per source IP: cheap brute-force protection for the bearer token.
+// Buckets: authenticated traffic is keyed by principal (behind `tailscale serve`
+// every request arrives from 127.0.0.1, so IP is useless); failed auth is keyed
+// by IP with a much lower ceiling to blunt token guessing.
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 240;
-const rateBuckets = new Map();
-function isRateLimited(ip) {
+const buckets = new Map();
+function limited(key, max) {
   const now = Date.now();
-  const entry = rateBuckets.get(ip);
-  if (!entry || now - entry.start >= RATE_WINDOW_MS) { rateBuckets.set(ip, { start: now, count: 1 }); return false; }
-  entry.count += 1;
-  return entry.count > RATE_MAX;
+  const e = buckets.get(key);
+  if (!e || now - e.start >= RATE_WINDOW_MS) { buckets.set(key, { start: now, count: 1 }); return false; }
+  e.count += 1;
+  return e.count > max;
 }
-
-function isAuthorized(req) {
-  const a = Buffer.from(req.headers.authorization?.replace(/^Bearer /, '') ?? '');
-  const b = Buffer.from(ctx.token);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
+setInterval(() => { const now = Date.now(); for (const [k, v] of buckets) if (now - v.start >= RATE_WINDOW_MS) buckets.delete(k); }, RATE_WINDOW_MS).unref();
 
 function send(res, status, payload, extraHeaders = {}) {
   const data = JSON.stringify(payload);
@@ -71,10 +74,24 @@ function bodyReader(req) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${host}:${port}`);
   if (serveStatic(req, res, url.pathname)) return;
-  if (isRateLimited(req.socket.remoteAddress ?? 'unknown')) return send(res, 429, { error: 'rate_limited' }, { 'Retry-After': '60' });
-  if (!isAuthorized(req)) return send(res, 401, { error: 'unauthorized' });
+  const bearer = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
+  const principal = ctx.auth.authenticate(bearer);
+  const ip = req.socket.remoteAddress ?? 'unknown';
+  if (!principal) {
+    if (limited(`fail:${ip}`, 30)) return send(res, 429, { error: 'rate_limited' }, { 'Retry-After': '60' });
+    return send(res, 401, { error: 'unauthorized' });
+  }
+  if (limited(`p:${principal.id}`, 240)) return send(res, 429, { error: 'rate_limited' }, { 'Retry-After': '60' });
+  const scope = requiredScope(req.method, url.pathname);
+  if (!principal.scopes.includes(scope)) return send(res, 403, { error: 'forbidden', needs: scope });
+  // Devices (phone etc.) must back consequential actions with a fresh TOTP code.
+  if (principal.kind === 'device' && req.method !== 'GET' && needsTotp(url.pathname) && ctx.auth.totpActive()
+      && !ctx.auth.checkTotp(String(req.headers['x-friday-totp'] ?? ''))) {
+    return send(res, 403, { error: 'totp_required' });
+  }
+  if (req.method === 'GET' && url.pathname === '/v1/events') return openEventStream(req, res, ctx.bus);
   try {
-    const out = await router.dispatch(req.method, url.pathname, { req, url, body: bodyReader(req) });
+    const out = await router.dispatch(req.method, url.pathname, { req, url, body: bodyReader(req), principal });
     if (!out) return send(res, 404, { error: 'not_found' });
     return send(res, out[0], out[1], out[2]);
   } catch (error) {

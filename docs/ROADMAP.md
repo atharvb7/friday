@@ -16,11 +16,13 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - [x] `friday` CLI: start / stop / restart / status / logs / doctor (test/cli.test.mjs)
 - [x] server.mjs split: context.mjs (composition root), http/router+static, routes/* (148 tests green)
 - [ ] Rotate keys (user)
-## Phase 1 — Server foundation
-- [ ] Portable packaging (env-only paths, systemd unit template, optional Docker), 5 GB cgroup
-- [ ] Auth for non-loopback use (passkey/TOTP + device tokens), Tailscale serve
-- [ ] SSE/WebSocket event bus (task.*, agent.*, state, device.*)
-- [ ] Health screen + `friday doctor`, backups/restore
+## Phase 1 — Server foundation  (code done; real-server deploy pending)
+- [x] Portable packaging: systemd template + installer (4G/5G cgroup), Dockerfile + compose (not built here), FRIDAY_HOST guard
+- [x] Auth: per-device scoped revocable tokens (hashed), owner-only admin, RFC 6238 TOTP gating device approvals, per-principal rate limits
+- [x] Event bus + SSE `/v1/events` (task.*, resource.mode_changed, chat.reply, pet.state_changed, system.*)
+- [x] `/v1/health` deterministic report; `friday doctor`
+- [x] Backup/restore with retention (`friday backup|restore`), secrets excluded by default
+- [ ] Tailscale serve + real-phone test; deploy to the 6 GB server; measure RSS under load (needs the server)
 ## Phase 2 — Brain
 - [ ] Model router: ai.chat / reason / plan / execute, provider health, fallback
 - [ ] Nemotron streaming + native tool calling
