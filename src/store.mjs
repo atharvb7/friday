@@ -56,6 +56,7 @@ export class Store {
     if (!columns.has('conversation_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN conversation_id TEXT');
     if (!columns.has('kind')) this.db.exec("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'");
     if (!columns.has('workspace')) this.db.exec('ALTER TABLE tasks ADD COLUMN workspace TEXT');
+    if (!columns.has('meta')) this.db.exec('ALTER TABLE tasks ADD COLUMN meta TEXT');
     // A process may have disappeared after an external action. Never auto-retry such work.
     const recoveredAt = new Date().toISOString();
     this.db.exec('BEGIN IMMEDIATE');
@@ -69,7 +70,7 @@ export class Store {
     }
   }
 
-  createTask({ title, instruction, idempotencyKey = null, conversationId = null, kind = 'agent', workspace = null }) {
+  createTask({ title, instruction, idempotencyKey = null, conversationId = null, kind = 'agent', workspace = null, meta = null }) {
     if (!['agent', 'research', 'coding', 'computer'].includes(kind)) throw new TypeError('invalid task kind');
     if (workspace !== null && !/^[a-z0-9][a-z0-9-]{0,39}$/.test(workspace)) throw new TypeError('invalid workspace name');
     if (idempotencyKey) {
@@ -80,7 +81,7 @@ export class Store {
     const now = new Date().toISOString();
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.db.prepare('INSERT INTO tasks (id, title, instruction, status, created_at, updated_at, idempotency_key, conversation_id, kind, workspace) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, title, instruction, 'queued', now, now, idempotencyKey, conversationId, kind, workspace);
+      this.db.prepare('INSERT INTO tasks (id, title, instruction, status, created_at, updated_at, idempotency_key, conversation_id, kind, workspace, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, title, instruction, 'queued', now, now, idempotencyKey, conversationId, kind, workspace, meta ? JSON.stringify(meta) : null);
       this.db.prepare('INSERT INTO events (task_id, kind, detail, created_at) VALUES (?, ?, ?, ?)').run(id, 'task.created', '{}', now);
       this.db.exec('COMMIT');
     } catch (error) {

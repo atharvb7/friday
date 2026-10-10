@@ -12,7 +12,7 @@ const str = (v, name, max = 2000) => {
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 
 export function buildFridayTools(ctx) {
-  const { memory, store, tools, indexer, skills, jobs, proactive, settings, researchMemory } = ctx;
+  const { memory, store, tools, indexer, skills, jobs, proactive, settings, researchMemory, nodes } = ctx;
   const list = [
     {
       name: 'memory_save', risk: 'safe',
@@ -92,6 +92,22 @@ export function buildFridayTools(ctx) {
       description: "Read a text file from Friday's workspace (first 8KB).",
       parameters: obj({ path: { type: 'string' } }, ['path']),
       run: async (a) => { const r = (await tools.run({ taskId: 'ad-hoc-local', tool: 'file.read', args: { path: str(a.path, 'path', 500), maxBytes: 8192 } })).result; return { path: r.path, truncated: r.truncated, text: clip(r.bytes, 6000) }; },
+    },
+    {
+      name: 'laptop_status', risk: 'safe',
+      description: "Is the user's laptop node online (needed for computer/browser control tasks), and what can it do?",
+      parameters: obj({}),
+      run: () => ({ online: nodes.online, nodes: nodes.list() }),
+    },
+    {
+      name: 'computer_task', risk: 'gated', category: 'computer', riskClass: 'consequential',
+      description: "Operate the user's laptop to achieve a goal (browse sites, find files in Downloads/Documents, use their logged-in browser profile, fill forms, attach files). Runs in the background, stepwise, verifying results; sending/posting/buying inside it needs separate approval. Queues until the laptop is online. Give the complete goal incl. exact names.",
+      parameters: obj({ goal: { type: 'string', description: 'Complete goal with exact file names, recipients, sites' } }, ['goal']),
+      summarize: (a) => `Control your laptop to: ${clip(a.goal, 200)}`,
+      run: (a, { conversationId } = {}) => {
+        const t = store.createTask({ title: `Laptop: ${clip(a.goal, 80)}`, kind: 'computer', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true } });
+        return { queued: true, id: t.id.slice(0, 8), laptop_online: nodes.online };
+      },
     },
     {
       name: 'web_search', risk: 'safe',

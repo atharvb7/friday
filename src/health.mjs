@@ -17,6 +17,7 @@ export function healthReport(ctx) {
 
   const dsh = ctx.dshAdapter.status();
   add('agent_runtime', dsh.ready ? 'ok' : 'off', dsh.ready ? `DSH ready (${dsh.model}, sandbox=${dsh.sandbox})` : (dsh.reason ?? 'not ready'));
+  add('laptop_node', ctx.nodes.online ? 'ok' : 'off', ctx.nodes.online ? ctx.nodes.list().map((n) => n.name).join(', ') + ' connected' : 'offline (computer tasks wait in the queue)');
   add('worker_pool', 'ok', `${ctx.worker.running.size}/${ctx.worker.maxConcurrent} running`);
   add('local_model', 'off', 'disabled by design');
 

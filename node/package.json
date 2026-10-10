@@ -1,0 +1,10 @@
+{
+  "name": "friday-node",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Friday laptop node: executes browser/desktop commands for the Friday server over an outbound connection.",
+  "engines": { "node": ">=22.13" },
+  "scripts": { "start": "node friday-node.mjs", "test": "node --test" },
+  "dependencies": { "playwright-core": "1.64.0" }
+}

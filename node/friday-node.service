@@ -1,0 +1,12 @@
+[Unit]
+Description=Friday laptop node
+After=network-online.target graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/node %h/path/to/friday/node/friday-node.mjs run
+Restart=always
+RestartSec=5
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=default.target

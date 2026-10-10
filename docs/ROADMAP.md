@@ -55,10 +55,15 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - [x] `research_start`, `research_search`, `code_task` (named persistent project workspaces), `task_trace`
 - [x] GitHub MCP config auto-enabled when GITHUB_TOKEN is set (needs a token from the user to test)
 - [ ] GitHub PR flow tested end-to-end (needs token + a scratch repo)
-## Phase 6 — Laptop node (computer use)
-- [ ] Node protocol + outbound connection, lease, activity-pause
-- [ ] Playwright persistent profile, screenshot/vision loop, AT-SPI, Wayland/X11 input
-- [ ] WhatsApp-style flows behind approvals, verification after every action
+## Phase 6 — Laptop node (computer use)  (verified live 2026-10-10)
+- [x] Node protocol: outbound SSE command stream + HTTP results; scoped `node` device token; per-node answer binding; fail-fast `node_offline`; user-activity pause (GNOME idle monitor)
+- [x] `node/` program: Playwright + system Chrome with a dedicated persistent profile (manual login once), DOM-ref snapshot/click/type/upload/screenshot, AT-SPI desktop helper (Wayland-safe), allowed-dir file find, URL/file policies (real-Chrome tests)
+- [x] Server computer agent: tool loop, policy/approval per action, `intent` can only escalate risk, loop-breaker, step budget, waits for approvals and for the user to go idle
+- [x] Brain tools `computer_task` (gated) / `laptop_status`; computer tasks queue while the laptop is offline
+- [x] Live: chat -> approval -> node -> real Chrome -> result in chat
+- [ ] Raw input/desktop screenshots on GNOME Wayland (needs portal permission or ydotool + sudo) — deliberately not faked
+- [ ] WhatsApp end-to-end with the user's own login (user must scan QR in the node profile)
+- Legacy laptop-only scaffolds (`/v1/whatsapp/*`, `/v1/desktop/*`, `/v1/browser/snapshot`) remain but are superseded by the node; remove after Phase 9 review
 ## Phase 7 — Clients and voice
 - [ ] Phone PWA polish, voice (cloud STT/TTS), notifications
 ## Phase 8 — Companion

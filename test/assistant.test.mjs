@@ -223,3 +223,21 @@ test('brain: gated tool is staged for approval, never executed; allowed tier exe
     assert.equal(sent.length, 1, 'forbidden never runs');
   } finally { r.done(); }
 });
+
+test('context: built-in gated tools (computer_task) have their approved-execution path registered', async () => {
+  const { createContext } = await import('../src/context.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'friday-ctx-'));
+  const appRoot = new URL('..', import.meta.url).pathname;
+  const ctx = createContext({ appRoot, env: { FRIDAY_DATA_DIR: dir } });
+  try {
+    const convo = ctx.chat.createConversation('t');
+    const tool = ctx.fridayTools.get('computer_task');
+    assert.equal(tool.risk, 'gated');
+    const a = ctx.approvals.request({ category: 'computer', risk: 'consequential', tool: 'computer_task', summary: 's', payload: { goal: 'open example.com' }, conversationId: convo.id });
+    const done = await ctx.approvals.decide(a.id, true, 'owner');
+    assert.ok(!JSON.parse(done.result).error, done.result);
+    const t = ctx.store.listTasks().find((x) => x.kind === 'computer');
+    assert.ok(t, 'approval created the computer task');
+    assert.equal(JSON.parse(t.meta).grant, true);
+  } finally { ctx.stop(); rmSync(dir, { recursive: true, force: true }); }
+});

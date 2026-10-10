@@ -13,7 +13,7 @@ export function nodeRoutes(router, ctx) {
   });
 
   router.post('/v1/node/result', async ({ body, principal }) => {
-    const b = await body();
+    const b = await body({ max: 3 * 1024 * 1024 }); // screenshots ride in results
     if (typeof b.id !== 'string') return [400, { error: 'id required' }];
     return [nodes.resolve(principal.id, { id: b.id, ok: b.ok === true, result: b.result ?? null, error: b.error ?? null }) ? 200 : 404, { ok: true }];
   });

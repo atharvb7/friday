@@ -59,12 +59,12 @@ function send(res, status, payload, extraHeaders = {}) {
 
 const MAX_BODY = 64 * 1024;
 function bodyReader(req) {
-  return async ({ optional = false } = {}) => {
+  return async ({ optional = false, max = MAX_BODY } = {}) => {
     try {
       let text = '';
       for await (const chunk of req) {
         text += chunk;
-        if (text.length > MAX_BODY) throw new Error('body_too_large');
+        if (text.length > max) throw new Error('body_too_large');
       }
       return JSON.parse(text || '{}');
     } catch (error) {

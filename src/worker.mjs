@@ -61,7 +61,7 @@ export class WorkerLoop {
   async #execute(task, controller, lease) {
     const trace = (kind, detail) => { try { this.store.addEvent(task.id, `trace.${kind}`, detail); } catch { /* trace is best effort */ } };
     try {
-      const result = await this.adapter.run({ taskId: task.id, instruction: task.instruction, signal: controller.signal, title: task.title, kind: task.kind, workspace: task.workspace, onTrace: trace });
+      const result = await this.adapter.run({ taskId: task.id, instruction: task.instruction, signal: controller.signal, title: task.title, kind: task.kind, workspace: task.workspace, meta: task.meta ? JSON.parse(task.meta) : null, onTrace: trace });
       if (this.store.getTask(task.id)?.status !== 'running') return;
       if (result.status === 'completed') this.store.transition(task.id, 'completed', { result: result.output ?? '' });
       else this.store.transition(task.id, 'failed', { error: result.error ?? result.status ?? 'worker failed' });

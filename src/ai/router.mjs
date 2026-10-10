@@ -148,6 +148,7 @@ export function chainsFromEnv(env) {
     execute: env.FRIDAY_MODELS_EXECUTE ? parse(env.FRIDAY_MODELS_EXECUTE) : [n(SUPER), n(ULTRA), n(LIGHT), ...fb],
     reason: env.FRIDAY_MODELS_REASON ? parse(env.FRIDAY_MODELS_REASON) : [n(ULTRA), n(SUPER), n(LIGHT), ...fb],
     plan: env.FRIDAY_MODELS_PLAN ? parse(env.FRIDAY_MODELS_PLAN) : [n(ULTRA), n(SUPER), n(LIGHT), ...fb],
+    vision: env.FRIDAY_MODELS_VISION ? parse(env.FRIDAY_MODELS_VISION) : [n('nvidia/nemotron-3-nano-omni-30b-a3b-reasoning')],
     embed: [{ provider: 'nvidia', model: env.FRIDAY_EMBED_MODEL ?? 'nvidia/nemotron-3-embed-1b' }],
   };
 }

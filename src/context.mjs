@@ -47,6 +47,7 @@ import { loadMcpConfig, renderOverlay, envToForward, withDefaults } from './mcp-
 import { ResearchMemory } from './research-memory.mjs';
 import { NodeHub } from './nodes.mjs';
 import { KindRouterAdapter } from './adapters.mjs';
+import { ComputerAgent } from './agent/computer-agent.mjs';
 
 function findDshBin() {
   const r = spawnSync('sh', ['-c', 'command -v dsh'], { encoding: 'utf8' });
@@ -101,7 +102,8 @@ export function createContext({ appRoot, env = process.env }) {
   const dshAdapter = new ResilientAdapter({ inner: dshInner, maxAttempts: 1 }) // never auto-retry an agent run: tool calls may have had side effects;
   const nemotron = new NemotronProvider({});
   const nemotronResilient = new ResilientAdapter({ inner: nemotron });
-  const worker = new WorkerLoop({ store, governor, adapter: dshAdapter, maxConcurrent: Number(env.FRIDAY_WORKER_CONCURRENCY ?? 1), onEvent: (e) => bus.publish(e.kind === 'task.running' ? 'worker.claimed' : e.kind, e) });
+  const kindRouter = new KindRouterAdapter({ byKind: { agent: dshAdapter, research: dshAdapter, coding: dshAdapter } });
+  const worker = new WorkerLoop({ store, governor, adapter: kindRouter, maxConcurrent: Number(env.FRIDAY_WORKER_CONCURRENCY ?? 1), onEvent: (e) => bus.publish(e.kind === 'task.running' ? 'worker.claimed' : e.kind, e) });
 
   const workspaceDir = resolve(env.FRIDAY_WORKSPACE ?? resolve(dataDir, 'workspace'));
   try { mkdirSync(workspaceDir, { recursive: true, mode: 0o700 }); chmodSync(workspaceDir, 0o700); } catch {}
@@ -185,10 +187,12 @@ export function createContext({ appRoot, env = process.env }) {
     store, notifications: ctx.notifications, jobs: ctx.jobs, ai, memory, settings, bus, dataDir,
     agentReady: () => ctx.dshAdapter.status().ready,
   });
+  kindRouter.byKind.computer = new ComputerAgent({ ai, nodes: ctx.nodes, policy: ctx.policy, approvals: ctx.approvals, bus, audit: ctx.audit });
   ctx.fridayTools = buildFridayTools(ctx);
   { // gated tools get their approved-execution path registered automatically
     const register = ctx.fridayTools.register;
     ctx.fridayTools.register = (tool) => { register(tool); if (tool.risk !== 'safe') ctx.approvals.register(tool.name, tool.run); };
+    for (const tool of ctx.fridayTools.list()) if (tool.risk !== 'safe') ctx.approvals.register(tool.name, tool.run);
   }
   ctx.brain = new Brain({
     ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit, skills, policy: ctx.policy, approvals: ctx.approvals,

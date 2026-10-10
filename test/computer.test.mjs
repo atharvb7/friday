@@ -1,0 +1,125 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ComputerAgent } from '../src/agent/computer-agent.mjs';
+import { KindRouterAdapter } from '../src/adapters.mjs';
+import { Store } from '../src/store.mjs';
+import { Settings } from '../src/settings.mjs';
+import { ChatStore } from '../src/chat.mjs';
+import { EventBus } from '../src/events.mjs';
+import { Notifications } from '../src/notifications.mjs';
+import { Policy } from '../src/policy.mjs';
+import { Approvals } from '../src/approvals.mjs';
+
+function rig() {
+  const dir = mkdtempSync(join(tmpdir(), 'friday-comp-'));
+  const store = new Store(join(dir, 'db.sqlite'));
+  const bus = new EventBus(); const settings = new Settings(store); const chat = new ChatStore(store);
+  const notifications = new Notifications(store, bus);
+  const policy = new Policy({ settings, bus });
+  const approvals = new Approvals({ store, notifications, chat, bus });
+  const sent = [];
+  let online = true; let userActiveFor = 0;
+  const nodes = { get online() { return online; }, setOnline: (v) => { online = v; }, dispatch: async ({ action, args, interactive }) => {
+    if (interactive && userActiveFor > 0) { userActiveFor--; throw Object.assign(new Error('user_active'), { code: 'user_active', retryAfterMs: 10 }); }
+    sent.push({ action, args }); return { ok: true, action };
+  } };
+  const script = []; const ai = { hasProvider: true, execute: async () => script.shift(), run: async () => ({ content: 'a login form' }) };
+  const call = (name, args, id = `c${Math.random()}`) => ({ id, name, args, argumentsText: JSON.stringify(args) });
+  const agent = new ComputerAgent({ ai, nodes, policy, approvals, bus, sleep: async () => {} });
+  return { dir, store, bus, policy, approvals, agent, nodes, sent, script, call, setActive: (n) => { userActiveFor = n; }, done: () => { store.close(); rmSync(dir, { recursive: true, force: true }); } };
+}
+const turn = (calls) => ({ content: '', toolCalls: calls, usage: { total_tokens: 10 } });
+const end = (text) => ({ content: text, toolCalls: [], usage: { total_tokens: 5 } });
+
+test('computer agent: approved-goal grant allows browsing/clicking, final report returned, trace emitted', async () => {
+  const r = rig();
+  try {
+    r.script.push(turn([r.call('browser_open', { url: 'https://example.com', intent: 'navigate' })]), turn([r.call('browser_click', { ref: 3, intent: 'navigate' })]), end('Opened the page and clicked ref 3.'));
+    const trace = [];
+    const out = await r.agent.run({ taskId: 't', instruction: 'open example', meta: { grant: true }, onTrace: (k, d) => trace.push(k) });
+    assert.deepEqual(out, { status: 'completed', output: 'Opened the page and clicked ref 3.' });
+    assert.deepEqual(r.sent.map((s) => s.action), ['browser_open', 'browser_click']);
+    assert.ok(!('intent' in r.sent[0].args), 'intent is policy metadata, not sent to the node');
+    assert.ok(trace.includes('tool_call') && trace.includes('tool_result'));
+  } finally { r.done(); }
+});
+
+test('computer agent: submit_external ALWAYS escalates to approval even with a grant; waits; approve then act', async () => {
+  const r = rig();
+  try {
+    r.script.push(turn([r.call('browser_click', { ref: 9, intent: 'submit_external' })]), end('Sent.'));
+    const p = r.agent.run({ taskId: 't', instruction: 'send it', meta: { grant: true } });
+    await new Promise((res) => setTimeout(res, 30));
+    assert.equal(r.sent.length, 0, 'nothing sent before approval');
+    const pending = r.approvals.list();
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].category, 'messaging');
+    await r.approvals.decide(pending[0].id, true, 'phone');
+    assert.equal((await p).status, 'completed');
+    assert.deepEqual(r.sent.map((s) => s.action), ['browser_click']);
+  } finally { r.done(); }
+});
+
+test('computer agent: denial blocks the action; purchases need critical -> high; no grant means ask for desktop input', async () => {
+  const r = rig();
+  try {
+    r.script.push(turn([r.call('browser_click', { ref: 1, intent: 'submit_external' })]), end('Could not send; user declined.'));
+    const p = r.agent.run({ taskId: 't', instruction: 'x', meta: { grant: true } });
+    await new Promise((res) => setTimeout(res, 30));
+    await r.approvals.decide(r.approvals.list()[0].id, false);
+    assert.equal((await p).status, 'completed');
+    assert.equal(r.sent.length, 0);
+    // pure decision matrix
+    assert.equal(r.agent.decision('browser_click', { intent: 'purchase' }, true).decision, 'ask');
+    assert.equal(r.agent.decision('ui_act', {}, false).decision, 'ask', 'desktop input without a grant at default level asks');
+    assert.equal(r.agent.decision('ui_act', {}, true).decision, 'allow');
+    assert.equal(r.agent.decision('browser_open', {}, false).decision, 'allow', 'browser is trusted by default');
+    assert.equal(r.agent.decision('browser_upload', {}, false).decision, 'ask', 'uploads need approval without a grant');
+    assert.equal(r.agent.decision('mystery_action', {}, true).decision, 'ask', 'unknown actions fail closed');
+    r.policy.set('spending', 'high', { hours: 1 });
+    assert.equal(r.agent.decision('browser_click', { intent: 'purchase' }, true).decision, 'allow');
+  } finally { r.done(); }
+});
+
+test('computer agent: waits out an active user and retries; node offline fails; loops are broken; budget enforced', async () => {
+  const r = rig();
+  try {
+    r.setActive(2);
+    r.script.push(turn([r.call('browser_click', { ref: 1, intent: 'input' })]), end('done'));
+    const out = await r.agent.run({ taskId: 't', instruction: 'x', meta: { grant: true } });
+    assert.equal(out.status, 'completed');
+    assert.equal(r.sent.length, 1, 'retried after the user went idle, acted once');
+
+    const same = r.call('browser_snapshot', {}, 'a');
+    r.script.push(turn([same, { ...same, id: 'b' }, { ...same, id: 'c' }, { ...same, id: 'd' }]), end('stopped'));
+    const trace = [];
+    await r.agent.run({ taskId: 't', instruction: 'x', meta: { grant: true }, onTrace: (k, d) => k === 'tool_result' && trace.push(d.result) });
+    assert.ok(trace.length === 3, 'fourth identical call is refused without touching the node');
+
+    r.nodes.setOnline(false);
+    assert.equal((await r.agent.run({ taskId: 't', instruction: 'x' })).error, 'laptop_went_offline');
+    assert.equal(r.agent.status().reason, 'laptop_offline');
+  } finally { r.done(); }
+});
+
+test('kind router: computer tasks stay queued while the laptop is offline; other kinds run', () => {
+  const ready = { v: false };
+  const a = new KindRouterAdapter({ byKind: { agent: { status: () => ({ ready: true }) }, computer: { status: () => ({ ready: ready.v }) } } });
+  assert.deepEqual(a.readyKinds(), ['agent']);
+  ready.v = true;
+  assert.deepEqual(a.readyKinds().sort(), ['agent', 'computer']);
+  const dir = mkdtempSync(join(tmpdir(), 'friday-kr-'));
+  try {
+    const store = new Store(join(dir, 'db.sqlite'));
+    const c = store.createTask({ title: 'c', instruction: 'x', kind: 'computer' });
+    const g = store.createTask({ title: 'g', instruction: 'y' });
+    assert.equal(store.claimNextQueuedTask(['agent']).id, g.id, 'skips the older computer task');
+    assert.equal(store.claimNextQueuedTask(['agent']), null);
+    assert.equal(store.claimNextQueuedTask([]), null);
+    assert.equal(store.claimNextQueuedTask(['computer']).id, c.id);
+    store.close();
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
