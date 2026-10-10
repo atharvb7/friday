@@ -117,3 +117,22 @@ out({type:'final',text:JSON.stringify({env:tryRead(${JSON.stringify(join(appRoot
     assert.ok(existsSync(join(dataDir, 'dsh-workspaces', 'sbx', 'ok.txt')));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('dsh: first-run settings import (DSH >= 0.2) is retried exactly once, only for that credential error', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'friday-dsh-'));
+  try {
+    const marker = join(dir, 'ran-once');
+    const bin = fakeBin(dir, `
+import { existsSync, writeFileSync } from 'node:fs';
+if (!existsSync(${JSON.stringify(marker)})) { writeFileSync(${JSON.stringify(marker)}, '1'); console.error('dsh: MISSING_CREDENTIAL: llm-deepseek: no API key for provider route "deepseek-official"'); process.exit(1); }
+out({type:'status',phase:'turn_end',turn:1,reason:{kind:'completed'}}); out({type:'final',text:'ok after import'});
+`);
+    const r = await adapter(dir, bin).run({ taskId: 'imp', instruction: 'x' });
+    assert.equal(r.status, 'completed'); assert.equal(r.output, 'ok after import');
+    // other failures are NOT retried
+    const bad = fakeBin(dir, "console.error('boom'); process.exit(1);");
+    let runs = 0; const a = adapter(dir, bad); const orig = a.run.bind(a);
+    const res = await orig({ taskId: 'x', instruction: 'y' }); runs++;
+    assert.match(res.error, /boom/); assert.equal(runs, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

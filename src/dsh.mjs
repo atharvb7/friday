@@ -95,7 +95,20 @@ export class DshAdapter {
     return { cmd: bwrapPath(), args: [...args, '--chdir', workDir, this.nodePath, ...dshArgs] };
   }
 
-  run({ taskId, instruction, signal, onTrace = () => {}, kind = 'agent', workspace = null } = {}) {
+  // DSH >= 0.2 imports settings.yaml into the profile on its FIRST run, so that first run
+  // can fail at model selection (before any tool runs). Retrying once is therefore safe.
+  async run(opts = {}) {
+    const out = await this.#runOnce(opts);
+    if (out.status === 'failed' && !this.#imported && /MISSING_CREDENTIAL.*deepseek-official/.test(out.error ?? '')) {
+      this.#imported = true;
+      return this.#runOnce(opts);
+    }
+    if (out.status === 'completed') this.#imported = true;
+    return out;
+  }
+  #imported = false;
+
+  #runOnce({ taskId, instruction, signal, onTrace = () => {}, kind = 'agent', workspace = null } = {}) {
     const st = this.status();
     if (!st.ready) return Promise.resolve({ status: 'failed', error: st.reason });
     if (signal?.aborted) return Promise.reject(abortError(signal.reason?.message));

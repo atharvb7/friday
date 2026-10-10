@@ -54,5 +54,6 @@ the server unless you use `backup --with-secrets` (protect that file).
 Optional voice for hardware devices: install whisper.cpp + a Piper voice and set `FRIDAY_WHISPER_*`/`FRIDAY_PIPER_*` (see `.env.example`).
 
 ## Things that are NOT verified yet (need the real server)
-bubblewrap under the server's kernel/container, Tailscale Serve + phone PWA install + Web Push end to end, DSH 0.2.0-rc.2 vs the
-0.1.6 used in development, memory under sustained concurrent load.
+bubblewrap under the server's kernel/container, Tailscale Serve + phone PWA install + Web Push end to end, memory under sustained
+concurrent load. (Verified on the laptop: DSH 0.2.0-rc.2 from npm runs Friday's headless `--json` contract and the NVIDIA route; on its
+first run in a fresh home it imports `settings.yaml`, so Friday retries that one failure once.)
