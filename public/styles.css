@@ -153,3 +153,12 @@ dialog { background: var(--surface); color: var(--text); border: 1px solid var(-
 
 .chat-pane { position: relative; }
 .jump { position: absolute; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 2; box-shadow: var(--shadow); background: var(--accent); color: #fff; border-color: transparent; }
+
+/* emoji picker */
+.emoji-wrap { position: relative; align-self: flex-end; }
+.emoji-pop { position: absolute; bottom: 48px; left: 0; width: min(320px, 86vw); background: var(--surface); border: 1px solid var(--line2); border-radius: 14px; padding: 10px; box-shadow: var(--shadow); z-index: 6; }
+.emoji-pop input { margin-bottom: 8px; }
+.emoji-tabs { display: flex; gap: 2px; margin-bottom: 6px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.emoji-tab { background: none; border: 0; border-radius: 8px; padding: 4px 7px; font-size: 17px; cursor: pointer; opacity: .6; } .emoji-tab.on, .emoji-tab:hover { opacity: 1; background: var(--surface2); }
+.emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; max-height: 190px; overflow: auto; }
+.emoji-btn { background: none; border: 0; border-radius: 8px; font-size: 21px; padding: 4px 0; cursor: pointer; } .emoji-btn:hover, .emoji-btn:focus-visible { background: var(--surface2); }

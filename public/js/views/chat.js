@@ -1,6 +1,7 @@
 import { h, md, clear, timeAgo } from '../util.js';
 import { streamChat } from '../api.js';
 import { chunkSpeak } from '/voice.js';
+import { emojiPicker, insertAtCursor } from '../emoji.js';
 
 const SUGGESTIONS = ['What did I ask you to remember?', 'Remind me in 1 hour to stretch', 'Research the latest in open-source AI agents', 'Brief me on today'];
 
@@ -14,19 +15,12 @@ export function render({ app, api, toast }) {
   const spk = h('button', { class: 'btn icon quiet', type: 'button', title: 'Read replies aloud', 'aria-label': 'Toggle spoken replies', onclick: () => { speak = !speak; spk.textContent = speak ? '🔊' : '🔇'; if (!speak) speechSynthesis?.cancel(); } }, '🔇');
   const histBtn = h('button', { class: 'btn quiet icon', type: 'button', 'aria-label': 'Conversations', onclick: () => convos.classList.toggle('open') }, '☰');
 
+  const emoji = emojiPicker({ onPick: (e) => insertAtCursor(input, e) });
   const form = h('form', { class: 'composer', onsubmit: (e) => { e.preventDefault(); submit(); } },
-    h('div', { class: 'box' }, histBtn, input, spk, mic, send));
+    h('div', { class: 'box' }, histBtn, emoji.el, input, spk, mic, send));
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); } });
   input.addEventListener('input', () => { input.style.setProperty('height', 'auto'); input.style.setProperty('height', `${Math.min(input.scrollHeight, 160)}px`); });
 
-  const el = h('div', { class: 'chat' }, convos, h('div', { class: 'chat-pane' }, msgs, jump, form));
-
-  function bubble(role, content, extra = {}) {
-    const body = h('div', { class: 'bubble' });
-    if (extra.tools?.length) body.append(h('div', { class: 'tools' }, extra.tools.map((t) => h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`))));
-    if (content) body.append(role === 'assistant' ? md(content) : h('div', {}, content));
-    return h('div', { class: `msg ${role}` }, h('div', { class: 'av' }, role === 'user' ? 'You' : 'F'), body);
-  }
   // Stay pinned to the newest message unless the user scrolled up to read; then offer a jump button.
   let pinned = true;
   const jump = h('button', { class: 'btn small jump', type: 'button', hidden: true, onclick: () => { pinned = true; scroll(true); } }, '↓ New messages');
@@ -36,6 +30,14 @@ export function render({ app, api, toast }) {
   new MutationObserver(() => scroll()).observe(msgs, { childList: true, subtree: true, characterData: true });
   new ResizeObserver(() => scroll()).observe(msgs);
 
+  const el = h('div', { class: 'chat' }, convos, h('div', { class: 'chat-pane' }, msgs, jump, form));
+
+  function bubble(role, content, extra = {}) {
+    const body = h('div', { class: 'bubble' });
+    if (extra.tools?.length) body.append(h('div', { class: 'tools' }, extra.tools.map((t) => h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`))));
+    if (content) body.append(role === 'assistant' ? md(content) : h('div', {}, content));
+    return h('div', { class: `msg ${role}` }, h('div', { class: 'av' }, role === 'user' ? 'You' : 'F'), body);
+  }
   function hello() {
     clear(msgs);
     msgs.append(h('div', { class: 'hello' }, h('div', { class: 'orb idle' }), h('h2', {}, 'Hey, I’m Friday.'),
@@ -115,5 +117,5 @@ export function render({ app, api, toast }) {
   app.listeners.add(onEvent);
 
   hello(); loadConvos();
-  return { el, destroy() { app.listeners.delete(onEvent); abort?.abort(); rec?.stop(); speechSynthesis?.cancel(); } };
+  return { el, destroy() { emoji.close(); app.listeners.delete(onEvent); abort?.abort(); rec?.stop(); speechSynthesis?.cancel(); } };
 }

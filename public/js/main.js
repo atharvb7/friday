@@ -135,5 +135,5 @@ async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
-if (auth.token) boot().catch(() => { auth.clear(); showLogin(); }); else showLogin();
+if (auth.token) boot().catch((e) => { if (e?.status === 401) auth.clear(); showLogin(e?.status === 401 ? '' : `Something went wrong loading Friday (${e?.message ?? e}). Your token was kept — reload to retry.`); console.error(e); }); else showLogin();
 addEventListener('hashchange', () => { if (app.me) go(location.hash.slice(1)); });
