@@ -64,8 +64,28 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - [ ] Raw input/desktop screenshots on GNOME Wayland (needs portal permission or ydotool + sudo) — deliberately not faked
 - [ ] WhatsApp end-to-end with the user's own login (user must scan QR in the node profile)
 - Legacy laptop-only scaffolds (`/v1/whatsapp/*`, `/v1/desktop/*`, `/v1/browser/snapshot`) remain but are superseded by the node; remove after Phase 9 review
-## Phase 7 — Clients and voice
-- [ ] Phone PWA polish, voice (cloud STT/TTS), notifications
+## Phase 7 — Clients and voice  (UI verified in a real browser 2026-10-10)
+- [x] Dashboard + phone PWA (no build step): streaming chat with tool chips + voice in/out (browser speech), inbox with approvals (TOTP prompt for devices), tasks with execution trace, research browser with sources/contradictions, memory CRUD/pin/search, reminders, settings (personality, autonomy tiers, proactive, devices/TOTP, rules, health, models, skills), live SSE state orb, emergency stop, dark/light, responsive
+- [x] Web Push (VAPID + RFC 8291, dependency-free; encryption round-trip tested; NOT yet verified against a real push service/phone)
+- [x] Server-side voice adapters for hardware (whisper.cpp / Piper via CLI, temp audio deleted) — engines not installed here
+- [ ] Verify PWA install + push on the real phone over Tailscale HTTPS
+
 ## Phase 8 — Companion
-- [ ] Tauri desktop pet, personality UI, ESP32-S3 gateway + prototype
-## Phase 9 — Polish, migration, later AR/VR
+- [x] One derived companion state (14 states) for every body; `/v1/companion` + SSE stream; web 3D pet follows it; hardware events endpoint
+- [x] ESP32-S3 firmware + wiring/BOM/protocol docs (NOT compiled or run on hardware) and Tauri desktop-pet shell config (NOT built: no Rust here)
+- [ ] Build/flash firmware, 3D-printed body (design students), Tauri build
+
+## Phase 9 — Polish, security, migration
+- [x] Event-driven rules engine (bounded, loop-safe, approval-gated creation)
+- [x] Legacy scaffolds removed (~2k lines); README + server deployment guide; memory measured (core 81 MiB idle, +~190 MiB per running agent)
+- [x] Independent security audit run (see docs/security-audit-2026-10-10.md)
+- [ ] Deploy to the 6 GB server and re-measure under load; DSH 0.2.0-rc.2 verification there
+- [ ] Not started (spec'd as future): CRM, email, calendar (add as MCP servers + approval policy), smart-device control, AR/VR/projection, mobile robot
+
+## Known gaps (honest list)
+1. Not deployed on the server; nothing verified on the target machine.
+2. Computer use is browser (DOM) + accessibility only; no raw input/desktop screenshots on GNOME Wayland; vision is slow/approximate (only the omni model works on the API) so it is used to describe, never to click.
+3. WhatsApp flow works mechanically but needs your own login in the node's Chrome profile and carries a ban risk.
+4. GitHub PR flow, Web Push on a phone, ESP32 firmware, Tauri build: written, not run.
+5. DSH-internal subagents are not individually capped (worker concurrency + governor cap whole agent runs).
+6. Episodic auto-summaries and memory consolidation are not implemented.
