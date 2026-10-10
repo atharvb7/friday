@@ -22,7 +22,7 @@ export function voiceRoutes(router, ctx) {
       bus.publish('voice.started', {});
       const heard = await voiceServer.transcribe(await rawBody());
       if (!heard) return [200, { heard: '', reply: '' }];
-      const out = await ctx.quickTurn(heard);
+      const out = await ctx.quickTurn(heard, null, 'voice');
       bus.publish('voice.speaking', {});
       const audio = await voiceServer.speak(out.reply);
       return { raw: (res) => wav(res, audio, { 'X-Friday-Heard': enc(heard), 'X-Friday-Reply': enc(out.reply) }) };

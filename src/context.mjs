@@ -29,6 +29,8 @@ import { buildFridayTools } from './agent/friday-tools.mjs';
 import { Brain } from './agent/brain.mjs';
 import { Notifications } from './notifications.mjs';
 import { Mood } from './mood.mjs';
+import { Habits } from './habits.mjs';
+import { AutoMemory } from './agent/auto-memory.mjs';
 import { Jobs } from './jobs.mjs';
 import { Proactive } from './proactive.mjs';
 import { Policy } from './policy.mjs';
@@ -184,8 +186,10 @@ export function createContext({ appRoot, env = process.env }) {
     for (const tool of ctx.fridayTools.list()) if (tool.risk !== 'safe') ctx.approvals.register(tool.name, tool.run);
   }
   ctx.mood = new Mood({ settings, store });
+  ctx.habits = new Habits({ settings });
+  ctx.autoMemory = new AutoMemory({ ai, memory, settings, indexer, bus });
   ctx.brain = new Brain({
-    mood: ctx.mood,
+    mood: ctx.mood, habits: ctx.habits,
     ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit, skills, policy: ctx.policy, approvals: ctx.approvals,
     contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory }),
   });

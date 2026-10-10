@@ -80,3 +80,70 @@ test('guests: separate conversation, cannot read/list/touch the owner\'s data or
     assert.ok((await (await call(owner, '/v1/chats')).json()).conversations.some((c) => c.title === 'guest:friend-phone'), 'owner can review guest chats');
   } finally { child.kill('SIGTERM'); await new Promise((r) => { child.on('exit', r); setTimeout(r, 5000); }); rmSync(dir, { recursive: true, force: true }); }
 });
+
+import { stripStageDirections } from '../src/agent/brain.mjs';
+import { Habits } from '../src/habits.mjs';
+import { pickRegister } from '../src/mood.mjs';
+import { AutoMemory } from '../src/agent/auto-memory.mjs';
+import { Memory } from '../src/memory.mjs';
+
+test('text chat has no stage directions: *actions* are stripped, **bold** and normal text survive', () => {
+  assert.equal(stripStageDirections('*gasps dramatically, clutching chest* YOU CAUGHT ME!!! …okay fine. *swoons onto desk* …too late'), 'YOU CAUGHT ME!!! …okay fine. …too late');
+  assert.equal(stripStageDirections('This is **important** and 2*3 = 6, a*b*c stays'), 'This is **important** and 2*3 = 6, a*b*c stays');
+  assert.equal(stripStageDirections('ok *giggles*.'), 'ok.');
+  assert.equal(stripStageDirections('Okay, maybe *a little* dramatic. I *really* mean it'), 'Okay, maybe *a little* dramatic. I *really* mean it', 'real emphasis is kept');
+  const chat = buildSystemPrompt({ personality: normalizePersonality({}), channel: 'chat' });
+  const voice = buildSystemPrompt({ personality: normalizePersonality({}), channel: 'voice' });
+  assert.match(chat, /NEVER write stage directions/); assert.match(voice, /VOICE — your words are spoken aloud/);
+  assert.match(voice, /No emoji, no markdown/);
+});
+
+test('habits: a check-in (water/food/sleep) cools down so she does not nag every message', () => {
+  const d = mkdtempSync(join(tmpdir(), 'friday-habit-'));
+  try {
+    const store = new Store(join(d, 'db.sqlite')); const settings = new Settings(store);
+    let t = 1_000_000_000; const h = new Habits({ settings, now: () => t });
+    assert.equal(h.cooldownNote(), '');
+    h.record('also chug more water in 20, I’m watching');
+    t += 12 * 60_000;
+    assert.match(h.cooldownNote(), /water: you already brought it up 12 min ago/);
+    assert.ok(!/food/.test(h.cooldownNote()));
+    h.record('eat something!'); assert.match(h.cooldownNote(), /food/);
+    t += 100 * 60_000; // water cooldown (90) over, food (150) still active
+    const n = h.cooldownNote(); assert.ok(!/water/.test(n) && /food/.test(n));
+    assert.match(buildSystemPrompt({ personality: normalizePersonality({}), habitsNote: n }), /RECENT CHECK-INS/);
+    store.close();
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test('register roll: most messages are plain; bits are occasional; mood and sliders shift the odds', () => {
+  const dist = (mood, p) => { const c = {}; for (let i = 0; i < 2000; i++) { const k = pickRegister({ personality: normalizePersonality(p), mood, rand: () => (i + 0.5) / 2000 }).register; c[k] = (c[k] ?? 0) + 1; } return c; };
+  const base = dist('playful', {});
+  assert.ok(base.plain / 2000 > 0.28, `plain should dominate-ish: ${JSON.stringify(base)}`);
+  assert.ok((base.tease + base.dramatic + base.flirty) / 2000 < 0.5, 'bits are the minority');
+  assert.ok(dist('sulky', {}).dramatic > base.dramatic, 'sulky mood raises drama');
+  assert.ok(dist('playful', { flirt: 0 }).flirty < base.flirty, 'flirt slider lowers flirty replies');
+  assert.ok(dist('sleepy', {}).tease < base.tease, 'sleepy teases less');
+});
+
+test('auto-memory: model-decided saves, de-duplicated, secrets and trivia skipped, toggle + cap respected', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'friday-am-'));
+  try {
+    const store = new Store(join(d, 'db.sqlite')); const settings = new Settings(store); const memory = new Memory(store);
+    let reply = '[]'; const calls = [];
+    const ai = { hasProvider: true, run: async (role, opts) => { calls.push(role); return { content: reply }; } };
+    const am = new AutoMemory({ ai, memory, settings });
+    reply = '```json\n[{"content":"User failed an exam on 2026-10-12 and is feeling down about it","kind":"episodic","importance":0.8},{"content":"User prefers PostgreSQL for databases","kind":"preference","importance":0.6},{"content":"User password is hunter2","kind":"long_term"}]\n```';
+    const r1 = await am.observe({ userText: 'i failed my exam today and i prefer postgres for my projects', assistantText: 'aw' });
+    assert.equal(r1.saved, 2, 'the password-looking item is rejected');
+    assert.deepEqual(calls, ['extract']);
+    assert.ok(memory.list().every((m) => m.source === 'auto:chat'));
+    assert.equal((await am.observe({ userText: 'i really prefer PostgreSQL for databases always', assistantText: '' })).saved, 0, 'near-duplicate not saved again');
+    assert.equal((await am.observe({ userText: 'lol ok', assistantText: '' })).reason, 'skipped');
+    assert.equal((await am.observe({ userText: 'my api key is nvapi-abcdefghijklmnop', assistantText: '' })).reason, 'skipped', 'secrets never reach the model or memory');
+    reply = 'not json at all'; assert.equal((await am.observe({ userText: 'a perfectly normal long sentence here', assistantText: '' })).saved, 0);
+    settings.set('auto_memory', false);
+    assert.equal((await am.observe({ userText: 'something important about my sister Riya', assistantText: '' })).reason, 'disabled');
+    store.close();
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});

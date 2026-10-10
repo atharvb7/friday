@@ -5,8 +5,12 @@ import { emojiPicker, insertAtCursor } from '../emoji.js';
 
 const SUGGESTIONS = ['What did I ask you to remember?', 'Remind me in 1 hour to stretch', 'Research the latest in open-source AI agents', 'Brief me on today'];
 
+// Text chat has no stage directions: hide *actions* (keeps **bold**) even while streaming.
+const ACTION_WORD = /^(gasps?|giggles?|sighs?|swoons?|smirks?|winks?|grins?|laughs?|blushes?|pouts?|hugs?|waves?|nods?|shrugs?|clutch\w*|bounc\w*|pok\w*|rolls?|squeals?|cackles?|snorts?|yawns?|whispers?|screams?|faints?|facepalms?|dramatic\w*|flops?|spins?|twirls?|slumps?|stares?|glares?|leans?|sips?|munches|crunches|steals?|waggles?|taps?|tilts?|peeks?|hides?|jumps?|dances?|cries|sobs?|beams?|melts?|nuzzles?|cuddles?|snuggles?|kisses|smooches|sticks?|puffs?|crosses|raises?|covers?|buries|collapses?|fans?|pretends?|ahem)\b/i;
+const noActions = (t) => t.replace(/(^|[\s(])\*(?!\*)([^*\n]{2,90}?)\*(?=[\s).,!?…:;]|$)/g, (m, pre, inner) => (ACTION_WORD.test(inner.trim()) || inner.trim().split(/\s+/).length >= 4 ? pre : m));
+
 export function render({ app, api, toast }) {
-  let convoId = null, busy = false, abort = null, speak = false, listening = false, rec = null;
+  let convoId = null, busy = false, abort = null, speak = false, listening = false, rec = null, lastInputWasVoice = false;
   const convos = h('aside', { class: 'convos', id: 'convos' });
   const msgs = h('div', { class: 'msgs', id: 'msgs', 'aria-live': 'polite' });
   const input = h('textarea', { rows: 1, placeholder: 'Message Friday…', 'aria-label': 'Message Friday', maxlength: 20000 });
@@ -72,14 +76,15 @@ export function render({ app, api, toast }) {
     if (!convoId) clear(msgs);
     pinned = true; msgs.append(bubble('user', text));
     const tools = []; let acc = '';
+    const viaVoice = lastInputWasVoice; lastInputWasVoice = false;
     const toolsEl = h('div', { class: 'tools' });
     const live = h('div', { class: 'bubble' }, toolsEl, h('div', { class: 'typing' }, h('i'), h('i'), h('i')));
     const wrap = h('div', { class: 'msg assistant' }, h('div', { class: 'av' }, 'F'), live);
     msgs.append(wrap); scroll();
     abort = new AbortController();
-    const paintReply = () => { live.lastChild?.remove(); live.append(md(acc)); scroll(); };
+    const paintReply = () => { live.lastChild?.remove(); live.append(md(noActions(acc))); scroll(); };
     try {
-      await streamChat({ message: text, conversationId: convoId }, {
+      await streamChat({ message: text, conversationId: convoId, channel: viaVoice ? 'voice' : 'chat' }, {
         meta: (d) => { convoId = d.conversationId; },
         delta: (d) => { acc += d.text; paintReply(); },
         thinking: () => {},
@@ -104,7 +109,7 @@ export function render({ app, api, toast }) {
     rec = new SR(); rec.interimResults = true; rec.lang = navigator.language || 'en-US';
     rec.onstart = () => { listening = true; mic.classList.add('primary'); };
     rec.onresult = (e) => { input.value = [...e.results].map((r) => r[0].transcript).join(' '); };
-    rec.onend = () => { listening = false; mic.classList.remove('primary'); if (input.value.trim()) submit(); };
+    rec.onend = () => { listening = false; mic.classList.remove('primary'); if (input.value.trim()) { lastInputWasVoice = true; submit(); } };
     rec.onerror = (e) => { toast(`Mic: ${e.error}`); };
     rec.start();
   }

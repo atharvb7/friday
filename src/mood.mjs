@@ -16,6 +16,30 @@ export const MOODS = Object.freeze({
 const HOUR = 3600_000;
 const pick = (weights, rand) => { const entries = Object.entries(weights).filter(([, w]) => w > 0); let r = rand() * entries.reduce((a, [, w]) => a + w, 0); for (const [k, w] of entries) { if ((r -= w) <= 0) return k; } return entries[0][0]; };
 
+const REGISTERS = [
+  ['plain', 'Reply plainly and naturally, like a real person texting: no bit, no teasing, no drama this time.', 46],
+  ['warm', 'Be warm and genuine, a touch of affection, no performance.', 16],
+  ['curious', 'Engage with what he said and ask ONE genuine, specific question.', 12],
+  ['tease', 'One light tease or roast, then actually engage with what he said.', 15],
+  ['flirty', 'One subtle flirty line, otherwise natural.', 7],
+  ['dramatic', 'One short burst of drama, a pout or a giggle, then be normal.', 4],
+];
+const REG_BOOST = { playful: { tease: 2, dramatic: 1.5 }, sassy: { tease: 2.2 }, sweet: { warm: 1.6, flirty: 1.8 }, clingy: { warm: 1.5, dramatic: 1.8 }, sulky: { dramatic: 3 }, sleepy: { plain: 1.4, warm: 1.4, tease: 0.5 }, hyper: { dramatic: 3, tease: 1.4 }, proud: { tease: 1.6 } };
+
+// Real people don't perform in every message: roll how THIS reply should feel.
+export function pickRegister({ personality, mood, rand = Math.random }) {
+  const w = REGISTERS.map(([k, text, base]) => {
+    let x = base * (REG_BOOST[mood]?.[k] ?? 1);
+    if (k === 'flirty') x *= 0.4 + personality.flirt / 6;
+    if (k === 'dramatic') x *= 0.3 + (personality.childishness + personality.moodiness) / 12;
+    if (k === 'tease') x *= 0.4 + (personality.sarcasm + personality.humor) / 12;
+    return [k, text, x];
+  });
+  let r = rand() * w.reduce((a, [, , x]) => a + x, 0);
+  for (const [k, text, x] of w) { if ((r -= x) <= 0) return { register: k, text }; }
+  return { register: 'plain', text: REGISTERS[0][1] };
+}
+
 export class Mood {
   constructor({ settings, store = null, now = () => Date.now(), rand = Math.random }) { Object.assign(this, { settings, store, now, rand }); }
 

@@ -26,6 +26,11 @@ export function render({ app, api, toast, go }) {
         try { await api('/v1/personality', { method: 'POST', body: { personality: vals, userName: name.value } }); if (tzi.value !== tz.timezone) await api('/v1/settings/timezone', { method: 'POST', body: { timezone: tzi.value.trim() } }); toast('Saved.'); } catch (e) { toast(e.message); }
       } }, 'Save'));
 
+    const am = await api('/v1/settings/automemory');
+    const amBox = h('input', { type: 'checkbox', checked: am.enabled });
+    amBox.addEventListener('change', async () => { await api('/v1/settings/automemory', { method: 'POST', body: { enabled: amBox.checked } }); toast(amBox.checked ? 'I’ll decide what to remember.' : 'I’ll only remember what you tell me to.'); });
+    section('Memory', h('label', { class: 'row' }, amBox, ' Let Friday decide what to remember (silently, from our chats)'), h('p', { class: 'muted' }, 'Auto-saved items appear in the Memory tab marked “auto:chat”; edit or delete anything there. Passwords and keys are never saved.'));
+
     // Autonomy
     const rows = Object.entries(CATS).map(([c, label]) => {
       const cur = auto.autonomy[c];

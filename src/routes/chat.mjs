@@ -21,7 +21,7 @@ export function chatRoutes(router, ctx) {
     ctx.companion.chatStart();
     try { return await turnInner(args); } finally { ctx.companion.chatEnd(); }
   }
-  async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner' }) {
+  async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner', channel = 'chat' }) {
     chat.addMessage(convo.id, 'user', text);
     const brain = ctx.chatBrain();
     // JEV is off unless enabled; the local classifier is the deterministic default.
@@ -33,7 +33,7 @@ export function chatRoutes(router, ctx) {
       if (speaker === 'guest' && brain.name !== 'friday-brain') {
         reply = 'I’m offline right now — try me again in a bit.';
       } else if (brain.name === 'friday-brain') {
-        const out = await brain.adapter.respond({ conversationId: convo.id, text, signal, speaker, ...hooks });
+        const out = await brain.adapter.respond({ conversationId: convo.id, text, signal, speaker, channel, ...hooks });
         reply = out.reply; model = out.model; toolsUsed = out.toolsUsed;
       } else if (route.riskScore >= 3) {
         reply = (await answerLocal({ ...route, needsApproval: true }, text, { memory, tools })).text;
@@ -59,6 +59,7 @@ export function chatRoutes(router, ctx) {
     }
     reply = (reply || '…').slice(0, 20000);
     chat.addMessage(convo.id, 'assistant', reply);
+    if (speaker === 'owner' && brain.name === 'friday-brain') void ctx.autoMemory.observe({ userText: text, assistantText: reply }).catch(() => {}); // the brain decides what is worth remembering
     try { audit.append(convo.id, 'chat.reply', { intent: route.intent, brain: brain.name, source: route.source, tools: toolsUsed.map((t) => t.name) }); } catch {}
     bus.publish('chat.reply', { conversationId: convo.id, brain: brain.name });
     return { conversation: chat.getConversation(convo.id), route, reply, brain: brain.name, model, toolsUsed };
@@ -76,15 +77,15 @@ export function chatRoutes(router, ctx) {
     const text = b.message.trim();
     if (b.conversationId !== undefined && b.conversationId !== null) {
       const convo = chat.getConversation(b.conversationId);
-      return convo ? { convo, text } : { error: [404, { error: 'conversation_not_found' }] };
+      return convo ? { convo, text, channel: b.channel === 'voice' ? 'voice' : 'chat' } : { error: [404, { error: 'conversation_not_found' }] };
     }
-    return { convo: chat.createConversation(text.slice(0, 60)), text };
+    return { convo: chat.createConversation(text.slice(0, 60)), text, channel: b.channel === 'voice' ? 'voice' : 'chat' };
   }
 
   // One-shot text turn for non-browser clients (voice devices): returns just the reply.
-  ctx.quickTurn = async (text, conversationId = null) => {
+  ctx.quickTurn = async (text, conversationId = null, channel = 'chat') => {
     const convo = (conversationId && chat.getConversation(conversationId)) || chat.createConversation(text.slice(0, 60));
-    return turn({ convo, text });
+    return turn({ convo, text, channel });
   };
 
   router.post('/v1/chat', async ({ body, principal }) => {
@@ -116,6 +117,8 @@ export function chatRoutes(router, ctx) {
 
   // Personality (style only) + the user's name.
   router.get('/v1/personality', () => [200, { personality: ctx.brain.personality(), userName: ctx.settings.get('user_name', null), mood: ctx.mood.current({ moodiness: ctx.brain.personality().moodiness }) }]);
+  router.get('/v1/settings/automemory', () => [200, { enabled: ctx.autoMemory.enabled() }]);
+  router.post('/v1/settings/automemory', async ({ body }) => { const b = await body(); ctx.settings.set('auto_memory', b.enabled !== false); return [200, { enabled: ctx.autoMemory.enabled() }]; });
   router.post('/v1/mood', async ({ body }) => { const b = await body(); try { return [200, { mood: ctx.mood.force(b.mood, Number(b.minutes) || 30) }]; } catch (e) { return [400, { error: e.message }]; } });
   router.post('/v1/personality', async ({ body }) => {
     const b = await body();

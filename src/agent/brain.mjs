@@ -1,25 +1,36 @@
 // Conversational brain: persona + retrieved context + tool-calling loop.
 // Heavy/long work is handed to the background agent via task_create.
 import { buildSystemPrompt, buildGuestPrompt, normalizePersonality } from '../personality.mjs';
+import { pickRegister } from '../mood.mjs';
 
 const MAX_STEPS = 6;
 const MAX_TOOL_CALLS = 12;
 const RESULT_CHARS = 4000;
 
+// Text chat has no stage directions: drop *actions* like "*gasps*" (keeps **bold**).
+const ACTION_WORD = /^(gasps?|giggles?|sighs?|swoons?|smirks?|winks?|grins?|laughs?|blushes?|pouts?|hugs?|waves?|nods?|shrugs?|clutch\w*|bounc\w*|pok\w*|rolls?|squeals?|cackles?|snorts?|yawns?|whispers?|screams?|faints?|facepalms?|dramatic\w*|flops?|spins?|twirls?|slumps?|stares?|glares?|leans?|sips?|munches|crunches|steals?|waggles?|taps?|tilts?|peeks?|hides?|jumps?|dances?|cries|sobs?|beams?|melts?|nuzzles?|cuddles?|snuggles?|kisses|smooches|sticks?|puffs?|crosses|raises?|covers?|buries|collapses?|fans?|pretends?|ahem)\b/i;
+// Text chat has no stage directions: drop *action narration* (keeps **bold** and real emphasis like *really*).
+export function stripStageDirections(text) {
+  return String(text).replace(/(^|[\s(])\*(?!\*)([^*\n]{2,90}?)\*(?=[\s).,!?…:;]|$)/g, (m, pre, inner) => {
+    const n = inner.trim().split(/\s+/).length;
+    return (ACTION_WORD.test(inner.trim()) || n >= 4) ? pre : m;
+  }).replace(/[ \t]{2,}/g, ' ').replace(/ +([.,!?])/g, '$1').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export class Brain {
-  constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null, skills = null, policy = null, approvals = null, mood = null }) {
-    Object.assign(this, { ai, fridayTools, settings, contextBuilder, chat, bus, audit, skills, policy, approvals, mood });
+  constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null, skills = null, policy = null, approvals = null, mood = null, habits = null }) {
+    Object.assign(this, { ai, fridayTools, settings, contextBuilder, chat, bus, audit, skills, policy, approvals, mood, habits });
   }
 
   personality() { return normalizePersonality(this.settings.get('personality', {})); }
 
-  async respond({ conversationId, text, onDelta = null, onThinking = null, onTool = null, signal = null, speaker = 'owner' }) {
+  async respond({ conversationId, text, onDelta = null, onThinking = null, onTool = null, signal = null, speaker = 'owner', channel = 'chat' }) {
     if (speaker === 'guest') return this.#respondGuest({ conversationId, onDelta, signal });
     const personality = this.personality();
     this.mood?.touch?.();
     const moodNow = this.mood?.current({ moodiness: personality.moodiness }) ?? null;
     const ctxInfo = await this.contextBuilder.build({ text });
-    const system = `${buildSystemPrompt({ personality, mood: moodNow, userName: this.settings.get('user_name', null), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}${this.skills?.index() ? `\n\nSkills you can load with skill_load when a request matches (do not load unless needed):\n${this.skills.index()}` : ''}${ctxInfo.text ? `\n\n${ctxInfo.text}` : ''}`;
+    const system = `${buildSystemPrompt({ personality, mood: moodNow, channel, habitsNote: this.habits?.cooldownNote() ?? '', register: pickRegister({ personality, mood: moodNow?.mood }), autoMemory: this.settings.get('auto_memory', true) !== false, userName: this.settings.get('user_name', null), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}${this.skills?.index() ? `\n\nSkills you can load with skill_load when a request matches (do not load unless needed):\n${this.skills.index()}` : ''}${ctxInfo.text ? `\n\n${ctxInfo.text}` : ''}`;
     const messages = [{ role: 'system', content: system }, ...this.chat.historyForProvider(conversationId, 20)];
     const schemas = this.fridayTools.schemas();
     const toolsUsed = [];
@@ -42,7 +53,9 @@ export class Brain {
       // Step budget exhausted mid-tool-use: force a plain-language wrap-up.
       last = await this.ai.chat([...messages, { role: 'user', content: 'Wrap up now in plain language using only what the tools returned.' }], { signal, onDelta, stream: Boolean(onDelta) });
     }
-    return { reply: last.content.trim(), model: last.model, provider: last.provider, toolsUsed, usage: last.usage, usedVector: ctxInfo.usedVector, memoryIds: ctxInfo.memoryIds };
+    const reply = channel === 'voice' ? last.content.trim() : stripStageDirections(last.content);
+    this.habits?.record(reply);
+    return { reply, model: last.model, provider: last.provider, toolsUsed, usage: last.usage, usedVector: ctxInfo.usedVector, memoryIds: ctxInfo.memoryIds };
   }
 
   // Guests get persona only: no memory, no context, no tools, and a separate conversation.
