@@ -1,0 +1,29 @@
+  html, body { margin: 0; height: 100%; background: #101310; color: #e8f0e8;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { width: 100%; height: 100%; display: block; }
+  #hud { position: fixed; top: 12px; left: 12px; right: 12px;
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    pointer-events: none; }
+  #hud > * { pointer-events: auto; }
+  #pet-state { background: rgba(0,0,0,.55); border: 1px solid #2c3a2c;
+    padding: 6px 10px; border-radius: 999px; font-size: 14px; }
+  .btn { background: #1d2b1d; color: #e8f0e8; border: 1px solid #3a5a3a;
+    border-radius: 8px; padding: 6px 10px; font-size: 14px; cursor: pointer; }
+  .btn:hover { background: #29402a; }
+  #subtitle { position: fixed; left: 50%; bottom: 56px; transform: translateX(-50%);
+    max-width: 90vw; background: rgba(0,0,0,.65); padding: 8px 14px;
+    border-radius: 10px; font-size: 15px; display: none; }
+  #attrib { position: fixed; left: 0; right: 0; bottom: 0; text-align: center;
+    font-size: 12px; color: #9db09d; background: rgba(0,0,0,.55);
+    padding: 6px 8px; }
+  #attrib a { color: #cfe3cf; }
+  #fallback { position: fixed; inset: 0; display: none; place-items: center;
+    text-align: center; padding: 24px; }
+  #note { position: fixed; bottom: 30px; left: 12px; right: 12px; font-size: 12px;
+    color: #9db09d; display: none; }
+  /* Compact "sit on screen" mode: shrink chrome, keep stage fullscreen. */
+  body.compact #hud { top: 6px; left: 6px; right: 6px; }
+  body.compact .btn { padding: 4px 8px; font-size: 12px; }
+  body.compact #pet-state { font-size: 12px; padding: 4px 8px; }
+  body.compact #attrib { font-size: 11px; padding: 4px; }
