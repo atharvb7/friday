@@ -2,9 +2,10 @@
 // DEDICATED Friday profile (log into WhatsApp etc. once, manually; sessions persist).
 // The model never sees cookies or passwords. Elements are addressed by short refs
 // produced by snapshot(), so clicks are DOM-based, not guessed pixel coordinates.
-import { lstatSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs';
+import { hostIsPrivate, isPrivateAddress } from './netpolicy.mjs';
 import net from 'node:net';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const SNAPSHOT_FN = () => {
   document.querySelectorAll('[data-friday-ref]').forEach((e) => e.removeAttribute('data-friday-ref'));
@@ -26,10 +27,8 @@ const SNAPSHOT_FN = () => {
 
 export function isPrivateHost(host) {
   const h = host.replace(/^\[|\]$/g, '').toLowerCase();
-  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true;
-  if (net.isIPv4(h)) { const [a, b] = h.split('.').map(Number); return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127); }
-  if (net.isIPv6(h)) return h === '::1' || h.startsWith('fe80') || h.startsWith('fc') || h.startsWith('fd');
-  return false;
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') || h.endsWith('.lan')) return true;
+  return net.isIP(h) ? isPrivateAddress(h) : false; // names are resolved + checked per request (see guard())
 }
 
 export function checkUrl(u) {
@@ -39,6 +38,9 @@ export function checkUrl(u) {
   return url.toString();
 }
 
+const SECRET_NAME = /(token|secret|credential|passw(or)?d|\.sqlite|\.env|id_rsa|id_ed25519|\.pem|\.key|\.kdbx|wallet|seed|\.pfx|\.p12|cookies)/i;
+const markerExists = (p, name) => { if (!existsSync(p)) return false; return name === 'config.json' ? existsSync(join(dirname(p), 'friday.sqlite')) : true; };
+
 // Only files under allowed dirs, never dotfiles/dot-directories, real paths only.
 export function checkFile(path, allowedDirs) {
   const real = realpathSync(resolve(path));
@@ -46,13 +48,19 @@ export function checkFile(path, allowedDirs) {
   const ok = allowedDirs.map((d) => { try { return realpathSync(d); } catch { return null; } }).filter(Boolean).find((d) => real === d || real.startsWith(`${d}/`));
   if (!ok) throw new Error('path_not_allowed');
   if (real.slice(ok.length).split('/').some((seg) => seg.startsWith('.'))) throw new Error('hidden_path_blocked');
+  // Never hand Friday's own secrets (or credential-looking files) to a web page, even inside an allowed dir.
+  if (SECRET_NAME.test(real.split('/').pop())) throw new Error('sensitive_file_blocked');
+  let dir = dirname(real);
+  for (let i = 0; i < 4 && dir !== ok && dir.length > ok.length; i++, dir = dirname(dir)) {
+    for (const marker of ['access-token', 'friday.sqlite', '.env', 'config.json']) if (markerExists(join(dir, marker), marker)) throw new Error('inside_friday_data_blocked');
+  }
   if (lstatSync(resolve(path)).isSymbolicLink()) { /* realpath already resolved; target is inside allowed dirs */ }
   return real;
 }
 
 export class BrowserController {
-  constructor({ chromium, profileDir, executablePath = '/usr/bin/google-chrome', headless = false, allowedDirs = [] }) {
-    Object.assign(this, { chromium, profileDir, executablePath, headless, allowedDirs });
+  constructor({ chromium, profileDir, executablePath = '/usr/bin/google-chrome', headless = false, allowedDirs = [], allowPrivate = false }) {
+    Object.assign(this, { chromium, profileDir, executablePath, headless, allowedDirs, allowPrivate }); // allowPrivate is for tests only
     this.ctx = null; this.page = null;
   }
 
@@ -61,6 +69,13 @@ export class BrowserController {
     if (!this.ctx) {
       this.ctx = await this.chromium.launchPersistentContext(this.profileDir, { executablePath: this.executablePath, headless: this.headless, viewport: { width: 1280, height: 800 }, args: ['--no-first-run', '--no-default-browser-check'] });
       this.ctx.on('close', () => { this.ctx = null; this.page = null; });
+      // Every request (incl. redirects and sub-resources) is checked: private/loopback/LAN targets and non-web schemes are blocked.
+      if (!this.allowPrivate) await this.ctx.route('**/*', async (route) => {
+        const u = new URL(route.request().url());
+        if (['data:', 'blob:', 'about:'].includes(u.protocol)) return route.continue();
+        if (!['http:', 'https:'].includes(u.protocol) || await hostIsPrivate(u.hostname)) return route.abort('blockedbyclient');
+        return route.continue();
+      });
     }
     this.page = this.ctx.pages()[0] ?? await this.ctx.newPage();
     return this.page;

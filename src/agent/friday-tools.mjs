@@ -114,7 +114,7 @@ export function buildFridayTools(ctx) {
       name: 'computer_task', risk: 'gated', category: 'computer', riskClass: 'consequential',
       description: "Operate the user's laptop to achieve a goal (browse sites, find files in Downloads/Documents, use their logged-in browser profile, fill forms, attach files). Runs in the background, stepwise, verifying results; sending/posting/buying inside it needs separate approval. Queues until the laptop is online. Give the complete goal incl. exact names.",
       parameters: obj({ goal: { type: 'string', description: 'Complete goal with exact file names, recipients, sites' } }, ['goal']),
-      summarize: (a) => `Control your laptop to: ${clip(a.goal, 200)}`,
+      summarize: (a) => `Control your laptop to: ${clip(a.goal, 1200)}`,
       run: (a, { conversationId } = {}) => {
         const t = store.createTask({ title: `Laptop: ${clip(a.goal, 80)}`, kind: 'computer', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true } });
         return { queued: true, id: t.id.slice(0, 8), laptop_online: nodes.online };
@@ -184,9 +184,10 @@ export function buildFridayTools(ctx) {
       },
     },
     {
-      name: 'schedule_task', risk: 'safe',
+      name: 'schedule_task', risk: 'gated', category: 'system', riskClass: 'routine',
       description: 'Schedule a background agent task to run later or repeatedly (e.g. "every Monday 8am research X and write a report"). Same time rules as reminder_create.',
       parameters: obj({ title: { type: 'string' }, instruction: { type: 'string', description: 'Self-contained instructions for the agent' }, when: { type: 'string' }, recurrence: { type: 'object' } }, ['title', 'instruction']),
+      summarize: (a) => `Schedule agent task “${clip(a.title, 100)}”${a.recurrence ? ` (${JSON.stringify(a.recurrence)})` : a.when ? ` at ${a.when}` : ''}: ${clip(a.instruction, 300)}`,
       run: (a, { conversationId } = {}) => {
         const j = jobs.create({ kind: 'task', title: str(a.title, 'title', 200), body: str(a.instruction, 'instruction', 20000), when: a.when ?? null, recurrence: a.recurrence ?? null, conversationId });
         return { scheduled: true, id: j.id.slice(0, 8), next_fire_local: formatLocal(new Date(j.due_at), j.timezone), next_fire_utc: j.due_at };

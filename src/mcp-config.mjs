@@ -14,7 +14,10 @@ export function validateMcpConfig(cfg) {
     if (!NAME_RE.test(name)) throw new TypeError(`invalid server name: ${name}`);
     if (!['stdio', 'streamable-http'].includes(s.transport)) throw new TypeError(`${name}: transport must be stdio or streamable-http`);
     if (s.transport === 'stdio' && (typeof s.command !== 'string' || !s.command)) throw new TypeError(`${name}: command required`);
-    if (s.transport === 'streamable-http' && !/^https:\/\//.test(s.url ?? '') && !/^http:\/\/(127\.0\.0\.1|localhost)/.test(s.url ?? '')) throw new TypeError(`${name}: url must be https (or loopback http)`);
+    if (s.transport === 'streamable-http') {
+      let u; try { u = new URL(s.url); } catch { throw new TypeError(`${name}: url must be https (or loopback http)`); }
+      if (!(u.protocol === 'https:' || (u.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)))) throw new TypeError(`${name}: url must be https (or loopback http)`);
+    }
     for (const e of s.envPassthrough ?? []) if (!ENV_RE.test(e)) throw new TypeError(`${name}: bad env name ${e}`);
     for (const [h, v] of Object.entries(s.headersFromEnv ?? {})) {
       if (!/^[A-Za-z][A-Za-z0-9-]{0,40}$/.test(h) || !ENV_RE.test(v?.env ?? '') || (v.prefix != null && !/^[A-Za-z0-9 ._-]{0,20}$/.test(v.prefix))) throw new TypeError(`${name}: bad headersFromEnv ${h}`);

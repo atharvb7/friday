@@ -20,8 +20,10 @@ const opt = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 
 function loadConf() { try { return JSON.parse(readFileSync(CONF, 'utf8')); } catch { return null; } }
 
 if (cmd === 'pair') {
-  const server = opt('server'); const token = opt('token');
-  if (!server || !token || !/^https?:\/\//.test(server)) { console.error('usage: friday-node pair --server https://host[:port] --token fdv_... [--name laptop]'); process.exit(64); }
+  // Prefer FRIDAY_NODE_TOKEN so the token does not appear in `ps` output.
+  const server = opt('server'); const token = process.env.FRIDAY_NODE_TOKEN || opt('token');
+  if (!server || !token || !/^https?:\/\//.test(server)) { console.error('usage: FRIDAY_NODE_TOKEN=fdv_... friday-node pair --server https://host[:port] [--name laptop]'); process.exit(64); }
+  if (server.startsWith('http://') && !/^http:\/\/(127\.0\.0\.1|localhost)/.test(server)) { console.error('Refusing plaintext http to a non-local server; use https (e.g. tailscale serve).'); process.exit(64); }
   mkdirSync(CONF_DIR, { recursive: true, mode: 0o700 });
   writeFileSync(CONF, JSON.stringify({ server: server.replace(/\/+$/, ''), token, name: opt('name') ?? 'laptop', allowedDirs: defaultAllowedDirs(), headless: false }, null, 2), { mode: 0o600 });
   chmodSync(CONF, 0o600);

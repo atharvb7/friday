@@ -5,8 +5,8 @@
 // findings.json: { topic, summary, confidence?, sources:[{url,title,date?,quote?}],
 //   claims:[{topic,claim,sourceUrl,confidence?}], contradictions?:[{topic,note}] }
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { readRegularFile } from './safefs.mjs';
 
 const MAX_FILE = 2 * 1024 * 1024;
 const clip = (s, n) => String(s ?? '').slice(0, n);
@@ -74,11 +74,13 @@ export class ResearchMemory {
 
   // Read findings.json / report.md the agent left in its workspace.
   ingestFromDir({ taskId, dir }) {
-    const f = join(dir, 'findings.json');
-    if (!existsSync(f) || statSync(f).size > MAX_FILE) throw new TypeError('findings.json missing or too large');
-    const findings = JSON.parse(readFileSync(f, 'utf8'));
-    const r = join(dir, 'report.md');
-    return this.ingest({ taskId, findings, reportMd: existsSync(r) && statSync(r).size <= MAX_FILE ? readFileSync(r, 'utf8') : null });
+    // The agent controls these files: never follow symlinks or block on FIFOs.
+    let findings;
+    try { findings = JSON.parse(readRegularFile(join(dir, 'findings.json'), MAX_FILE).toString('utf8')); }
+    catch { throw new TypeError('findings.json missing, invalid or not a regular file'); }
+    let reportMd = null;
+    try { reportMd = readRegularFile(join(dir, 'report.md'), MAX_FILE).toString('utf8'); } catch { /* report is optional */ }
+    return this.ingest({ taskId, findings, reportMd });
   }
 
   search(query, { limit = 6 } = {}) {

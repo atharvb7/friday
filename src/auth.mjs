@@ -66,8 +66,19 @@ export class Auth {
 
   totpActive() { return this.db.prepare('SELECT confirmed FROM auth_totp WHERE id=1').get()?.confirmed === 1; }
 
+  // Brute-force defence: 5 wrong codes in 10 minutes locks TOTP checks for 15 minutes (any device).
+  #fails = []; #lockedUntil = 0;
   // Single-use per time step: a replayed code is rejected.
   checkTotp(code) {
+    const now = Date.now();
+    if (now < this.#lockedUntil) return false;
+    const ok = this.#checkTotp(code);
+    if (!ok) { this.#fails = this.#fails.filter((t) => now - t < 600_000); this.#fails.push(now); if (this.#fails.length >= 5) { this.#lockedUntil = now + 900_000; this.#fails = []; } }
+    else this.#fails = [];
+    return ok;
+  }
+  get totpLocked() { return Date.now() < this.#lockedUntil; }
+  #checkTotp(code) {
     const row = this.db.prepare('SELECT * FROM auth_totp WHERE id=1 AND confirmed=1').get();
     if (!row) return false;
     const step = verifyTotp(row.secret, code);
@@ -82,6 +93,7 @@ export class Auth {
 export function requiredScope(method, pathname) {
   if (pathname.startsWith('/v1/node/')) return 'node';
   if (pathname === '/v1/emergency-stop') return 'read';
+  if (pathname === '/v1/auth/whoami') return 'read';
   if (/^\/v1\/(devices|auth|backup|mcp)/.test(pathname) || pathname === '/v1/skills/install') return 'admin';
   if (pathname === '/v1/emergency-clear') return 'approve';
   if (/^\/v1\/effects\/[^/]+\/approve$/.test(pathname) || /^\/v1\/approvals\/[^/]+\/decide$/.test(pathname) || (method !== 'GET' && pathname === '/v1/autonomy')) return 'approve';

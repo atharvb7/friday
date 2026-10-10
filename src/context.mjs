@@ -3,7 +3,8 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { ensureRealDir, writeFileReplacing } from './safefs.mjs';
 import { Store } from './store.mjs';
 import { Memory } from './memory.mjs';
 import { Effects } from './effects.mjs';
@@ -37,6 +38,7 @@ import { ResearchMemory } from './research-memory.mjs';
 import { NodeHub } from './nodes.mjs';
 import { WebPush } from './webpush.mjs';
 import { Companion } from './companion.mjs';
+import { prune } from './retention.mjs';
 import { VoiceServer } from './voice-server.mjs';
 import { KindRouterAdapter } from './adapters.mjs';
 import { ComputerAgent } from './agent/computer-agent.mjs';
@@ -70,11 +72,13 @@ export function createContext({ appRoot, env = process.env }) {
   const dshBin = env.FRIDAY_DSH_BIN || findDshBin();
   const mcpPath = resolve(dataDir, 'config', 'mcp.json');
   const skills = new Skills({ roots: [resolve(appRoot, 'skills'), resolve(dataDir, 'skills')] });
-  const overlayPath = resolve(dataDir, 'dsh-home', 'friday-overlay.yml');
+  const overlayPath = resolve(dataDir, 'config', 'friday-overlay.yml'); // host-only: the agent can read it (ro) but never write it
+  const agentsSkillsDir = resolve(dataDir, 'dsh-agents', 'skills');
   const dshPrepare = () => {
     const cfg = withDefaults(loadMcpConfig(mcpPath), env);
-    writeFileSync(overlayPath, renderOverlay(cfg), { mode: 0o600 });
-    skills.syncTo(resolve(dataDir, 'dsh-home', 'skills'));
+    ensureRealDir(dirname(overlayPath));
+    writeFileReplacing(overlayPath, renderOverlay(cfg));
+    skills.syncTo(agentsSkillsDir);
     const extraEnv = {};
     for (const name of envToForward(cfg)) if (env[name]) extraEnv[name] = env[name];
     return { overlayPath, extraEnv };
@@ -190,7 +194,7 @@ export function createContext({ appRoot, env = process.env }) {
     return { name: 'local-fallback', adapter: null };
   };
 
-  let governorTimer = null;
+  let governorTimer = null, pruneTimer = null;
   ctx.start = () => {
     let lastMode = governor.getSnapshot().mode;
     governorTimer = setInterval(() => {
@@ -200,17 +204,19 @@ export function createContext({ appRoot, env = process.env }) {
       } catch { /* never crash on sampling */ }
     }, 2000);
     governorTimer.unref();
-    try { skills.syncTo(resolve(dataDir, 'dsh-home', 'skills')); } catch {}
+    try { skills.syncTo(agentsSkillsDir); } catch {}
     worker.start();
     if (ai.hasProvider) indexer.start();
     ctx.jobs.start();
+    pruneTimer = setInterval(() => { try { prune(store.db); } catch { /* retention is best effort */ } }, 6 * 3600_000); pruneTimer.unref();
+    try { prune(store.db); } catch {}
     ctx.rules.start();
     ctx.proactive.start();
   };
   ctx.stop = () => {
     worker.stop();
     ctx.nodes?.stopAll();
-    clearInterval(governorTimer);
+    clearInterval(governorTimer); clearInterval(pruneTimer);
     indexer.stop();
     ctx.jobs.stop();
     ctx.rules.stop();

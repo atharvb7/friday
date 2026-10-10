@@ -13,15 +13,22 @@ export function bwrapPath() {
 }
 
 // Verifies that unprivileged user namespaces actually work here (some kernels/containers forbid them).
+let usableCache = { at: 0, v: false };
 export function bwrapUsable(bin = bwrapPath()) {
   if (!bin) return false;
-  return spawnSync(bin, ['--ro-bind', '/', '/', '--dev', '/dev', 'true'], { stdio: 'ignore' }).status === 0;
+  if (Date.now() - usableCache.at < 60_000) return usableCache.v; // status() is called often: probe at most once a minute
+  usableCache = { at: Date.now(), v: spawnSync(bin, ['--ro-bind', '/', '/', '--dev', '/dev', 'true'], { stdio: 'ignore' }).status === 0 };
+  return usableCache.v;
 }
 
 const under = (child, parent) => child === parent || child.startsWith(`${parent}/`);
 
 export function buildBwrapArgs({ home, appRoot, dataDir, writable = [], readonly = [] }) {
-  const args = ['--die-with-parent', '--unshare-pid', '--unshare-ipc', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp'];
+  // A read-only bind does NOT stop connect(): /run holds the session D-Bus, ssh-agent and docker.sock, any of
+  // which is a host-escape. Hide all of /run (keeping only DNS resolver state), drop capabilities, new session.
+  const args = ['--die-with-parent', '--new-session', '--unshare-pid', '--unshare-ipc', '--unshare-uts', '--cap-drop', 'ALL',
+    '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp', '--tmpfs', '/run'];
+  for (const keep of ['/run/systemd/resolve', '/run/resolvconf']) if (existsSync(keep)) args.push('--ro-bind', keep, keep);
   const rw = writable.map((p) => resolve(p));
   const ro = readonly.map((p) => resolve(p));
   // Hide: the user's home, Friday's code/config, Friday's data dir.

@@ -15,7 +15,8 @@
 //     cannot nest inside ours; ours is the single confinement layer.
 //   * No sandbox -> not ready (fail closed) unless FRIDAY_DSH_SANDBOX=off is set.
 import { spawn } from 'node:child_process';
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync } from 'node:fs';
+import { ensureRealDir, writeFileReplacing } from './safefs.mjs';
 import { join, resolve } from 'node:path';
 import { RESEARCH_CONTRACT } from './research-memory.mjs';
 import { bwrapPath, bwrapUsable, buildBwrapArgs, dshInstallRoot } from './sandbox.mjs';
@@ -40,18 +41,20 @@ export class DshAdapter {
   constructor({
     homeDir, workRoot = null, bin = null, nodePath = process.execPath, model = 'nvidia/nemotron-3-super-120b-a12b', provider = 'nvidia',
     apiKey = null, timeoutMs = DEFAULT_TIMEOUT_MS, maxOutputBytes = DEFAULT_MAX_OUTPUT, sandbox = 'bwrap', enabled = true,
-    appRoot = null, dataDir = null, home = process.env.HOME ?? null, permissionMode = 'danger-full-access', overlayPath = null, prepare = null,
+    appRoot = null, dataDir = null, home = process.env.HOME ?? null, permissionMode = 'danger-full-access', overlayPath = null, prepare = null, agentsHome = null,
   } = {}) {
     if (!homeDir || typeof homeDir !== 'string') throw new TypeError('homeDir is required');
     Object.assign(this, { homeDir: resolve(homeDir), bin, nodePath, model, provider, apiKey, timeoutMs, maxOutputBytes, sandbox, enabled, appRoot, dataDir, home, permissionMode, overlayPath, prepare });
+    // Skills/agents live OUTSIDE the agent-writable home and are mounted read-only into the sandbox.
+    this.agentsHome = resolve(agentsHome ?? join(this.homeDir, '..', 'dsh-agents'));
     this.workRoot = resolve(workRoot ?? join(this.homeDir, '..', 'dsh-workspaces'));
-    for (const d of [this.homeDir, join(this.homeDir, 'agents'), this.workRoot]) { mkdirSync(d, { recursive: true, mode: 0o700 }); chmodSync(d, 0o700); }
+    for (const d of [this.homeDir, this.agentsHome, this.workRoot]) ensureRealDir(d);
     this.#writeSettings();
   }
 
   // Friday owns this file; it only ever lives inside Friday's DSH home.
   #writeSettings() {
-    writeFileSync(join(this.homeDir, 'settings.yaml'), `llm-pi-ai:\n  providers:\n    ${this.provider}:\n      apiKeyEnv: NVIDIA_API_KEY\nagent-default-model:\n  provider: ${this.provider}\n  model: ${this.model}\n`, { mode: 0o600 });
+    writeFileReplacing(join(this.homeDir, 'settings.yaml'), `llm-pi-ai:\n  providers:\n    ${this.provider}:\n      apiKeyEnv: NVIDIA_API_KEY\nagent-default-model:\n  provider: ${this.provider}\n  model: ${this.model}\n`);
   }
 
   status() {
@@ -78,7 +81,7 @@ export class DshAdapter {
     return {
       ...extra,
       PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', LANG: process.env.LANG ?? 'C.UTF-8', TERM: 'dumb',
-      HOME: this.homeDir, DSH_HOME: this.homeDir, DSH_AGENTS_HOME: join(this.homeDir, 'agents'),
+      HOME: this.homeDir, DSH_HOME: this.homeDir, DSH_AGENTS_HOME: this.agentsHome,
       DSH_TELEMETRY_DISABLED: '1', DSH_PERMISSION_MODE: this.permissionMode, NVIDIA_API_KEY: this.apiKey,
     };
   }
@@ -89,7 +92,7 @@ export class DshAdapter {
     if (this.sandbox !== 'bwrap') return { cmd: this.nodePath, args: dshArgs };
     const args = buildBwrapArgs({
       home: this.home, appRoot: this.appRoot, dataDir: this.dataDir,
-      readonly: [dshInstallRoot(this.bin), this.nodePath.startsWith('/usr') ? null : resolve(this.nodePath, '../..')].filter(Boolean),
+      readonly: [dshInstallRoot(this.bin), this.nodePath.startsWith('/usr') ? null : resolve(this.nodePath, '../..'), this.agentsHome, overlayPath].filter(Boolean),
       writable: [this.homeDir, workDir],
     });
     return { cmd: bwrapPath(), args: [...args, '--chdir', workDir, this.nodePath, ...dshArgs] };

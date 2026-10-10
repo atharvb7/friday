@@ -1,7 +1,9 @@
 // Web Push (RFC 8030 + VAPID RFC 8292 + message encryption RFC 8291), dependency-free.
 // Lets the phone PWA get a notification when the page is closed.
+import { isPrivateAddress } from './web.mjs';
 import { createECDH, createCipheriv, createHmac, createPrivateKey, randomBytes, sign, generateKeyPairSync, createPublicKey } from 'node:crypto';
 import https from 'node:https';
+import net from 'node:net';
 
 export const b64u = (buf) => Buffer.from(buf).toString('base64url');
 export const unb64u = (s) => Buffer.from(String(s), 'base64url');
@@ -57,6 +59,9 @@ export class WebPush {
 
   subscribe({ endpoint, keys }, device = null) {
     if (typeof endpoint !== 'string' || !/^https:\/\//.test(endpoint) || endpoint.length > 1000) throw new TypeError('invalid endpoint');
+    const host = new URL(endpoint).hostname.replace(/^\[|\]$/g, '');
+    if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') || (net.isIP(host) && isPrivateAddress(host))) throw new TypeError('endpoint host not allowed');
+    if (this.count() >= 30 && !this.db.prepare('SELECT 1 FROM push_subs WHERE endpoint=?').get(endpoint)) throw new TypeError('too many push subscriptions');
     const p = unb64u(keys?.p256dh ?? ''), a = unb64u(keys?.auth ?? '');
     if (p.length !== 65 || p[0] !== 4 || a.length < 16) throw new TypeError('invalid keys');
     this.db.prepare('INSERT INTO push_subs (endpoint, p256dh, auth, device, created_at) VALUES (?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, device=excluded.device')

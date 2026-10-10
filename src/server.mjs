@@ -99,7 +99,7 @@ const server = createServer(async (req, res) => {
       && !ctx.auth.checkTotp(String(req.headers['x-friday-totp'] ?? ''))) {
     return send(res, 403, { error: 'totp_required' });
   }
-  if (req.method === 'GET' && url.pathname === '/v1/events') return openEventStream(req, res, ctx.bus);
+  if (req.method === 'GET' && url.pathname === '/v1/events') return openEventStream(req, res, ctx.bus, { principal: principal.id });
   try {
     const out = await router.dispatch(req.method, url.pathname, { req, url, body: bodyReader(req), rawBody: rawReader(req), principal });
     if (!out) return send(res, 404, { error: 'not_found' });

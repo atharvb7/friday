@@ -78,8 +78,10 @@ export class ChatStore {
     return this.db.prepare('SELECT id, role, content, created_at FROM messages WHERE conversation_id=? ORDER BY created_at ASC LIMIT ?').all(conversationId, cap);
   }
 
-  // Window formatted for a chat-completions provider (oldest-first, capped).
+  // The NEWEST `limit` messages, oldest-first (the model must see recent turns, not the start of the chat).
   historyForProvider(conversationId, limit = 20) {
-    return this.listMessages(conversationId, limit).map((m) => ({ role: m.role, content: m.content }));
+    if (!this.getConversation(conversationId)) throw new Error('conversation_not_found');
+    const n = Number.isInteger(limit) && limit > 0 ? Math.min(limit, MAX_HISTORY_MESSAGES) : 20;
+    return this.db.prepare('SELECT role, content FROM (SELECT role, content, created_at, rowid FROM messages WHERE conversation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?) ORDER BY created_at ASC, rowid ASC').all(conversationId, n);
   }
 }

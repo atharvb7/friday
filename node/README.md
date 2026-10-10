@@ -10,7 +10,7 @@ cd node && npm install                      # playwright-core only; uses your in
 # On the Friday server/laptop running Friday (owner):
 node ../bin/friday.mjs device add laptop read,node      # prints a token ONCE
 # On the laptop:
-node friday-node.mjs pair --server https://<friday-host> --token fdv_...  --name laptop
+FRIDAY_NODE_TOKEN=fdv_... node friday-node.mjs pair --server https://<friday-host> --name laptop
 node friday-node.mjs run
 ```
 A dedicated Chrome profile lives in `~/.friday-node/chrome-profile`. **Log in to sites there yourself, once**

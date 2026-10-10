@@ -123,3 +123,26 @@ test('kind router: computer tasks stay queued while the laptop is offline; other
     store.close();
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('computer agent: risk is decided from the TARGET LABEL, not the model\'s self-declared intent; grants never cover uploads', async () => {
+  const r = rig();
+  try {
+    const a = r.agent;
+    assert.equal(a.decision('browser_click', { ref: 1 }, true, 'Send message button').decision, 'ask', 'a Send button needs approval even with intent omitted');
+    assert.equal(a.decision('browser_click', { ref: 1, intent: 'navigate' }, true, 'Send').decision, 'ask', 'lying about intent does not help');
+    assert.equal(a.decision('browser_click', { ref: 1 }, true, 'Buy now').cat, 'spending');
+    assert.equal(a.decision('browser_click', { ref: 1 }, true, 'Buy now').decision, 'ask');
+    assert.equal(a.decision('browser_click', { ref: 1 }, true, 'Delete account').cat, 'deletion');
+    assert.equal(a.decision('browser_click', { ref: 1 }, true, 'Read more').decision, 'allow');
+    assert.equal(a.decision('browser_type', { ref: 2, text: 'hi', submit: true }, true, 'Search').decision, 'ask', 'submit=true presses Enter -> escalates');
+    assert.equal(a.decision('browser_upload', { ref: 3, path: '/x' }, true).decision, 'ask', 'an approved goal does not pre-approve uploads');
+    // labels learned from the last snapshot drive the decision end to end
+    r.nodes.dispatch = async ({ action }) => (action === 'browser_snapshot' ? { elements: [{ ref: 7, name: 'Send', role: 'button' }, { ref: 8, name: 'Read more' }] } : { ok: true });
+    r.script.push(turn([r.call('browser_snapshot', {})]), turn([r.call('browser_click', { ref: 7 })]), end('x'));
+    const p = r.agent.run({ taskId: 't', instruction: 'x', meta: { grant: true } });
+    await new Promise((res) => setTimeout(res, 40));
+    assert.equal(r.approvals.list().length, 1, 'clicking the Send button asked for approval');
+    assert.match(r.approvals.list()[0].summary, /on “Send/);
+    await r.approvals.decide(r.approvals.list()[0].id, false); await p;
+  } finally { r.done(); }
+});

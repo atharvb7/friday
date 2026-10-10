@@ -36,6 +36,7 @@ export class Rules {
     if (!where || typeof where !== 'object' || Array.isArray(where) || Object.keys(where).length > 5) throw new TypeError('where must be an object with <=5 keys');
     for (const [k, v] of Object.entries(where)) if (!/^[a-zA-Z0-9_.]{1,40}$/.test(k) || !['string', 'number', 'boolean'].includes(typeof v)) throw new TypeError('where values must be string/number/boolean');
     if (!action || !['notify', 'task', 'briefing'].includes(action.kind)) throw new TypeError('action.kind must be notify|task|briefing');
+    if (action.kind === 'task' && (event.startsWith('task.') || event === 'job.task_queued' || event.startsWith('research.'))) throw new TypeError('a task rule cannot trigger on task/research events (it would loop); use notify');
     if (action.kind !== 'briefing' && (typeof action.title !== 'string' || !action.title.trim() || action.title.length > 200)) throw new TypeError('action.title required');
     if (action.kind === 'task' && (typeof action.instruction !== 'string' || !action.instruction.trim() || action.instruction.length > 8000)) throw new TypeError('action.instruction required for task rules');
     if (!(Number.isInteger(cooldownSec) && cooldownSec >= 30 && cooldownSec <= 86400)) throw new TypeError('cooldownSec 30..86400');
@@ -69,6 +70,7 @@ export class Rules {
       if (today >= rule.max_per_day) continue;
       this.db.prepare('UPDATE rules SET last_fired_at=?, fire_count=fire_count+1 WHERE id=?').run(new Date(t).toISOString(), rule.id);
       this.db.prepare('INSERT INTO rule_fires (rule_id, ts) VALUES (?,?)').run(rule.id, new Date(t).toISOString());
+      if (rule.action.kind === 'task' && this.db.prepare("SELECT COUNT(*) AS n FROM rule_fires f JOIN rules r ON r.id=f.rule_id WHERE f.ts > ? AND r.action LIKE '%\"kind\":\"task\"%'").get(new Date(t - 24 * 3600_000).toISOString()).n > 30) continue; // global cap on rule-spawned agent runs
       this.#depth++;
       try { this.#act(rule, evt); } catch (error) { this.bus.publish('rule.error', { id: rule.id, error: String(error.message).slice(0, 160) }); }
       finally { this.#depth--; }

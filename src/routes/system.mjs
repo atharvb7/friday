@@ -53,14 +53,17 @@ export function systemRoutes(router, ctx) {
 
   // Compact state for small devices (ESP32): poll this, or stream /v1/companion/stream.
   router.get('/v1/companion', () => [200, ctx.companion.compute()]);
-  router.get('/v1/companion/stream', ({ req }) => ({
+  const compStreams = new Map();
+  router.get('/v1/companion/stream', ({ req, principal }) => ({
     raw: async (res) => {
+      if ((compStreams.get(principal.id) ?? 0) >= 2) { res.writeHead(503, { 'Content-Type': 'application/json' }); res.end('{"error":"too_many_streams"}'); return; }
+      compStreams.set(principal.id, (compStreams.get(principal.id) ?? 0) + 1);
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
       const send = (c) => res.write(`event: state\ndata: ${JSON.stringify(c)}\n\n`);
       send(ctx.companion.compute());
       const off = ctx.bus.subscribe((e) => { if (e.type === 'companion.state_changed') send(e.data); });
       const hb = setInterval(() => res.write(': hb\n\n'), 15000);
-      req.on('close', () => { clearInterval(hb); off(); });
+      req.on('close', () => { clearInterval(hb); off(); compStreams.set(principal.id, Math.max(0, (compStreams.get(principal.id) ?? 1) - 1)); });
     },
   }));
 

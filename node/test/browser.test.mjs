@@ -37,7 +37,7 @@ test('real Chrome: snapshot -> click/type/upload by ref, screenshot, private url
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   const dir = mkdtempSync(join(tmpdir(), 'fn-br-'));
   const dl = join(dir, 'Downloads'); mkdirSync(dl); writeFileSync(join(dl, 'a.txt'), 'hi');
-  const b = new BrowserController({ chromium, profileDir: join(dir, 'profile'), headless: true, allowedDirs: [dl] });
+  const b = new BrowserController({ chromium, profileDir: join(dir, 'profile'), headless: true, allowedDirs: [dl], allowPrivate: true });
   try {
     await assert.rejects(() => b.open({ url: `http://127.0.0.1:${srv.address().port}/` }), /private_address_blocked/);
     // test-only: bypass host policy by pointing the page at the local server directly
@@ -63,4 +63,21 @@ test('real Chrome: snapshot -> click/type/upload by ref, screenshot, private url
     await assert.rejects(() => b.click({ ref: 9999 }), /Timeout|waiting/);
     await assert.rejects(() => b.click({ ref: 'x' }), /invalid_ref/);
   } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('real Chrome: private/loopback targets are blocked at the request level (incl. IPv6-mapped and redirects)', { skip: !existsSync(CHROME) }, async () => {
+  const internal = http.createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('INTERNAL-SECRET'); });
+  await new Promise((r) => internal.listen(0, '127.0.0.1', r));
+  const port = internal.address().port;
+  const dir = mkdtempSync(join(tmpdir(), 'fn-br2-'));
+  const b = new BrowserController({ chromium, profileDir: join(dir, 'profile'), headless: true, allowedDirs: [] });
+  try {
+    const page = await b.ensure();
+    for (const url of [`http://127.0.0.1:${port}/`, `http://[::ffff:127.0.0.1]:${port}/`, `http://localhost:${port}/`]) {
+      const r = await page.goto(url, { timeout: 8000 }).catch((e) => ({ failed: String(e.message).slice(0, 80) }));
+      const text = r.failed ? '' : await page.content();
+      assert.ok(r.failed || !text.includes('INTERNAL-SECRET'), `must not load ${url}`);
+      assert.ok(!text.includes('INTERNAL-SECRET'));
+    }
+  } finally { await b.close(); internal.close(); rmSync(dir, { recursive: true, force: true }); }
 });

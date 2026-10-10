@@ -11,7 +11,7 @@ export function platformRoutes(router, ctx) {
   // Install from a folder inside Friday's own skills inbox only (no arbitrary paths, no git clone).
   router.post('/v1/skills/install', async ({ body }) => {
     const b = await body();
-    if (typeof b.folder !== 'string' || !/^[A-Za-z0-9._-]+$/.test(b.folder)) return [400, { error: 'invalid_folder' }];
+    if (typeof b.folder !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(b.folder)) return [400, { error: 'invalid_folder' }];
     try { const r = skills.install(resolve(dataDir, 'skills-inbox', b.folder), resolve(dataDir, 'skills')); bus.publish('skill.installed', { name: r.name }); return [201, r]; }
     catch (e) { return bad(e); }
   });

@@ -15,6 +15,11 @@ const ACTIONS = {
   ui_act: ['computer', 'consequential'], ui_set_text: ['computer', 'consequential'], open_app: ['computer', 'consequential'], open_target: ['computer', 'consequential'],
 };
 const INTERACTIVE = new Set(['ui_act', 'ui_set_text', 'open_app', 'open_target', 'browser_click', 'browser_type', 'browser_press', 'browser_upload']);
+// Risk is decided by Friday, not by the model: the label of the element about to be acted on
+// escalates the action no matter what `intent` the model declared.
+const SPEND_RE = /\b(buy|pay|purchase|checkout|check ?out|place (an? )?order|order now|subscribe|donate|upgrade|add (a )?payment)\b/i;
+const DELETE_RE = /\b(delete|remove|erase|discard|clear all|empty (trash|bin)|uninstall|deactivate|close account)\b/i;
+const SEND_RE = /\b(send|post|publish|tweet|share|submit|reply|comment|forward|invite|confirm|transfer|sign ?out|log ?out|unsubscribe|apply|email|message|chat|compose)\b/i;
 const INTENTS = ['read', 'navigate', 'input', 'submit_external', 'purchase'];
 
 const t = (name, description, properties = {}, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties: { ...properties, intent: { type: 'string', enum: INTENTS, description: 'Why: read | navigate | input | submit_external (sends/posts/shares something to another person or service) | purchase (spends money). Be honest: this decides whether the user must approve.' } }, required, additionalProperties: false } } });
@@ -60,13 +65,20 @@ export class ComputerAgent {
     return { ready: true };
   }
 
-  decision(action, args, grant) {
+  decision(action, args, grant, label = '') {
     const [category, baseRisk] = ACTIONS[action] ?? ['computer', 'critical'];
     let cat = category, risk = baseRisk;
     if (args?.intent === 'submit_external') { cat = 'messaging'; risk = 'consequential'; }
     if (args?.intent === 'purchase') { cat = 'spending'; risk = 'critical'; }
-    // A goal the user already approved/allowed covers its own browser/computer steps (never messaging/spending/critical).
-    if (grant && (cat === 'browser' || cat === 'computer') && risk !== 'critical') return { cat, risk, decision: 'allow' };
+    const acts = ['browser_click', 'browser_type', 'browser_press', 'ui_act', 'ui_set_text'].includes(action);
+    if (acts && cat !== 'spending') {
+      const text = `${label} ${args?.action ?? ''}`;
+      if (SPEND_RE.test(text)) { cat = 'spending'; risk = 'critical'; }
+      else if (DELETE_RE.test(text)) { cat = 'deletion'; risk = 'consequential'; }
+      else if (SEND_RE.test(text) || args?.submit === true || (action === 'browser_press' && /^(Enter|Return)$/i.test(String(args?.key)) && SEND_RE.test(this.lastTyped))) { cat = 'messaging'; risk = 'consequential'; }
+    }
+    // An approved goal covers its own browsing/clicking/typing — never uploads, messaging, spending or deletion.
+    if (grant && action !== 'browser_upload' && (cat === 'browser' || cat === 'computer') && risk !== 'critical') return { cat, risk, decision: 'allow' };
     return { cat, risk, decision: this.policy.decide({ category: cat, risk }) };
   }
 
@@ -80,20 +92,29 @@ export class ComputerAgent {
     });
   }
 
+  lastTyped = '';
+  labels = new Map();
+  #remember(name, args, result) {
+    if (name === 'browser_snapshot' && Array.isArray(result?.elements)) { this.labels = new Map(result.elements.map((e) => [`b${e.ref}`, `${e.name ?? ''} ${e.role ?? ''}`])); }
+    if (name === 'ui_tree' && Array.isArray(result?.elements)) for (const e of result.elements) this.labels.set(`u${e.ref}`, `${e.name ?? ''} ${e.role ?? ''}`);
+  }
+
   async #perform(name, args, { grant, signal, taskId, onTrace }) {
     if (name === 'describe_screen') return this.#describe(args, signal);
     if (!ACTIONS[name]) return { error: 'unknown_action' };
     const { intent, ...nodeArgs } = args ?? {};
-    const d = this.decision(name, args, grant);
+    const label = this.labels.get(`${name.startsWith('ui_') ? 'u' : 'b'}${args?.ref}`) ?? '';
+    if (name === 'browser_type') this.lastTyped = label;
+    const d = this.decision(name, args, grant, label);
     if (d.decision === 'deny') return { error: 'forbidden' };
     if (d.decision === 'ask') {
-      const summary = `${name} ${JSON.stringify(nodeArgs).slice(0, 160)}${intent ? ` [intent: ${intent}]` : ''}`;
+      const summary = `${name} ${JSON.stringify(nodeArgs).slice(0, 160)}${label ? ` on “${label.trim().slice(0, 60)}”` : ''}${intent ? ` [intent: ${intent}]` : ''}`;
       const a = this.approvals.request({ category: d.cat, risk: d.risk, tool: 'computer_action', summary, payload: { action: name, args: nodeArgs, taskId } });
       onTrace?.('approval_wait', { approval: a.id.slice(0, 8), summary });
       if (!(await this.#waitApproval(a.id, signal))) return { error: 'not_approved' };
     }
     for (let attempt = 0; attempt < 6; attempt++) {
-      try { return await this.nodes.dispatch({ action: name, args: nodeArgs, interactive: INTERACTIVE.has(name) }); }
+      try { const res = await this.nodes.dispatch({ action: name, args: nodeArgs, interactive: INTERACTIVE.has(name) }); this.#remember(name, args, res); return res; }
       catch (e) {
         if (e.code === 'user_active') { onTrace?.('waiting_for_user_idle', { ms: e.retryAfterMs }); await this.sleep(Math.min(e.retryAfterMs ?? 5000, 30_000) + 500, signal); continue; }
         return { error: e.message };

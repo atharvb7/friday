@@ -250,7 +250,7 @@ test('rules: fire on matching events with templates, honour filters/cooldown/dai
     const rules = new Rules({ store: r.store, bus: r.bus, notifications: r.notifications, now: () => t });
     rules.start();
     const a = rules.create({ name: 'research done', event: 'research.saved', where: {}, action: { kind: 'notify', title: 'Saved: {{topic}}', body: 'id {{id}}' }, cooldownSec: 60, maxPerDay: 2 });
-    rules.create({ name: 'fail -> investigate', event: 'task.failed', where: { kind: 'coding' }, action: { kind: 'task', title: 'Investigate {{taskId}}', instruction: 'Look into failure {{taskId}}' }, cooldownSec: 30 });
+    rules.create({ name: 'fail -> investigate', event: 'device.connected', where: { kind: 'coding' }, action: { kind: 'task', title: 'Investigate {{taskId}}', instruction: 'Look into failure {{taskId}}' }, cooldownSec: 30 });
     // loop-prone / invalid definitions are refused
     assert.throws(() => rules.create({ name: 'x', event: 'notification.created', action: { kind: 'notify', title: 'x' } }), /event must start with/);
     assert.throws(() => rules.create({ name: 'x', event: 'task.failed', action: { kind: 'notify', title: 'x' }, cooldownSec: 1 }), /cooldownSec/);
@@ -265,9 +265,10 @@ test('rules: fire on matching events with templates, honour filters/cooldown/dai
     t += 61_000; r.bus.publish('research.saved', { topic: 'C', id: 'y' });
     assert.equal(r.notifications.list().filter((n) => n.title.startsWith('Saved')).length, 2, 'daily cap of 2');
 
-    r.bus.publish('task.failed', { taskId: 't1', kind: 'research' });
+    assert.throws(() => rules.create({ name: 'loop', event: 'task.completed', action: { kind: 'task', title: 'x', instruction: 'y' } }), /would loop/);
+    r.bus.publish('device.connected', { taskId: 't1', kind: 'research' });
     assert.equal(r.store.listTasks().length, 0, 'filter must match');
-    r.bus.publish('task.failed', { taskId: 't2', kind: 'coding' });
+    r.bus.publish('device.connected', { taskId: 't2', kind: 'coding' });
     const q = r.store.listTasks();
     assert.equal(q.length, 1);
     assert.match(q[0].instruction, /Look into failure t2/); assert.match(q[0].instruction, /untrusted/);

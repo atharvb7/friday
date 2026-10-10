@@ -86,9 +86,10 @@ test('dsh: failure modes map to honest errors; cancel rejects AbortError; timeou
 test('sandbox args hide home, app and data dir; re-expose only workspace + dsh home', () => {
   const args = buildBwrapArgs({ home: '/home/u', appRoot: '/home/u/app', dataDir: '/home/u/app/data', writable: [], readonly: [] });
   const tmpfs = args.map((a, i) => (a === '--tmpfs' ? args[i + 1] : null)).filter(Boolean);
-  assert.deepEqual(tmpfs.filter((p) => p !== '/tmp'), []); // paths don't exist here: nothing to mount
+  assert.deepEqual(tmpfs.filter((p) => p !== '/tmp' && p !== '/run'), []); // paths don't exist here: nothing else to mount
   const real = buildBwrapArgs({ home: tmpdir(), appRoot: join(tmpdir(), 'zz-app'), dataDir: join(tmpdir(), 'zz-app', 'data'), writable: [], readonly: [] });
-  assert.ok(real.includes('--die-with-parent') && real.includes('--unshare-pid'));
+  assert.ok(real.includes('--die-with-parent') && real.includes('--unshare-pid') && real.includes('--new-session') && real.includes('--cap-drop'));
+  const i = real.indexOf('--tmpfs'); assert.ok(real.join(' ').includes('--tmpfs /run'), '/run (D-Bus, ssh-agent, docker.sock) must be hidden');
 });
 
 test('dsh + real bubblewrap: agent cannot see friday secrets or write outside its workspace', { skip: !bwrapUsable() }, async () => {
@@ -135,4 +136,14 @@ out({type:'status',phase:'turn_end',turn:1,reason:{kind:'completed'}}); out({typ
     const res = await orig({ taskId: 'x', instruction: 'y' }); runs++;
     assert.match(res.error, /boom/); assert.equal(runs, 1);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('real bubblewrap: /run sockets (docker, session bus, ssh-agent) are unreachable from the sandbox', { skip: !bwrapUsable() }, async () => {
+  const { spawnSync } = await import('node:child_process');
+  const args = buildBwrapArgs({ home: '/nonexistent-home', appRoot: '/nonexistent-app', dataDir: '/nonexistent-data', writable: [], readonly: [] });
+  const r = spawnSync('bwrap', [...args, 'sh', '-c', 'ls /run | grep -v -e "^systemd$" -e "^resolvconf$" | wc -l; test -e /var/run/docker.sock && echo DOCKER_VISIBLE || echo no-docker'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const [count, docker] = r.stdout.trim().split('\n');
+  assert.equal(count.trim(), '0', `unexpected entries in /run: ${r.stdout}`);
+  assert.equal(docker, 'no-docker');
 });
