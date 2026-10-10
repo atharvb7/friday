@@ -10,7 +10,7 @@
     "start": "node src/server.mjs",
     "test": "node --test",
     "friday": "node bin/friday.mjs",
-    "check": "node --check bin/friday.mjs && node --check public/app.js"
+    "check": "node --check bin/friday.mjs && node --check public/app.js && node --check src/server.mjs"
   },
   "bin": {
     "friday": "bin/friday.mjs"

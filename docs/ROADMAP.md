@@ -13,8 +13,8 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 ## Phase 0 — Hygiene  (in progress)
 - [x] Audit repo (docs/audit-and-phase-plan-2026-10-10.md)
 - [x] Commit existing work in slices; archive contradicting docs; GLB moved to public/assets with attribution
-- [ ] `friday` CLI: start / stop / status / doctor / logs
-- [ ] Split server.mjs into router + route modules + container
+- [x] `friday` CLI: start / stop / restart / status / logs / doctor (test/cli.test.mjs)
+- [x] server.mjs split: context.mjs (composition root), http/router+static, routes/* (148 tests green)
 - [ ] Rotate keys (user)
 ## Phase 1 — Server foundation
 - [ ] Portable packaging (env-only paths, systemd unit template, optional Docker), 5 GB cgroup
