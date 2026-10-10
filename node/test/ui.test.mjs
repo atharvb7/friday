@@ -48,6 +48,18 @@ test('UI smoke (real Chrome): every view renders without errors; emoji picker in
     await page.waitForTimeout(200);
     const atBottom = await page.evaluate(() => { const m = document.getElementById('msgs'); return m.scrollHeight - m.scrollTop - m.clientHeight < 5; });
     assert.equal(atBottom, true, 'new content keeps the chat scrolled to the bottom');
+    // ChatGPT-style scrolling: the page and sidebar never scroll; only the message list (and conversation list) do.
+    await page.evaluate(() => { const c = document.querySelector('.convos'); for (let i = 0; i < 80; i++) { const b = document.createElement('button'); b.className = 'convo'; b.textContent = `conversation ${i}`; c.append(b); } });
+    await page.waitForTimeout(150);
+    const m = await page.evaluate(() => {
+      const q = (s) => document.querySelector(s); const sc = (e) => e.scrollHeight - e.clientHeight;
+      return { page: sc(document.documentElement), main: sc(q('#main')), side: sc(q('.sidebar')), shell: q('.shell').getBoundingClientRect().height, win: innerHeight, msgs: sc(q('#msgs')), convos: sc(q('.convos')), composerBottom: q('.composer').getBoundingClientRect().bottom };
+    });
+    assert.ok(m.page <= 1 && m.main <= 1 && m.side <= 1, `page/main/sidebar must not scroll: ${JSON.stringify(m)}`);
+    assert.ok(m.msgs > 100 && m.convos > 100, 'message list and conversation list scroll on their own');
+    assert.ok(m.composerBottom <= m.win + 1, 'composer stays inside the window');
+    await page.evaluate(() => { document.getElementById('msgs').scrollTop = 0; });
+    assert.equal(await page.evaluate(() => document.querySelector('.sidebar').getBoundingClientRect().top), 0, 'sidebar does not move when messages scroll');
     assert.deepEqual(errors, [], `no console/page errors: ${errors.join(' | ')}`);
   } finally { await browser?.close(); child.kill('SIGTERM'); await new Promise((r) => { child.on('exit', r); setTimeout(r, 5000); }); rmSync(dir, { recursive: true, force: true }); }
 });

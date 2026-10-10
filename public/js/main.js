@@ -75,6 +75,7 @@ function go(name) {
   try { history.replaceState(null, '', `#${name}`); } catch { /* ignore */ }
   for (const [n, e] of Object.entries(navEls)) e.b.classList.toggle('active', n === name);
   clear(mainEl);
+  mainEl.classList.toggle('fixed', name === 'chat');
   app.view = VIEWS[name].render({ app, api, toast, go, refresh });
   mainEl.append(app.view.el);
 }
