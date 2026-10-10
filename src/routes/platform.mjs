@@ -27,6 +27,13 @@ export function platformRoutes(router, ctx) {
   router.get('/v1/research/projects/:id([a-f0-9-]+)', ({ params }) => { const p = ctx.researchMemory.project(params.id); return p ? [200, { project: p }] : [404, { error: 'not_found' }]; });
   router.get('/v1/research/projects/:id([a-f0-9-]+)/report', ({ params }) => { const r = ctx.researchMemory.report(params.id); return r ? [200, { markdown: r }] : [404, { error: 'not_found' }]; });
 
+  router.get('/v1/push/key', () => [200, { publicKey: ctx.push.publicKey, subscriptions: ctx.push.count() }]);
+  router.post('/v1/push/subscribe', async ({ body, principal }) => {
+    const b = await body();
+    try { ctx.push.subscribe(b.subscription ?? b, principal.name ?? principal.id); return [201, { ok: true }]; } catch (e) { return bad(e); }
+  });
+  router.post('/v1/push/unsubscribe', async ({ body }) => { const b = await body(); return [200, { removed: ctx.push.unsubscribe(String(b.endpoint ?? '')) }]; });
+
   router.get('/v1/notifications', ({ url }) => [200, { notifications: notifications.list({ unreadOnly: url.searchParams.get('unread') === '1' }), unread: notifications.unreadCount() }]);
   router.post('/v1/notifications/read-all', () => [200, { marked: notifications.markAllRead() }]);
   router.post('/v1/notifications/:id([a-f0-9-]+)/read', ({ params }) => { const ok = notifications.markRead(params.id); return [ok ? 200 : 404, { read: ok }]; });

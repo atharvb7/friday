@@ -46,6 +46,7 @@ import { Skills } from './skills.mjs';
 import { loadMcpConfig, renderOverlay, envToForward, withDefaults } from './mcp-config.mjs';
 import { ResearchMemory } from './research-memory.mjs';
 import { NodeHub } from './nodes.mjs';
+import { WebPush } from './webpush.mjs';
 import { KindRouterAdapter } from './adapters.mjs';
 import { ComputerAgent } from './agent/computer-agent.mjs';
 
@@ -150,6 +151,8 @@ export function createContext({ appRoot, env = process.env }) {
   // verified, else honest local fallback.
   ctx.chat.onMessage = ({ conversationId, role }) => bus.publish('chat.message', { conversationId, role });
   ctx.notifications = new Notifications(store, bus);
+  ctx.push = new WebPush({ store, settings, subject: env.FRIDAY_PUSH_SUBJECT ?? 'mailto:friday@localhost' });
+  bus.subscribe((e) => { if (e.type === 'notification.created') void ctx.push.send({ title: e.data.title, body: e.data.body, tag: e.data.id }); });
   // Task finished -> tell the user where they asked (chat) and in the inbox.
   const prevOnEvent = store.onEvent;
   store.onEvent = (e) => {

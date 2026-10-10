@@ -49,6 +49,12 @@ export function render({ app, api, toast, go }) {
       h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: async () => { try { await api('/v1/proactive', { method: 'POST', body: { enabled: on.checked, maxPerDay: Number(cap.value), quietHours: { start: qs.value, end: qe.value }, briefing: { enabled: bon.checked, time: bt.value } } }); toast('Saved.'); } catch (e) { toast(e.message); } } }, 'Save'),
         h('button', { class: 'btn', onclick: async () => { toast('Composing…'); const r = await api('/v1/briefing/now', { method: 'POST' }); alert(r.briefing); } }, 'Preview briefing')));
 
+    // Phone notifications (Web Push)
+    const pushKey = await api('/v1/push/key');
+    const pushState = h('span', { class: 'muted' }, `${pushKey.subscriptions} device(s) subscribed`);
+    section('Notifications on this device', h('p', { class: 'muted' }, 'Get a push when a task finishes, a reminder fires, or I need your approval — even with the app closed. Needs HTTPS (e.g. via Tailscale) or localhost.'),
+      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => enablePush(pushKey.publicKey, pushState) }, 'Enable notifications'), pushState));
+
     // Devices & security (owner only)
     if (owner) {
       const { devices } = await api('/v1/devices');
@@ -71,6 +77,19 @@ export function render({ app, api, toast, go }) {
     section('Models (last 24h)', models.stats24h.length ? h('div', { class: 'list' }, models.stats24h.map((s) => h('div', { class: 'row wrap' }, h('span', { class: 'chip accent' }, s.role), h('span', { class: 'mono grow' }, s.model.split('/').pop()), h('span', { class: 'muted' }, `${s.ok_calls}/${s.calls} ok · ${s.avg_ms}ms · ${(s.prompt_tokens + s.completion_tokens).toLocaleString()} tok`)))) : h('p', { class: 'muted' }, 'No model calls yet.'));
     const [sk, mcp] = await Promise.all([api('/v1/skills'), owner ? api('/v1/mcp') : Promise.resolve({ config: { servers: {} } })]);
     section('Skills & tools', h('div', { class: 'row wrap' }, sk.skills.map((s) => h('span', { class: 'chip', title: s.description }, s.name))), h('div', { class: 'muted' }, `MCP servers: ${Object.keys(mcp.config.servers).join(', ') || 'defaults from your keys (SerpApi, GitHub)'}`));
+  }
+
+  async function enablePush(publicKey, label) {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error('This browser does not support push (iPhone: add Friday to the Home Screen first).');
+      const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
+      if ((await Notification.requestPermission()) !== 'granted') throw new Error('Permission not granted.');
+      const raw = atob(publicKey.replace(/-/g, '+').replace(/_/g, '/'));
+      const key = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+      const sub = await (await reg.pushManager.getSubscription() ?? reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
+      await api('/v1/push/subscribe', { method: 'POST', body: { subscription: sub.toJSON() } });
+      label.textContent = 'Enabled on this device ✓'; toast('Notifications enabled.');
+    } catch (e) { toast(e.message); }
   }
 
   async function enrollTotp() {
