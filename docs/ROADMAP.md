@@ -41,10 +41,13 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - [x] Task results flow back into the originating chat + notification inbox (`/v1/notifications`)
 - [ ] Real MCP servers installed and tested (SerpApi, GitHub) — Phase 5
 - [ ] DSH session resume (`--session-id`) for continuing long tasks
-## Phase 4 — Always-on assistant
-- [ ] Reminders + durable scheduler with push notifications (phone)
-- [ ] Proactive loop (briefings, overdue tasks, CI failures), anti-annoyance rules
-- [ ] Autonomy tiers enforced in policy layer
+## Phase 4 — Always-on assistant  (done; reminders verified live 2026-10-10)
+- [x] Reminders + recurring agent jobs (interval/daily/weekdays/weekly/monthly), timezone- and DST-correct, durable, missed fires collapse to one, never double-fire
+- [x] Notification inbox + SSE push (`notification.created`); results/reminders also land in the originating chat
+- [x] Proactive loop: stuck tasks, agent-runtime-down, brain-down, low disk, morning briefing (morning window only); quiet hours, daily cap, per-topic dedupe, kill switch
+- [x] Autonomy tiers per category (ask/trusted/autonomous/high), `high` time-boxed (<=12h) + auto-expiry + revoked by emergency stop; critical actions only under high
+- [x] Approvals: exact-payload binding, execute-once, tamper check, 24h expiry; gated tools auto-register; devices need TOTP to decide
+- [ ] Web Push to the phone (needs HTTPS PWA + VAPID) — Phase 7
 ## Phase 5 — Research, coding, GitHub
 - [ ] SerpApi MCP + fetch/extract + persisted research pipeline with citations
 - [ ] Agent-driven coding workspaces, tests, GitHub MCP PR flow

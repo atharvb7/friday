@@ -2,6 +2,7 @@
 //   safe  — runs immediately (reads, the user's own memory, queueing tasks)
 //   gated — never runs directly; the brain stages it for explicit approval
 // Results are small JSON objects; text from external sources is data only.
+import { formatLocal, systemTimezone } from '../time.mjs';
 const clip = (s, n) => String(s ?? '').slice(0, n);
 const str = (v, name, max = 2000) => {
   if (typeof v !== 'string' || !v.trim() || v.length > max) throw new TypeError(`${name} must be a non-empty string (<=${max})`);
@@ -10,7 +11,7 @@ const str = (v, name, max = 2000) => {
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 
 export function buildFridayTools(ctx) {
-  const { memory, store, tools, indexer, skills } = ctx;
+  const { memory, store, tools, indexer, skills, jobs, proactive, settings } = ctx;
   const list = [
     {
       name: 'memory_save', risk: 'safe',
@@ -92,6 +93,58 @@ export function buildFridayTools(ctx) {
       run: async (a) => { const r = (await tools.run({ taskId: 'ad-hoc-local', tool: 'file.read', args: { path: str(a.path, 'path', 500), maxBytes: 8192 } })).result; return { path: r.path, truncated: r.truncated, text: clip(r.bytes, 6000) }; },
     },
     {
+      name: 'reminder_create', risk: 'safe',
+      description: 'Create a reminder (optionally recurring). `when` is an ISO 8601 time: local wall-clock like 2026-10-12T09:30 (user timezone) or with an offset. Call time_now first if you need the current date. Omit `when` only for recurring reminders.',
+      parameters: obj({
+        text: { type: 'string', description: 'What to remind about' },
+        when: { type: 'string' },
+        recurrence: { type: 'object', description: '{type:"interval",minutes} | {type:"daily",time:"HH:MM"} | {type:"weekdays",time} | {type:"weekly",days:[1..7 Mon=1],time} | {type:"monthly",day,time}' },
+      }, ['text']),
+      run: (a, { conversationId } = {}) => {
+        const j = jobs.create({ kind: 'reminder', title: str(a.text, 'text', 200), when: a.when ?? null, recurrence: a.recurrence ?? null, conversationId });
+        return { created: true, id: j.id.slice(0, 8), next_fire_local: formatLocal(new Date(j.due_at), j.timezone), next_fire_utc: j.due_at };
+      },
+    },
+    {
+      name: 'schedule_task', risk: 'safe',
+      description: 'Schedule a background agent task to run later or repeatedly (e.g. "every Monday 8am research X and write a report"). Same time rules as reminder_create.',
+      parameters: obj({ title: { type: 'string' }, instruction: { type: 'string', description: 'Self-contained instructions for the agent' }, when: { type: 'string' }, recurrence: { type: 'object' } }, ['title', 'instruction']),
+      run: (a, { conversationId } = {}) => {
+        const j = jobs.create({ kind: 'task', title: str(a.title, 'title', 200), body: str(a.instruction, 'instruction', 20000), when: a.when ?? null, recurrence: a.recurrence ?? null, conversationId });
+        return { scheduled: true, id: j.id.slice(0, 8), next_fire_local: formatLocal(new Date(j.due_at), j.timezone), next_fire_utc: j.due_at };
+      },
+    },
+    {
+      name: 'reminder_list', risk: 'safe',
+      description: 'List active reminders and scheduled tasks with their next fire time.',
+      parameters: obj({}),
+      run: () => ({ jobs: jobs.list().slice(0, 25).map((j) => ({ id: j.id.slice(0, 8), kind: j.kind, title: clip(j.title, 100), next_fire_local: formatLocal(new Date(j.due_at), j.timezone), recurrence: j.recurrence })) }),
+    },
+    {
+      name: 'reminder_cancel', risk: 'safe',
+      description: 'Cancel a reminder or scheduled task by id prefix.',
+      parameters: obj({ id: { type: 'string' } }, ['id']),
+      run: (a) => { const j = jobs.findByPrefix(str(a.id, 'id', 64)); return j ? { cancelled: jobs.cancel(j.id) } : { cancelled: false, reason: 'not_found_or_ambiguous' }; },
+    },
+    {
+      name: 'reminder_snooze', risk: 'safe',
+      description: 'Push a reminder later by N minutes.',
+      parameters: obj({ id: { type: 'string' }, minutes: { type: 'integer' } }, ['id', 'minutes']),
+      run: (a) => { const j = jobs.findByPrefix(str(a.id, 'id', 64)); return j ? { snoozed: jobs.snooze(j.id, Number(a.minutes)) } : { snoozed: false, reason: 'not_found_or_ambiguous' }; },
+    },
+    {
+      name: 'set_timezone', risk: 'safe',
+      description: "Set the user's IANA timezone (e.g. Asia/Kolkata) used for reminders and briefings.",
+      parameters: obj({ timezone: { type: 'string' } }, ['timezone']),
+      run: async (a) => { const { isValidTimezone } = await import('../time.mjs'); if (!isValidTimezone(a.timezone)) throw new TypeError('unknown timezone'); settings.set('timezone', a.timezone); return { timezone: a.timezone }; },
+    },
+    {
+      name: 'briefing_now', risk: 'safe',
+      description: 'Compose the briefing right now (tasks, reminders, finished work) and return it.',
+      parameters: obj({}),
+      run: async () => ({ briefing: await proactive.composeBriefing(settings.get('timezone', null) ?? Intl.DateTimeFormat().resolvedOptions().timeZone) }),
+    },
+    {
       name: 'skill_load', risk: 'safe',
       description: 'Load the full instructions of a skill by name (see the skills index in your context).',
       parameters: obj({ name: { type: 'string' } }, ['name']),
@@ -101,7 +154,7 @@ export function buildFridayTools(ctx) {
       name: 'time_now', risk: 'safe',
       description: 'Current date/time (use instead of guessing).',
       parameters: obj({}),
-      run: () => ({ iso: new Date().toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+      run: () => { const tz = settings.get('timezone', null) ?? systemTimezone(); return { local: formatLocal(new Date(), tz), local_iso_for_reminders: new Date().toLocaleString('sv-SE', { timeZone: tz }).replace(' ', 'T').slice(0, 16), utc: new Date().toISOString(), timezone: tz }; },
     },
   ];
   // Phases 4+ register more (reminders, research, browser, laptop node).

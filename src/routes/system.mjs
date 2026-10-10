@@ -30,6 +30,7 @@ export function systemRoutes(router, ctx) {
       try { store.transition(id, 'cancelled', { error: 'emergency_stop' }); } catch {}
     }
     worker.stop();
+    try { ctx.policy.revokeHigh(); } catch {}
     ctx.bus.publish('system.emergency_stop', { at: state.emergencyStoppedAt });
     return [200, { emergencyStopped: state.emergencyStopped, emergencyStoppedAt: state.emergencyStoppedAt }];
   });

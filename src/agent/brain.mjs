@@ -7,8 +7,8 @@ const MAX_TOOL_CALLS = 12;
 const RESULT_CHARS = 4000;
 
 export class Brain {
-  constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null, skills = null }) {
-    Object.assign(this, { ai, fridayTools, settings, contextBuilder, chat, bus, audit, skills });
+  constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null, skills = null, policy = null, approvals = null }) {
+    Object.assign(this, { ai, fridayTools, settings, contextBuilder, chat, bus, audit, skills, policy, approvals });
   }
 
   personality() { return normalizePersonality(this.settings.get('personality', {})); }
@@ -47,7 +47,16 @@ export class Brain {
     this.bus?.publish('tool.called', { name: call.name, conversationId });
     if (!tool) return { error: 'unknown_tool' };
     if (call.args === null) return { error: 'invalid_json_arguments' };
-    if (tool.risk !== 'safe') return { error: 'requires_approval', note: 'This action must be staged for the user to approve; it was not performed.' };
+    if (tool.risk !== 'safe') {
+      // Gated tools: the policy (never the model, never the personality) decides.
+      const decision = this.policy ? this.policy.decide({ category: tool.category, risk: tool.riskClass ?? 'consequential', forbidden: tool.forbidden }) : 'ask';
+      if (decision === 'deny') return { error: 'forbidden_action' };
+      if (decision === 'ask') {
+        if (!this.approvals) return { error: 'requires_approval', note: 'This action needs approval and no approval flow is available; it was NOT performed.' };
+        const a = this.approvals.request({ category: tool.category, risk: tool.riskClass ?? 'consequential', tool: tool.name, summary: tool.summarize ? tool.summarize(call.args) : `${tool.name}`, payload: call.args, conversationId });
+        return { requires_approval: true, approval_id: a.id.slice(0, 8), note: 'Staged and waiting for the user to approve in their inbox. It was NOT performed yet. Tell the user.' };
+      }
+    }
     try {
       const out = await tool.run(call.args, { conversationId });
       try { this.audit?.append(conversationId, 'tool.run', { tool: call.name }); } catch {}

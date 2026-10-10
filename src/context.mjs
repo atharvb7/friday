@@ -38,6 +38,10 @@ import { ContextBuilder } from './agent/context-builder.mjs';
 import { buildFridayTools } from './agent/friday-tools.mjs';
 import { Brain } from './agent/brain.mjs';
 import { Notifications } from './notifications.mjs';
+import { Jobs } from './jobs.mjs';
+import { Proactive } from './proactive.mjs';
+import { Policy } from './policy.mjs';
+import { Approvals } from './approvals.mjs';
 import { Skills } from './skills.mjs';
 import { loadMcpConfig, renderOverlay, envToForward } from './mcp-config.mjs';
 
@@ -154,9 +158,20 @@ export function createContext({ appRoot, env = process.env }) {
       ctx.chat.addMessage(t.conversation_id, 'assistant', ok ? `✅ Finished “${t.title}”:\n\n${body || '(no output)'}` : `⚠️ “${t.title}” ${e.kind === 'task.failed' ? 'failed' : 'was blocked'}: ${body}`);
     }
   };
+  ctx.jobs = new Jobs({ store, notifications: ctx.notifications, chat: ctx.chat, bus, settings });
+  ctx.policy = new Policy({ settings, bus });
+  ctx.approvals = new Approvals({ store, notifications: ctx.notifications, chat: ctx.chat, bus, audit: ctx.audit });
+  ctx.proactive = new Proactive({
+    store, notifications: ctx.notifications, jobs: ctx.jobs, ai, memory, settings, bus, dataDir,
+    agentReady: () => ctx.dshAdapter.status().ready,
+  });
   ctx.fridayTools = buildFridayTools(ctx);
+  { // gated tools get their approved-execution path registered automatically
+    const register = ctx.fridayTools.register;
+    ctx.fridayTools.register = (tool) => { register(tool); if (tool.risk !== 'safe') ctx.approvals.register(tool.name, tool.run); };
+  }
   ctx.brain = new Brain({
-    ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit, skills,
+    ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit, skills, policy: ctx.policy, approvals: ctx.approvals,
     contextBuilder: new ContextBuilder({ memory, store, indexer }),
   });
   ctx.chatBrain = () => {
@@ -182,12 +197,16 @@ export function createContext({ appRoot, env = process.env }) {
     worker.start();
     ctx.dueRunner.start();
     if (ai.hasProvider) indexer.start();
+    ctx.jobs.start();
+    ctx.proactive.start();
   };
   ctx.stop = () => {
     worker.stop();
     clearInterval(governorTimer);
     try { ctx.dueRunner.stop?.(); } catch {}
     indexer.stop();
+    ctx.jobs.stop();
+    ctx.proactive.stop();
     try { store.close(); } catch {}
   };
   return ctx;
