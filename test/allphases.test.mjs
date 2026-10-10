@@ -46,9 +46,10 @@ test('all phases: jev route, automations, audit, presence', async () => {
     assert.equal((await api('/v1/route', J({ instruction: '' }))).status, 400);
 
     // Automations (explicit, read-only capabilities, kill switch) + audit chain + presence.
-    const auto = await (await api('/v1/automations', J({ owner: 'me', trigger: { kind: 'build_failed' }, capabilities: ['notify'] }))).json();
-    assert.equal(auto.automation.killSwitch, true);
-    assert.equal((await api('/v1/automations', J({ owner: 'me', trigger: { kind: 'build_failed' }, capabilities: ['send'] }))).status, 400);
+    const rule = await (await api('/v1/rules', J({ name: 'fail alert', event: 'task.failed', action: { kind: 'notify', title: 'Failed: {{taskId}}' } }))).json();
+    assert.ok(rule.rule.id);
+    assert.equal((await api('/v1/rules', J({ name: 'loop', event: 'notification.created', action: { kind: 'notify', title: 'x' } }))).status, 400, 'rules cannot trigger on rule-produced events');
+    assert.equal((await api('/v1/rules', J({ name: 'bad', event: 'task.failed', action: { kind: 'shell', title: 'x' } }))).status, 400);
     assert.equal((await (await api('/v1/audit/verify')).json()).ok, true);
     const pres = await (await api('/v1/presence')).json();
     assert.equal(pres.presence.pet, 'offline', 'no brain and no agent runtime = offline pet');

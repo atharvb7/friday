@@ -15,7 +15,7 @@ import { ResilientAdapter } from './provider.mjs';
 import { ToolRegistry } from './tools.mjs';
 import { JevClient } from './jev.mjs';
 import { ChatStore } from './chat.mjs';
-import { Automations } from './automations.mjs';
+import { Rules } from './rules.mjs';
 import { Audit } from './audit.mjs';
 import { EventBus } from './events.mjs';
 import { Auth } from './auth.mjs';
@@ -117,7 +117,6 @@ export function createContext({ appRoot, env = process.env }) {
     tools: new ToolRegistry({ workspace: workspaceDir }),
     jev: new JevClient({}),
     chat: new ChatStore(store),
-    automations: new Automations(store),
     audit: new Audit(store),
     // Kill-switch latch: set via POST /v1/emergency-stop, cleared explicitly.
     state: { emergencyStopped: false, emergencyStoppedAt: null },
@@ -162,6 +161,7 @@ export function createContext({ appRoot, env = process.env }) {
   }
   ctx.companion = new Companion({ ctx });
   ctx.voiceServer = new VoiceServer({ env, governor });
+  ctx.rules = new Rules({ store, bus, notifications: ctx.notifications });
   ctx.jobs = new Jobs({ store, notifications: ctx.notifications, chat: ctx.chat, bus, settings });
   ctx.policy = new Policy({ settings, bus });
   ctx.approvals = new Approvals({ store, notifications: ctx.notifications, chat: ctx.chat, bus, audit: ctx.audit });
@@ -170,6 +170,7 @@ export function createContext({ appRoot, env = process.env }) {
     agentReady: () => ctx.dshAdapter.status().ready,
   });
   kindRouter.byKind.computer = new ComputerAgent({ ai, nodes: ctx.nodes, policy: ctx.policy, approvals: ctx.approvals, bus, audit: ctx.audit });
+  ctx.rules.proactive = ctx.proactive;
   ctx.fridayTools = buildFridayTools(ctx);
   { // gated tools get their approved-execution path registered automatically
     const register = ctx.fridayTools.register;
@@ -203,6 +204,7 @@ export function createContext({ appRoot, env = process.env }) {
     worker.start();
     if (ai.hasProvider) indexer.start();
     ctx.jobs.start();
+    ctx.rules.start();
     ctx.proactive.start();
   };
   ctx.stop = () => {
@@ -211,6 +213,7 @@ export function createContext({ appRoot, env = process.env }) {
     clearInterval(governorTimer);
     indexer.stop();
     ctx.jobs.stop();
+    ctx.rules.stop();
     ctx.proactive.stop();
     try { store.close(); } catch {}
   };

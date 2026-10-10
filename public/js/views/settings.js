@@ -49,6 +49,14 @@ export function render({ app, api, toast, go }) {
       h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: async () => { try { await api('/v1/proactive', { method: 'POST', body: { enabled: on.checked, maxPerDay: Number(cap.value), quietHours: { start: qs.value, end: qe.value }, briefing: { enabled: bon.checked, time: bt.value } } }); toast('Saved.'); } catch (e) { toast(e.message); } } }, 'Save'),
         h('button', { class: 'btn', onclick: async () => { toast('Composing…'); const r = await api('/v1/briefing/now', { method: 'POST' }); alert(r.briefing); } }, 'Preview briefing')));
 
+    // Standing rules (created by asking Friday: "when a task fails, tell me")
+    const { rules } = await api('/v1/rules');
+    section('Standing rules', rules.length ? h('div', { class: 'list' }, rules.map((r) => h('div', { class: 'row wrap' },
+      h('span', { class: `chip ${r.enabled ? 'good' : ''}` }, r.enabled ? 'on' : 'off'), h('strong', { class: 'grow' }, r.name), h('span', { class: 'muted' }, `${r.event} → ${r.action.kind} · fired ${r.fire_count}×`),
+      h('button', { class: 'btn small', onclick: async () => { await api(`/v1/rules/${r.id}/enabled`, { method: 'POST', body: { enabled: !r.enabled } }); build(); } }, r.enabled ? 'Disable' : 'Enable'),
+      h('button', { class: 'btn small bad', onclick: async () => { await api(`/v1/rules/${r.id}`, { method: 'DELETE' }); build(); } }, 'Delete'))))
+      : h('p', { class: 'muted' }, 'None yet. Try telling me: “whenever a research task finishes, notify me”. (Creating rules needs your approval.)'));
+
     // Phone notifications (Web Push)
     const pushKey = await api('/v1/push/key');
     const pushState = h('span', { class: 'muted' }, `${pushKey.subscriptions} device(s) subscribed`);

@@ -94,6 +94,17 @@ export function buildFridayTools(ctx) {
       run: async (a) => { const r = (await tools.run({ taskId: 'ad-hoc-local', tool: 'file.read', args: { path: str(a.path, 'path', 500), maxBytes: 8192 } })).result; return { path: r.path, truncated: r.truncated, text: clip(r.bytes, 6000) }; },
     },
     {
+      name: 'rule_create', risk: 'gated', category: 'system', riskClass: 'routine',
+      description: 'Create a standing rule: when an event happens (e.g. task.failed, research.saved, node.ready, job.task_queued), notify the user or queue an agent task. Supports {{field}} templates from event data. Bounded by cooldown and daily cap.',
+      parameters: obj({
+        name: { type: 'string' }, event: { type: 'string', description: 'e.g. task.failed' }, where: { type: 'object', description: 'optional equality filters on event data, e.g. {"kind":"research"}' },
+        action: { type: 'object', description: '{kind:"notify",title,body?} | {kind:"task",title,instruction} | {kind:"briefing"}' },
+        cooldownSec: { type: 'integer' }, maxPerDay: { type: 'integer' },
+      }, ['name', 'event', 'action']),
+      summarize: (a) => `Create rule “${clip(a.name, 80)}”: when ${a.event} → ${a.action?.kind}`,
+      run: (a) => { const r = ctx.rules.create({ name: a.name, event: a.event, where: a.where ?? {}, action: a.action, cooldownSec: a.cooldownSec ?? 300, maxPerDay: a.maxPerDay ?? 20 }); return { created: true, id: r.id.slice(0, 8) }; },
+    },
+    {
       name: 'laptop_status', risk: 'safe',
       description: "Is the user's laptop node online (needed for computer/browser control tasks), and what can it do?",
       parameters: obj({}),

@@ -32,6 +32,7 @@ export function systemRoutes(router, ctx) {
     }
     worker.stop();
     try { ctx.policy.revokeHigh(); } catch {}
+    try { ctx.rules.killAll(); } catch {}
     ctx.bus.publish('system.emergency_stop', { at: state.emergencyStoppedAt });
     return [200, { emergencyStopped: state.emergencyStopped, emergencyStoppedAt: state.emergencyStoppedAt }];
   });

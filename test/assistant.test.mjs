@@ -241,3 +241,40 @@ test('context: built-in gated tools (computer_task) have their approved-executio
     assert.equal(JSON.parse(t.meta).grant, true);
   } finally { ctx.stop(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('rules: fire on matching events with templates, honour filters/cooldown/daily cap, never loop, kill switch', async () => {
+  const { Rules } = await import('../src/rules.mjs');
+  const r = rig();
+  try {
+    let t = Date.parse('2026-10-12T00:00:00Z');
+    const rules = new Rules({ store: r.store, bus: r.bus, notifications: r.notifications, now: () => t });
+    rules.start();
+    const a = rules.create({ name: 'research done', event: 'research.saved', where: {}, action: { kind: 'notify', title: 'Saved: {{topic}}', body: 'id {{id}}' }, cooldownSec: 60, maxPerDay: 2 });
+    rules.create({ name: 'fail -> investigate', event: 'task.failed', where: { kind: 'coding' }, action: { kind: 'task', title: 'Investigate {{taskId}}', instruction: 'Look into failure {{taskId}}' }, cooldownSec: 30 });
+    // loop-prone / invalid definitions are refused
+    assert.throws(() => rules.create({ name: 'x', event: 'notification.created', action: { kind: 'notify', title: 'x' } }), /event must start with/);
+    assert.throws(() => rules.create({ name: 'x', event: 'task.failed', action: { kind: 'notify', title: 'x' }, cooldownSec: 1 }), /cooldownSec/);
+    assert.throws(() => rules.create({ name: 'x', event: 'chat.message', action: { kind: 'notify', title: 'x' } }), /event must start with/);
+    assert.throws(() => rules.create({ name: 'x', event: 'task.failed', action: { kind: 'exec', title: 'x' } }), /action.kind/);
+
+    r.bus.publish('research.saved', { topic: 'Agents', id: 'abc' });
+    assert.equal(r.notifications.list().filter((n) => n.title === 'Saved: Agents').length, 1);
+    r.bus.publish('research.saved', { topic: 'Agents', id: 'abc' });
+    assert.equal(r.notifications.list().length, 1, 'cooldown blocks the immediate repeat');
+    t += 61_000; r.bus.publish('research.saved', { topic: 'B', id: 'x' });
+    t += 61_000; r.bus.publish('research.saved', { topic: 'C', id: 'y' });
+    assert.equal(r.notifications.list().filter((n) => n.title.startsWith('Saved')).length, 2, 'daily cap of 2');
+
+    r.bus.publish('task.failed', { taskId: 't1', kind: 'research' });
+    assert.equal(r.store.listTasks().length, 0, 'filter must match');
+    r.bus.publish('task.failed', { taskId: 't2', kind: 'coding' });
+    const q = r.store.listTasks();
+    assert.equal(q.length, 1);
+    assert.match(q[0].instruction, /Look into failure t2/); assert.match(q[0].instruction, /untrusted/);
+    assert.ok(rules.setEnabled(a.id, false));
+    t += 100_000_000; r.bus.publish('research.saved', { topic: 'D', id: 'z' });
+    assert.equal(r.notifications.list().filter((n) => n.title === 'Saved: D').length, 0, 'disabled rule stays silent');
+    assert.equal(rules.killAll() >= 1, true);
+    rules.stop();
+  } finally { r.done(); }
+});
