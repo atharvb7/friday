@@ -32,10 +32,15 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - [x] Streaming chat (`POST /v1/chat {stream:true}` SSE), `/v1/models` stats
 - [ ] Episodic auto-summaries of long conversations; memory dedupe/consolidation (later polish)
 - Measured live: Super turn ~2.5 s avg with tools, Ultra ~12 s (so Ultra is used for reason/plan, Super for chat)
-## Phase 3 — Agent spine
-- [ ] Install Friday DSH in ~/.friday-dsh, verify real CLI/profile, replace guessed flags
-- [ ] Tasks execute end to end, execution traces, retry/resume/cancel
-- [ ] MCP client, skills loader, subagent pool with limits
+## Phase 3 — Agent spine  (done; verified live 2026-10-10)
+- [x] Real DSH integration: `node <dsh>/apps/cli/lib/bin.js --profile headless --json`, task on stdin, JSONL events; ~190 MB RSS, ~3-10 s per run measured
+- [x] Isolation: Friday-owned DSH_HOME/HOME, minimal env, own settings (no key on disk); Friday's bubblewrap sandbox hides data dir/.env/home, read-only system, writes only the task workspace (proved by a real-bwrap test)
+- [x] Worker pool (concurrency + governor admission, profile `server6g`), traces (`trace.*` events), cancel/emergency/retry (manual only), no auto-retry of agent runs
+- [x] Skills (shipped: research, coding, report-writing, daily-briefing, competitive-analysis; install from inbox with symlink/size checks; mirrored into DSH home; `skill_load` tool)
+- [x] MCP config -> DSH overlay (`/v1/mcp`), secrets by env-var name only
+- [x] Task results flow back into the originating chat + notification inbox (`/v1/notifications`)
+- [ ] Real MCP servers installed and tested (SerpApi, GitHub) — Phase 5
+- [ ] DSH session resume (`--session-id`) for continuing long tasks
 ## Phase 4 — Always-on assistant
 - [ ] Reminders + durable scheduler with push notifications (phone)
 - [ ] Proactive loop (briefings, overdue tasks, CI failures), anti-annoyance rules

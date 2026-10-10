@@ -28,6 +28,12 @@ export function taskRoutes(router, ctx) {
     return [result.error ? 409 : 200, result];
   }));
 
+  // Explicit re-queue of a failed/blocked task (never automatic: tool calls may already have had effects).
+  router.post(`/v1/tasks/:id(${HEX})/retry`, withTask((task) => {
+    const result = store.transition(task.id, 'queued', { note: 'manual_retry' });
+    return [result.error ? 409 : 200, result];
+  }));
+
   // Propose + stage + request in one call (no outbound sink here). Returns the
   // single-use approvalToken once; the UI approves in a separate call.
   router.post(`/v1/tasks/:id(${HEX})/effects`, withTask(async (task, { body }) => {

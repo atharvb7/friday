@@ -14,10 +14,24 @@ const DEFAULTS = {
   fullPsiExit: { constrained: 0.25, paused: 1, emergency: 3 },
   cgroupRatioEnter: { constrained: 0.8, paused: 0.9, emergency: 0.98 },
   cgroupRatioExit: { constrained: 0.7, paused: 0.82, emergency: 0.92 },
+  reserves: { browser: 5 * G, subagent: 6 * G },
+  concurrency: {},
   clearForMs: 30_000,
   telemetryMaxBytes: 1_000_000,
   sampleHistory: 120,
 };
+
+// Named budgets. 'laptop' protects a shared 16 GB desktop; 'server6g' fits a
+// dedicated 6 GB box where Friday owns the machine (cgroup caps it at ~5 GB).
+export const PROFILES = Object.freeze({
+  laptop: {},
+  server6g: {
+    enter: { constrained: 1.6 * G, paused: 1.0 * G, emergency: 0.6 * G },
+    exit: { constrained: 2.0 * G, paused: 1.4 * G, emergency: 0.9 * G },
+    reserves: { browser: 1.5 * G, subagent: 1.2 * G },
+    concurrency: { background: 2, subagent: 2, browser: 1 },
+  },
+});
 
 const WORKER_RULES = {
   interactive: { normal: true, constrained: true, paused: true, emergency: false, maxConcurrent: 1 },
@@ -81,6 +95,8 @@ export class ResourceGovernor {
       fullPsiExit: { ...DEFAULTS.fullPsiExit, ...thresholds.fullPsiExit },
       cgroupRatioEnter: { ...DEFAULTS.cgroupRatioEnter, ...thresholds.cgroupRatioEnter },
       cgroupRatioExit: { ...DEFAULTS.cgroupRatioExit, ...thresholds.cgroupRatioExit },
+      reserves: { ...DEFAULTS.reserves, ...thresholds.reserves },
+      concurrency: { ...DEFAULTS.concurrency, ...thresholds.concurrency },
     };
     this.historyLimit = maxHistory ?? this.thresholds.sampleHistory;
     this.onPressureChange = onPressureChange;
@@ -129,13 +145,13 @@ export class ResourceGovernor {
     const rule = WORKER_RULES[workerClass];
     if (!rule) return { allowed: false, reason: 'unknown_worker_class', mode: this.mode };
     if (!rule[this.mode]) return { allowed: false, reason: this.mode === 'emergency' ? 'memory_emergency' : 'memory_pressure', mode: this.mode };
-    const cap = maxConcurrent ?? rule.maxConcurrent;
+    const cap = maxConcurrent ?? this.thresholds.concurrency[workerClass] ?? rule.maxConcurrent;
     const active = this.active.get(workerClass) ?? 0;
     if (active >= cap) return { allowed: false, reason: 'worker_class_limit', mode: this.mode, active, maxConcurrent: cap };
-    if (workerClass === 'browser' && this.lastSnapshot?.availableBytes < 5 * G) {
+    if (workerClass === 'browser' && this.lastSnapshot?.availableBytes < this.thresholds.reserves.browser) {
       return { allowed: false, reason: 'browser_reserve_required', mode: this.mode };
     }
-    if (workerClass === 'subagent' && this.lastSnapshot?.availableBytes < 6 * G) {
+    if (workerClass === 'subagent' && this.lastSnapshot?.availableBytes < this.thresholds.reserves.subagent) {
       return { allowed: false, reason: 'subagent_reserve_required', mode: this.mode };
     }
     return { allowed: true, reason: 'admitted', mode: this.mode, active, maxConcurrent: cap };

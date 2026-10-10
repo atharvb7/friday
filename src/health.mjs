@@ -16,7 +16,8 @@ export function healthReport(ctx) {
   else add('nemotron', 'ok', `configured (${ctx.nemotron.model})`);
 
   const dsh = ctx.dshAdapter.status();
-  add('agent_runtime', dsh.ready ? 'ok' : 'off', dsh.ready ? 'DSH ready' : (dsh.reason ?? 'not ready'));
+  add('agent_runtime', dsh.ready ? 'ok' : 'off', dsh.ready ? `DSH ready (${dsh.model}, sandbox=${dsh.sandbox})` : (dsh.reason ?? 'not ready'));
+  add('worker_pool', 'ok', `${ctx.worker.running.size}/${ctx.worker.maxConcurrent} running`);
   add('local_model', 'off', 'disabled by design');
 
   const snap = ctx.governor.getSnapshot();

@@ -53,6 +53,7 @@ export class Store {
     const columns = new Set(this.db.prepare('PRAGMA table_info(tasks)').all().map(row => row.name));
     if (!columns.has('result')) this.db.exec('ALTER TABLE tasks ADD COLUMN result TEXT');
     if (!columns.has('error')) this.db.exec('ALTER TABLE tasks ADD COLUMN error TEXT');
+    if (!columns.has('conversation_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN conversation_id TEXT');
     // A process may have disappeared after an external action. Never auto-retry such work.
     const recoveredAt = new Date().toISOString();
     this.db.exec('BEGIN IMMEDIATE');
@@ -66,7 +67,7 @@ export class Store {
     }
   }
 
-  createTask({ title, instruction, idempotencyKey = null }) {
+  createTask({ title, instruction, idempotencyKey = null, conversationId = null }) {
     if (idempotencyKey) {
       const existing = this.db.prepare('SELECT * FROM tasks WHERE idempotency_key=?').get(idempotencyKey);
       if (existing) return existing;
@@ -75,7 +76,7 @@ export class Store {
     const now = new Date().toISOString();
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.db.prepare('INSERT INTO tasks (id, title, instruction, status, created_at, updated_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, title, instruction, 'queued', now, now, idempotencyKey);
+      this.db.prepare('INSERT INTO tasks (id, title, instruction, status, created_at, updated_at, idempotency_key, conversation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, title, instruction, 'queued', now, now, idempotencyKey, conversationId);
       this.db.prepare('INSERT INTO events (task_id, kind, detail, created_at) VALUES (?, ?, ?, ?)').run(id, 'task.created', '{}', now);
       this.db.exec('COMMIT');
     } catch (error) {
@@ -111,6 +112,12 @@ export class Store {
       this.db.exec('ROLLBACK');
       throw error;
     }
+  }
+  // Append a trace event (tool call, step, note) without changing task state.
+  addEvent(taskId, kind, detail = {}) {
+    const text = JSON.stringify(detail);
+    this.db.prepare('INSERT INTO events (task_id, kind, detail, created_at) VALUES (?, ?, ?, ?)').run(taskId, kind, text.length > 4000 ? JSON.stringify({ truncated: text.slice(0, 3900) }) : text, new Date().toISOString());
+    this.#emit(taskId, kind, detail);
   }
   listEvents(taskId) { return this.db.prepare('SELECT * FROM events WHERE task_id=? ORDER BY id ASC').all(taskId).map(row => ({ ...row, detail: JSON.parse(row.detail) })); }
 

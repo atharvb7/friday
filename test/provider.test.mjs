@@ -25,3 +25,11 @@ test('consecutive failures open circuit and fast-fail', async () => {
   assert.match(fast.error, /provider_circuit_open/);
   assert.equal(a.status().reason, 'provider_circuit_open');
 });
+
+test('resilient adapter forwards extra run options (onTrace, title) to the inner adapter', async () => {
+  const seen = [];
+  const inner = { status: () => ({ ready: true }), run: async (opts) => { seen.push(Object.keys(opts).sort().join(',')); return { status: 'completed', output: 'ok' }; } };
+  const a = new ResilientAdapter({ inner, maxAttempts: 1 });
+  await a.run({ taskId: 't', instruction: 'x', onTrace() {}, title: 'T' });
+  assert.equal(seen[0], 'instruction,onTrace,signal,taskId,title');
+});

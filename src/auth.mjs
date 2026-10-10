@@ -81,7 +81,7 @@ export class Auth {
 // authenticated device: stopping must never be the hard part.
 export function requiredScope(method, pathname) {
   if (pathname === '/v1/emergency-stop') return 'read';
-  if (/^\/v1\/(devices|auth|backup)/.test(pathname)) return 'admin';
+  if (/^\/v1\/(devices|auth|backup|mcp)/.test(pathname) || pathname === '/v1/skills/install') return 'admin';
   if (pathname === '/v1/emergency-clear') return 'approve';
   if (/^\/v1\/effects\/[^/]+\/approve$/.test(pathname) || pathname === '/v1/whatsapp/commit' || pathname.startsWith('/v1/desktop/')) return 'approve';
   if (pathname === '/v1/chat' || pathname.startsWith('/v1/memory')) return method === 'GET' ? 'read' : 'chat';

@@ -145,7 +145,9 @@ async function doctor() {
   const has = (b) => spawnSync('sh', ['-c', `command -v ${b}`], { encoding: 'utf8' }).stdout.trim();
   for (const [k, label] of [['FRIDAY_NVIDIA_API_KEY', 'Nemotron key'], ['SERPAPI_API_KEY', 'SerpApi key']]) row(Boolean(process.env[k]), label, process.env[k] ? 'set' : 'missing', true);
   row(process.env.FRIDAY_JEV_ENABLED === '1' ? Boolean(process.env.FRIDAY_JEV_KEY) : true, 'JEV', process.env.FRIDAY_JEV_ENABLED === '1' ? 'enabled' : 'off', true);
-  row(Boolean(has('dsh')), 'dsh binary', has('dsh') || 'not on PATH (agent tasks will not run)', true);
+  const dshBin = process.env.FRIDAY_DSH_BIN || has('dsh');
+  row(Boolean(dshBin && existsSync(dshBin)), 'dsh binary', dshBin || 'set FRIDAY_DSH_BIN (agent tasks will not run)', true);
+  row(Boolean(has('bwrap')), 'bubblewrap', has('bwrap') || 'missing: agent sandbox unavailable', true);
   row(Boolean(has('google-chrome') || has('chromium')), 'chrome/chromium', has('google-chrome') || has('chromium') || 'missing', true);
   row(Boolean(has('tailscale')), 'tailscale', has('tailscale') || 'missing', true);
   const mem = Object.fromEntries(readFileSync('/proc/meminfo', 'utf8').split('\n').filter(Boolean).map((l) => { const [k, v] = l.split(':'); return [k, parseInt(v, 10) / 1048576]; }));

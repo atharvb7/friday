@@ -10,7 +10,7 @@ const str = (v, name, max = 2000) => {
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 
 export function buildFridayTools(ctx) {
-  const { memory, store, tools, indexer } = ctx;
+  const { memory, store, tools, indexer, skills } = ctx;
   const list = [
     {
       name: 'memory_save', risk: 'safe',
@@ -55,8 +55,8 @@ export function buildFridayTools(ctx) {
       name: 'task_create', risk: 'safe',
       description: 'Queue a long or multi-step job (research, coding, browsing, reports) for the background agent. Returns immediately; the work happens later.',
       parameters: obj({ title: { type: 'string' }, instruction: { type: 'string', description: 'Complete, self-contained instructions for the background agent' } }, ['title', 'instruction']),
-      run: (a) => {
-        const t = store.createTask({ title: str(a.title, 'title', 200), instruction: str(a.instruction, 'instruction', 20000) });
+      run: (a, { conversationId } = {}) => {
+        const t = store.createTask({ title: str(a.title, 'title', 200), instruction: str(a.instruction, 'instruction', 20000), conversationId: conversationId ?? null });
         return { queued: true, id: t.id.slice(0, 8), status: t.status };
       },
     },
@@ -90,6 +90,12 @@ export function buildFridayTools(ctx) {
       description: "Read a text file from Friday's workspace (first 8KB).",
       parameters: obj({ path: { type: 'string' } }, ['path']),
       run: async (a) => { const r = (await tools.run({ taskId: 'ad-hoc-local', tool: 'file.read', args: { path: str(a.path, 'path', 500), maxBytes: 8192 } })).result; return { path: r.path, truncated: r.truncated, text: clip(r.bytes, 6000) }; },
+    },
+    {
+      name: 'skill_load', risk: 'safe',
+      description: 'Load the full instructions of a skill by name (see the skills index in your context).',
+      parameters: obj({ name: { type: 'string' } }, ['name']),
+      run: (a) => { const s = skills?.load(str(a.name, 'name', 60)); return s ?? { error: 'skill_not_found' }; },
     },
     {
       name: 'time_now', risk: 'safe',

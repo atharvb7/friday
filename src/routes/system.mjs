@@ -12,7 +12,7 @@ export function systemRoutes(router, ctx) {
       phase: 'phase1',
       resources: governor.getSnapshot(),
       tasks: store.countTasks(),
-      worker: { running: worker.current !== null, currentTaskId: worker.current?.taskId ?? null, adapterReady: adapterStatus.ready, adapterReason: adapterStatus.reason ?? null },
+      worker: { running: worker.running.size > 0, runningCount: worker.running.size, maxConcurrent: worker.maxConcurrent, currentTaskId: worker.current?.taskId ?? null, adapterReady: adapterStatus.ready, adapterReason: adapterStatus.reason ?? null },
       capabilities: { localModel: false, dsh: adapterStatus.ready, computerUse: false, remoteAccess: false },
       provider: { consecutiveFailures: dshAdapter.consecutiveFailures ?? 0, circuitOpen: (dshAdapter.breakerOpenUntil ?? 0) > Date.now() },
       brain: ctx.chatBrain().name, nemotronConfigured: nemotron.configured, aiConfigured: ctx.ai.hasProvider,
@@ -25,9 +25,9 @@ export function systemRoutes(router, ctx) {
   router.post('/v1/emergency-stop', () => {
     state.emergencyStopped = true;
     state.emergencyStoppedAt = new Date().toISOString();
-    if (worker.current?.taskId) {
-      worker.cancel(worker.current.taskId);
-      try { store.transition(worker.current.taskId, 'cancelled', { error: 'emergency_stop' }); } catch {}
+    for (const id of [...worker.running.keys()]) {
+      worker.cancel(id);
+      try { store.transition(id, 'cancelled', { error: 'emergency_stop' }); } catch {}
     }
     worker.stop();
     ctx.bus.publish('system.emergency_stop', { at: state.emergencyStoppedAt });

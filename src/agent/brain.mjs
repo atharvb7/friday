@@ -7,8 +7,8 @@ const MAX_TOOL_CALLS = 12;
 const RESULT_CHARS = 4000;
 
 export class Brain {
-  constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null }) {
-    Object.assign(this, { ai, fridayTools, settings, contextBuilder, chat, bus, audit });
+  constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null, skills = null }) {
+    Object.assign(this, { ai, fridayTools, settings, contextBuilder, chat, bus, audit, skills });
   }
 
   personality() { return normalizePersonality(this.settings.get('personality', {})); }
@@ -16,7 +16,7 @@ export class Brain {
   async respond({ conversationId, text, onDelta = null, onThinking = null, onTool = null, signal = null }) {
     const personality = this.personality();
     const ctxInfo = await this.contextBuilder.build({ text });
-    const system = `${buildSystemPrompt({ personality, userName: this.settings.get('user_name', null), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}${ctxInfo.text ? `\n\n${ctxInfo.text}` : ''}`;
+    const system = `${buildSystemPrompt({ personality, userName: this.settings.get('user_name', null), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}${this.skills?.index() ? `\n\nSkills you can load with skill_load when a request matches (do not load unless needed):\n${this.skills.index()}` : ''}${ctxInfo.text ? `\n\n${ctxInfo.text}` : ''}`;
     const messages = [{ role: 'system', content: system }, ...this.chat.historyForProvider(conversationId, 20)];
     const schemas = this.fridayTools.schemas();
     const toolsUsed = [];

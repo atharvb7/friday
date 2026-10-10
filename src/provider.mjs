@@ -35,7 +35,7 @@ export class ResilientAdapter {
     return { ...s, consecutiveFailures: this.consecutiveFailures };
   }
 
-  async run({ taskId, instruction, signal } = {}) {
+  async run({ taskId, instruction, signal, ...rest } = {}) {
     if (Date.now() < this.breakerOpenUntil) {
       return { status: 'failed', error: `provider_circuit_open: retry after ${new Date(this.breakerOpenUntil).toISOString()}` };
     }
@@ -51,7 +51,7 @@ export class ResilientAdapter {
       }
       let result;
       try {
-        result = await this.inner.run({ taskId, instruction, signal });
+        result = await this.inner.run({ taskId, instruction, signal, ...rest });
       } catch (error) {
         // Abort must propagate so WorkerLoop marks blocked, not failed.
         if (error?.name === 'AbortError' || signal?.aborted) throw error;
