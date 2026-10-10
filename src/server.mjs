@@ -163,7 +163,7 @@ function isRateLimited(ip) {
 // the request path must match a key and filenames are fixed. Served without
 // auth (the token gate lives in app.js); the API below always requires it.
 // Pet stage (/pet.html) needs unpkg for Three.js; the main app stays 'self'.
-// GLB is served from the repo root (user-supplied model, CC-BY-4.0).
+// GLB lives in public/assets (user-supplied model, CC-BY-4.0, see public/assets/ATTRIBUTION.md).
 const publicDir = resolve(appRoot, 'public');
 const staticAssets = new Map([
   ['/', { file: 'index.html', type: 'text/html; charset=utf-8' }],
@@ -178,7 +178,7 @@ const staticAssets = new Map([
   ['/vendor/loaders/GLTFLoader.js', { file: 'vendor/loaders/GLTFLoader.js', type: 'text/javascript; charset=utf-8' }],
   ['/vendor/utils/BufferGeometryUtils.js', { file: 'vendor/utils/BufferGeometryUtils.js', type: 'text/javascript; charset=utf-8' }],
   ['/pet.js', { file: 'pet.js', type: 'text/javascript; charset=utf-8' }],
-  ['/pet.glb', { abs: resolve(appRoot, 'megaman_x_divemmdortwinkle_girl.glb'), type: 'model/gltf-binary' }],
+  ['/pet.glb', { file: 'assets/pet.glb', type: 'model/gltf-binary' }],
 ]);
 const STATIC_SECURITY_HEADERS = {
   'Cache-Control': 'no-store',
