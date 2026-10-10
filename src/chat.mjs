@@ -53,6 +53,26 @@ export class ChatStore {
     return this.db.prepare('SELECT * FROM conversations ORDER BY updated_at DESC LIMIT 50').all();
   }
 
+  // Permanently delete a conversation and its messages. Memories already saved from it are kept
+  // (they live in the Memory tab, which has its own delete).
+  deleteConversation(id) {
+    if (!this.getConversation(id)) return false;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare('DELETE FROM messages WHERE conversation_id=?').run(id);
+      this.db.prepare('DELETE FROM conversations WHERE id=?').run(id);
+      try { this.db.prepare('UPDATE tasks SET conversation_id=NULL WHERE conversation_id=?').run(id); } catch { /* tasks table optional in tests */ }
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    return true;
+  }
+
+  renameConversation(id, title) {
+    const t = typeof title === 'string' ? title.trim().slice(0, 200) : '';
+    if (!t) throw new TypeError('title required');
+    return this.db.prepare('UPDATE conversations SET title=? WHERE id=?').run(t, id).changes > 0;
+  }
+
   addMessage(conversationId, role, content) {
     const convo = this.getConversation(conversationId);
     if (!convo) throw new Error('conversation_not_found');

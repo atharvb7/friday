@@ -163,3 +163,9 @@ dialog { background: var(--surface); color: var(--text); border: 1px solid var(-
 .emoji-tab { background: none; border: 0; border-radius: 8px; padding: 4px 7px; font-size: 17px; cursor: pointer; opacity: .6; } .emoji-tab.on, .emoji-tab:hover { opacity: 1; background: var(--surface2); }
 .emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; max-height: 190px; overflow: auto; }
 .emoji-btn { background: none; border: 0; border-radius: 8px; font-size: 21px; padding: 4px 0; cursor: pointer; } .emoji-btn:hover, .emoji-btn:focus-visible { background: var(--surface2); }
+
+.convo-row { display: flex; align-items: center; border-radius: 8px; } .convo-row:hover, .convo-row.active { background: var(--surface2); }
+.convo-row .convo { flex: 1; min-width: 0; background: none !important; }
+.convo-del { background: none; border: 0; cursor: pointer; opacity: 0; padding: 4px 8px; border-radius: 6px; color: var(--muted); }
+.convo-row:hover .convo-del, .convo-del:focus-visible { opacity: 1; } .convo-del:hover { color: var(--bad); background: rgba(255,107,129,.12); }
+@media (hover: none) { .convo-del { opacity: .7; } }

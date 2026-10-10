@@ -54,8 +54,21 @@ export function render({ app, api, toast }) {
       const { conversations } = await api('/v1/chats');
       clear(convos);
       convos.append(h('button', { class: 'btn full', type: 'button', onclick: () => open(null) }, '+ New chat'));
-      for (const c of conversations) convos.append(h('button', { class: `convo${c.id === convoId ? ' active' : ''}`, type: 'button', title: c.title, onclick: () => open(c.id) }, c.title));
+      for (const c of conversations) {
+        convos.append(h('div', { class: `convo-row${c.id === convoId ? ' active' : ''}` },
+          h('button', { class: 'convo', type: 'button', title: c.title, onclick: () => open(c.id) }, c.title),
+          h('button', { class: 'convo-del', type: 'button', title: 'Delete chat', 'aria-label': `Delete chat ${c.title}`, onclick: (e) => { e.stopPropagation(); removeConvo(c); } }, '🗑')));
+      }
     } catch { /* offline */ }
+  }
+
+  async function removeConvo(c) {
+    if (!confirm(`Delete “${c.title}”? This removes the whole conversation and can’t be undone. (Memories I saved from it stay in the Memory tab.)`)) return;
+    try {
+      await api(`/v1/chat/${c.id}`, { method: 'DELETE' });
+      if (c.id === convoId) { convoId = null; hello(); }
+      toast('Chat deleted.'); loadConvos();
+    } catch (e) { toast(`Couldn’t delete: ${e.message}`); }
   }
 
   async function open(id) {
@@ -117,7 +130,8 @@ export function render({ app, api, toast }) {
   // Server-side additions (task results, reminders, approvals) show up live.
   const onEvent = (e) => {
     if (e.type === 'chat.message' && e.data.conversationId === convoId && !busy) open(convoId);
-    if (e.type === 'chat.message') loadConvos();
+    if (e.type === 'chat.message' || e.type === 'chat.deleted') loadConvos();
+    if (e.type === 'chat.deleted' && e.data.conversationId === convoId && !busy) { convoId = null; hello(); }
   };
   app.listeners.add(onEvent);
 

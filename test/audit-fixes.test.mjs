@@ -99,3 +99,28 @@ test('retention prunes old finished data but keeps pending approvals, unread not
     assert.equal(ctx.audit.verify().ok, true);
   } finally { ctx.stop(); rmSync(d, { recursive: true, force: true }); }
 });
+
+test('delete/rename chats: removes messages, detaches tasks, keeps memories; guests cannot delete', async () => {
+  const dir = tmp();
+  const child = spawn(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'server.mjs')], { env: { ...process.env, FRIDAY_DATA_DIR: dir, FRIDAY_NO_DOTENV: '1', FRIDAY_PORT: '43481', FRIDAY_NVIDIA_API_KEY: '' }, stdio: 'ignore' });
+  const base = 'http://127.0.0.1:43481';
+  try {
+    for (let i = 0; i < 100; i++) { try { if ((await fetch(base + '/')).ok) break; } catch {} await new Promise((r) => setTimeout(r, 100)); }
+    const owner = readFileSync(join(dir, 'access-token'), 'utf8').trim();
+    const call = (tok, path, opts = {}) => fetch(base + path, { ...opts, headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' } });
+    const a = (await (await call(owner, '/v1/chat', { method: 'POST', body: JSON.stringify({ message: 'remember my bike is red' }) })).json()).conversation.id;
+    const b = (await (await call(owner, '/v1/chat', { method: 'POST', body: JSON.stringify({ message: 'hello there' }) })).json()).conversation.id;
+    assert.equal((await call(owner, `/v1/chat/${a}`, { method: 'PATCH', body: JSON.stringify({ title: 'Bikes' }) })).status, 200);
+    assert.equal((await call(owner, `/v1/chat/${a}`, { method: 'PATCH', body: JSON.stringify({ title: '  ' }) })).status, 400);
+    const dev = (await (await call(owner, '/v1/devices', { method: 'POST', body: JSON.stringify({ name: 'g', scopes: ['guest'] }) })).json()).device.token;
+    assert.equal((await call(dev, `/v1/chat/${a}`, { method: 'DELETE' })).status, 403, 'guests cannot delete');
+    const ro = (await (await call(owner, '/v1/devices', { method: 'POST', body: JSON.stringify({ name: 'r', scopes: ['read'] }) })).json()).device.token;
+    assert.equal((await call(ro, `/v1/chat/${a}`, { method: 'DELETE' })).status, 403, 'read-only devices cannot delete');
+    assert.equal((await call(owner, `/v1/chat/${a}`, { method: 'DELETE' })).status, 200);
+    assert.equal((await call(owner, `/v1/chat/${a}`)).status, 404);
+    assert.equal((await call(owner, `/v1/chat/${a}`, { method: 'DELETE' })).status, 404);
+    const list = (await (await call(owner, '/v1/chats')).json()).conversations;
+    assert.deepEqual(list.map((c) => c.id), [b], 'only the other chat remains');
+    assert.ok((await (await call(owner, '/v1/memory')).json()).memories.some((m) => /bike/.test(m.content)), 'saved memories survive chat deletion');
+  } finally { child.kill('SIGTERM'); await new Promise((r) => { child.on('exit', r); setTimeout(r, 5000); }); rmSync(dir, { recursive: true, force: true }); }
+});

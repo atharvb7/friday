@@ -15,6 +15,16 @@ export function chatRoutes(router, ctx) {
     catch (error) { return [404, { error: error.message }]; }
   });
 
+  router.delete('/v1/chat/:id([a-f0-9-]+)', ({ params }) => {
+    const ok = chat.deleteConversation(params.id);
+    if (ok) bus.publish('chat.deleted', { conversationId: params.id });
+    return [ok ? 200 : 404, { deleted: ok }];
+  });
+  router.add('PATCH', '/v1/chat/:id([a-f0-9-]+)', async ({ params, body }) => {
+    const b = await body();
+    try { const ok = chat.renameConversation(params.id, b.title); return [ok ? 200 : 404, { renamed: ok }]; } catch (e) { return [400, { error: e.message }]; }
+  });
+
   // Shared turn logic. `hooks` carries streaming callbacks when the caller wants them.
   async function turn(args) {
     if (args.speaker === 'guest') return turnInner(args);
