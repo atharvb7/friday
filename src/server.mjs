@@ -93,7 +93,8 @@ const server = createServer(async (req, res) => {
   }
   if (limited(`p:${principal.id}`, 240)) return send(res, 429, { error: 'rate_limited' }, { 'Retry-After': '60' });
   const scope = requiredScope(req.method, url.pathname);
-  if (!principal.scopes.includes(scope)) return send(res, 403, { error: 'forbidden', needs: scope });
+  const guestChat = principal.scopes.includes('guest') && req.method === 'POST' && url.pathname === '/v1/chat'; // guests may ONLY chat (as guests)
+  if (!principal.scopes.includes(scope) && !guestChat) return send(res, 403, { error: 'forbidden', needs: scope });
   // Devices (phone etc.) must back consequential actions with a fresh TOTP code.
   if (principal.kind === 'device' && req.method !== 'GET' && needsTotp(url.pathname) && ctx.auth.totpActive()
       && !ctx.auth.checkTotp(String(req.headers['x-friday-totp'] ?? ''))) {

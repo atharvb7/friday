@@ -1,6 +1,6 @@
 import { h, clear, timeAgo } from '../util.js';
 
-const TRAITS = ['humor', 'sarcasm', 'warmth', 'formality', 'energy', 'chaos', 'profanity', 'verbosity', 'seriousness'];
+const TRAITS = ['humor', 'sarcasm', 'warmth', 'flirt', 'moodiness', 'childishness', 'protectiveness', 'energy', 'chaos', 'profanity', 'formality', 'verbosity'];
 const LEVELS = ['ask', 'trusted', 'autonomous', 'high'];
 const LEVEL_HELP = { ask: 'asks before anything', trusted: 'routine actions run', autonomous: 'consequential actions run', high: 'critical actions run (time-boxed)' };
 const CATS = { research: 'Research & web', coding: 'Coding', browser: 'Browser', computer: 'Computer control', messaging: 'Messaging others', spending: 'Spending money', deletion: 'Deleting data', system: 'System & security' };
@@ -21,7 +21,7 @@ export function render({ app, api, toast, go }) {
     const vals = { ...pers.personality };
     const sliders = TRAITS.map((t) => { const out = h('span', { class: 'mono' }, String(vals[t])); const r = h('input', { type: 'range', min: 0, max: 10, value: vals[t], 'aria-label': t }); r.addEventListener('input', () => { vals[t] = Number(r.value); out.textContent = r.value; }); return h('div', { class: 'slider-row' }, h('span', {}, t), r, out); });
     section('You & personality', h('div', { class: 'row wrap' }, h('div', { class: 'grow' }, h('label', {}, 'Name'), name), h('div', { class: 'grow' }, h('label', {}, 'Timezone'), tzi)),
-      h('p', { class: 'muted' }, 'Personality changes how I talk — never what I’m allowed to do.'), ...sliders,
+      h('p', { class: 'muted' }, `Right now I’m feeling ${pers.mood.emoji} ${pers.mood.mood}. Personality changes how I talk — never what I’m allowed to do.`), ...sliders,
       h('button', { class: 'btn primary', onclick: async () => {
         try { await api('/v1/personality', { method: 'POST', body: { personality: vals, userName: name.value } }); if (tzi.value !== tz.timezone) await api('/v1/settings/timezone', { method: 'POST', body: { timezone: tzi.value.trim() } }); toast('Saved.'); } catch (e) { toast(e.message); }
       } }, 'Save'));
@@ -69,7 +69,7 @@ export function render({ app, api, toast, go }) {
       const devList = h('div', { class: 'list' }, devices.filter((d) => !d.revoked_at).map((d) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('strong', {}, d.name), h('div', { class: 'meta muted' }, `${d.scopes.join(', ')} · ${d.last_seen_at ? `seen ${timeAgo(d.last_seen_at)}` : 'never used'}`)),
         h('button', { class: 'btn small bad', onclick: async () => { if (confirm(`Revoke ${d.name}?`)) { await api(`/v1/devices/${d.id}`, { method: 'DELETE' }); build(); } } }, 'Revoke'))));
       const dn = h('input', { type: 'text', placeholder: 'Device name (e.g. phone, laptop-node)' });
-      const sc = h('select', {}, [['read,chat,tasks,approve', 'Phone (chat, tasks, approvals)'], ['read,node', 'Laptop node'], ['read', 'Read-only (e.g. desk companion)'], ['read,chat,tasks', 'Phone without approvals']].map(([v, l]) => h('option', { value: v }, l)));
+      const sc = h('select', {}, [['read,chat,tasks,approve', 'Phone (chat, tasks, approvals)'], ['guest', 'Guest (chat only — Friday won’t share anything private)'], ['read,node', 'Laptop node'], ['read', 'Read-only (e.g. desk companion)'], ['read,chat,tasks', 'Phone without approvals']].map(([v, l]) => h('option', { value: v }, l)));
       const reveal = h('div');
       section('Devices & security', devList.children.length ? devList : h('p', { class: 'muted' }, 'No devices yet.'),
         h('div', { class: 'row wrap' }, h('div', { class: 'grow' }, dn), sc, h('button', { class: 'btn primary', onclick: async () => {

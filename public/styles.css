@@ -150,3 +150,6 @@ dialog { background: var(--surface); color: var(--text); border: 1px solid var(-
   .nav .ico { font-size: 17px; }
   .composer { padding-left: 8px; padding-right: 8px; } .composer .btn { padding: 8px 9px; } .composer .box { gap: 4px; }
 }
+
+.chat-pane { position: relative; }
+.jump { position: absolute; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 2; box-shadow: var(--shadow); background: var(--accent); color: #fff; border-color: transparent; }

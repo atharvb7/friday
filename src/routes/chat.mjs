@@ -17,10 +17,11 @@ export function chatRoutes(router, ctx) {
 
   // Shared turn logic. `hooks` carries streaming callbacks when the caller wants them.
   async function turn(args) {
+    if (args.speaker === 'guest') return turnInner(args);
     ctx.companion.chatStart();
     try { return await turnInner(args); } finally { ctx.companion.chatEnd(); }
   }
-  async function turnInner({ convo, text, hooks = {}, signal = null }) {
+  async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner' }) {
     chat.addMessage(convo.id, 'user', text);
     const brain = ctx.chatBrain();
     // JEV is off unless enabled; the local classifier is the deterministic default.
@@ -29,8 +30,10 @@ export function chatRoutes(router, ctx) {
     let model = null;
     let toolsUsed = [];
     try {
-      if (brain.name === 'friday-brain') {
-        const out = await brain.adapter.respond({ conversationId: convo.id, text, signal, ...hooks });
+      if (speaker === 'guest' && brain.name !== 'friday-brain') {
+        reply = 'I’m offline right now — try me again in a bit.';
+      } else if (brain.name === 'friday-brain') {
+        const out = await brain.adapter.respond({ conversationId: convo.id, text, signal, speaker, ...hooks });
         reply = out.reply; model = out.model; toolsUsed = out.toolsUsed;
       } else if (route.riskScore >= 3) {
         reply = (await answerLocal({ ...route, needsApproval: true }, text, { memory, tools })).text;
@@ -61,7 +64,14 @@ export function chatRoutes(router, ctx) {
     return { conversation: chat.getConversation(convo.id), route, reply, brain: brain.name, model, toolsUsed };
   }
 
-  function openConversation(b) {
+  function openConversation(b, principal) {
+    const guest = principal?.scopes.includes('guest') && !principal.scopes.includes('chat');
+    if (guest) { // guests never see or touch the owner's conversations
+      if (typeof b.message !== 'string' || !b.message.trim() || b.message.length > 2000) return { error: [400, { error: 'invalid_message' }] };
+      const title = `guest:${principal.name ?? principal.id}`;
+      const existing = chat.listConversations().find((c) => c.title === title);
+      return { convo: existing ?? chat.createConversation(title), text: b.message.trim(), speaker: 'guest' };
+    }
     if (typeof b.message !== 'string' || !b.message.trim() || b.message.length > 20000) return { error: [400, { error: 'invalid_message' }] };
     const text = b.message.trim();
     if (b.conversationId !== undefined && b.conversationId !== null) {
@@ -77,9 +87,9 @@ export function chatRoutes(router, ctx) {
     return turn({ convo, text });
   };
 
-  router.post('/v1/chat', async ({ body }) => {
+  router.post('/v1/chat', async ({ body, principal }) => {
     const b = await body();
-    const opened = openConversation(b);
+    const opened = openConversation(b, principal);
     if (opened.error) return opened.error;
     if (b.stream !== true) return [200, await turn(opened)];
 
@@ -105,7 +115,8 @@ export function chatRoutes(router, ctx) {
   });
 
   // Personality (style only) + the user's name.
-  router.get('/v1/personality', () => [200, { personality: ctx.brain.personality(), userName: ctx.settings.get('user_name', null) }]);
+  router.get('/v1/personality', () => [200, { personality: ctx.brain.personality(), userName: ctx.settings.get('user_name', null), mood: ctx.mood.current({ moodiness: ctx.brain.personality().moodiness }) }]);
+  router.post('/v1/mood', async ({ body }) => { const b = await body(); try { return [200, { mood: ctx.mood.force(b.mood, Number(b.minutes) || 30) }]; } catch (e) { return [400, { error: e.message }]; } });
   router.post('/v1/personality', async ({ body }) => {
     const b = await body();
     try {

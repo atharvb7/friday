@@ -125,7 +125,7 @@ export class Proactive {
     const fallback = `Morning. ${g.reminders.length} reminder(s) in the next 24h, ${g.attention.length} item(s) needing attention, ${g.active.length} task(s) in progress, ${g.finished.length} finished.`;
     if (!this.ai.hasProvider) return fallback;
     try {
-      const sys = buildSystemPrompt({ personality: normalizePersonality(this.settings.get('personality', {})), userName: this.settings.get('user_name', null), timezone: tz, now: this.now() });
+      const sys = buildSystemPrompt({ personality: normalizePersonality(this.settings.get('personality', {})), mood: this.mood?.current?.() ?? null, userName: this.settings.get('user_name', null), timezone: tz, now: this.now() });
       const out = await this.ai.chat([
         { role: 'system', content: `${sys}\n\nWrite the user's morning briefing from ONLY the facts below. Max ~120 words. Sections in this order, skipping empty ones: needs you today, in progress, finished, one suggested focus. Do not invent items.` },
         { role: 'user', content: facts },

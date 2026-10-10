@@ -1,22 +1,25 @@
 // Conversational brain: persona + retrieved context + tool-calling loop.
 // Heavy/long work is handed to the background agent via task_create.
-import { buildSystemPrompt, normalizePersonality } from '../personality.mjs';
+import { buildSystemPrompt, buildGuestPrompt, normalizePersonality } from '../personality.mjs';
 
 const MAX_STEPS = 6;
 const MAX_TOOL_CALLS = 12;
 const RESULT_CHARS = 4000;
 
 export class Brain {
-  constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null, skills = null, policy = null, approvals = null }) {
-    Object.assign(this, { ai, fridayTools, settings, contextBuilder, chat, bus, audit, skills, policy, approvals });
+  constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null, skills = null, policy = null, approvals = null, mood = null }) {
+    Object.assign(this, { ai, fridayTools, settings, contextBuilder, chat, bus, audit, skills, policy, approvals, mood });
   }
 
   personality() { return normalizePersonality(this.settings.get('personality', {})); }
 
-  async respond({ conversationId, text, onDelta = null, onThinking = null, onTool = null, signal = null }) {
+  async respond({ conversationId, text, onDelta = null, onThinking = null, onTool = null, signal = null, speaker = 'owner' }) {
+    if (speaker === 'guest') return this.#respondGuest({ conversationId, onDelta, signal });
     const personality = this.personality();
+    this.mood?.touch?.();
+    const moodNow = this.mood?.current({ moodiness: personality.moodiness }) ?? null;
     const ctxInfo = await this.contextBuilder.build({ text });
-    const system = `${buildSystemPrompt({ personality, userName: this.settings.get('user_name', null), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}${this.skills?.index() ? `\n\nSkills you can load with skill_load when a request matches (do not load unless needed):\n${this.skills.index()}` : ''}${ctxInfo.text ? `\n\n${ctxInfo.text}` : ''}`;
+    const system = `${buildSystemPrompt({ personality, mood: moodNow, userName: this.settings.get('user_name', null), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}${this.skills?.index() ? `\n\nSkills you can load with skill_load when a request matches (do not load unless needed):\n${this.skills.index()}` : ''}${ctxInfo.text ? `\n\n${ctxInfo.text}` : ''}`;
     const messages = [{ role: 'system', content: system }, ...this.chat.historyForProvider(conversationId, 20)];
     const schemas = this.fridayTools.schemas();
     const toolsUsed = [];
@@ -40,6 +43,14 @@ export class Brain {
       last = await this.ai.chat([...messages, { role: 'user', content: 'Wrap up now in plain language using only what the tools returned.' }], { signal, onDelta, stream: Boolean(onDelta) });
     }
     return { reply: last.content.trim(), model: last.model, provider: last.provider, toolsUsed, usage: last.usage, usedVector: ctxInfo.usedVector, memoryIds: ctxInfo.memoryIds };
+  }
+
+  // Guests get persona only: no memory, no context, no tools, and a separate conversation.
+  async #respondGuest({ conversationId, onDelta, signal }) {
+    const moodNow = this.mood?.current({ moodiness: this.personality().moodiness }) ?? null;
+    const messages = [{ role: 'system', content: buildGuestPrompt({ ownerName: this.settings.get('user_name', null), mood: moodNow }) }, ...this.chat.historyForProvider(conversationId, 12)];
+    const out = await this.ai.chat(messages, { signal, stream: Boolean(onDelta), onDelta, maxTokens: 1024, temperature: 0.8 });
+    return { reply: out.content.trim(), model: out.model, provider: out.provider, toolsUsed: [], usage: out.usage, usedVector: false, memoryIds: [] };
   }
 
   async #runTool(call, conversationId) {

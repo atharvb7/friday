@@ -4,7 +4,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { generateSecret, verifyTotp, otpauthUri } from './totp.mjs';
 
-export const SCOPES = Object.freeze(['read', 'chat', 'tasks', 'approve', 'node', 'admin']);
+export const SCOPES = Object.freeze(['read', 'chat', 'tasks', 'approve', 'node', 'guest', 'admin']);
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 
 export class Auth {
@@ -35,6 +35,7 @@ export class Auth {
   createDevice({ name, scopes = ['read', 'chat', 'tasks'] }) {
     if (typeof name !== 'string' || !name.trim() || name.length > 80) throw new TypeError('invalid device name');
     if (!Array.isArray(scopes) || !scopes.length || !scopes.every((s) => SCOPES.includes(s) && s !== 'admin')) throw new TypeError('invalid scopes'); // admin is owner-only
+    if (scopes.includes('guest') && scopes.length > 1) throw new TypeError('guest devices can only have the guest scope');
     const token = `fdv_${randomBytes(32).toString('hex')}`;
     const id = randomUUID();
     this.db.prepare('INSERT INTO devices (id, name, token_hash, scopes, created_at) VALUES (?, ?, ?, ?, ?)').run(id, name.trim(), sha(token), JSON.stringify([...new Set(scopes)]), new Date().toISOString());

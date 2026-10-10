@@ -16,6 +16,7 @@ export function systemRoutes(router, ctx) {
       capabilities: { localModel: false, dsh: adapterStatus.ready, computerUse: ctx.nodes.online, remoteAccess: false },
       nodes: ctx.nodes.list().map((n) => ({ name: n.name, userActive: n.userActive })),
       provider: { consecutiveFailures: dshAdapter.consecutiveFailures ?? 0, circuitOpen: (dshAdapter.breakerOpenUntil ?? 0) > Date.now() },
+      mood: (() => { const m = ctx.mood.current({ moodiness: ctx.brain.personality().moodiness }); return { mood: m.mood, emoji: m.emoji }; })(),
       brain: ctx.chatBrain().name, nemotronConfigured: nemotron.configured, aiConfigured: ctx.ai.hasProvider,
       emergencyStopped: state.emergencyStopped, emergencyStoppedAt: state.emergencyStoppedAt,
     }];

@@ -91,7 +91,7 @@ function paint() {
   const s = app.status;
   const state = app.link !== 'online' ? 'offline' : s?.emergencyStopped ? 'stopped' : app.chatBusy ? 'thinking' : (s?.worker?.running || s?.worker?.runningCount) ? 'working' : 'idle';
   orb.className = `orb ${state}`;
-  stateText.textContent = { offline: 'offline', stopped: 'stopped', thinking: 'thinking…', working: `working${s?.worker?.runningCount > 1 ? ` (${s.worker.runningCount})` : ''}`, idle: 'idle' }[state];
+  stateText.textContent = `${{ offline: 'offline', stopped: 'stopped', thinking: 'thinking…', working: `working${s?.worker?.runningCount > 1 ? ` (${s.worker.runningCount})` : ''}`, idle: 'idle' }[state]}${s?.mood?.emoji ? ` · ${s.mood.emoji} ${s.mood.mood}` : ''}`;
   linkDot.className = `dot ${app.link === 'online' ? 'on' : 'bad'}`; linkText.textContent = app.link === 'online' ? `${s?.brain === 'friday-brain' ? 'brain online' : 'local mode'}${s?.nodes?.length ? ' · laptop' : ''}` : 'reconnecting…';
   const badge = app.unread + app.pendingApprovals;
   navEls.inbox.badge.hidden = !badge; navEls.inbox.badge.textContent = badge;

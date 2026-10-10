@@ -19,7 +19,7 @@ export function render({ app, api, toast }) {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); } });
   input.addEventListener('input', () => { input.style.setProperty('height', 'auto'); input.style.setProperty('height', `${Math.min(input.scrollHeight, 160)}px`); });
 
-  const el = h('div', { class: 'chat' }, convos, h('div', { class: 'chat-pane' }, msgs, form));
+  const el = h('div', { class: 'chat' }, convos, h('div', { class: 'chat-pane' }, msgs, jump, form));
 
   function bubble(role, content, extra = {}) {
     const body = h('div', { class: 'bubble' });
@@ -27,7 +27,14 @@ export function render({ app, api, toast }) {
     if (content) body.append(role === 'assistant' ? md(content) : h('div', {}, content));
     return h('div', { class: `msg ${role}` }, h('div', { class: 'av' }, role === 'user' ? 'You' : 'F'), body);
   }
-  const scroll = () => { msgs.scrollTop = msgs.scrollHeight; };
+  // Stay pinned to the newest message unless the user scrolled up to read; then offer a jump button.
+  let pinned = true;
+  const jump = h('button', { class: 'btn small jump', type: 'button', hidden: true, onclick: () => { pinned = true; scroll(true); } }, '↓ New messages');
+  const nearBottom = () => msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 140;
+  msgs.addEventListener('scroll', () => { pinned = nearBottom(); jump.hidden = pinned; });
+  const scroll = (force = false) => { if (force || pinned) { msgs.scrollTop = msgs.scrollHeight; jump.hidden = true; } else jump.hidden = false; };
+  new MutationObserver(() => scroll()).observe(msgs, { childList: true, subtree: true, characterData: true });
+  new ResizeObserver(() => scroll()).observe(msgs);
 
   function hello() {
     clear(msgs);
@@ -51,7 +58,7 @@ export function render({ app, api, toast }) {
     try {
       const { messages } = await api(`/v1/chat/${id}`);
       clear(msgs); for (const m of messages) msgs.append(bubble(m.role, m.content));
-      scroll(); loadConvos();
+      pinned = true; scroll(true); loadConvos();
     } catch { toast('Could not open that conversation'); }
   }
 
@@ -61,7 +68,7 @@ export function render({ app, api, toast }) {
     busy = true; app.chatBusy = true; app.paint(); send.disabled = true;
     input.value = ''; input.style.setProperty('height', 'auto'); speechSynthesis?.cancel();
     if (!convoId) clear(msgs);
-    msgs.append(bubble('user', text));
+    pinned = true; msgs.append(bubble('user', text));
     const tools = []; let acc = '';
     const toolsEl = h('div', { class: 'tools' });
     const live = h('div', { class: 'bubble' }, toolsEl, h('div', { class: 'typing' }, h('i'), h('i'), h('i')));

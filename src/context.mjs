@@ -28,6 +28,7 @@ import { ContextBuilder } from './agent/context-builder.mjs';
 import { buildFridayTools } from './agent/friday-tools.mjs';
 import { Brain } from './agent/brain.mjs';
 import { Notifications } from './notifications.mjs';
+import { Mood } from './mood.mjs';
 import { Jobs } from './jobs.mjs';
 import { Proactive } from './proactive.mjs';
 import { Policy } from './policy.mjs';
@@ -175,13 +176,16 @@ export function createContext({ appRoot, env = process.env }) {
   });
   kindRouter.byKind.computer = new ComputerAgent({ ai, nodes: ctx.nodes, policy: ctx.policy, approvals: ctx.approvals, bus, audit: ctx.audit });
   ctx.rules.proactive = ctx.proactive;
+  ctx.proactive.mood = ctx.mood;
   ctx.fridayTools = buildFridayTools(ctx);
   { // gated tools get their approved-execution path registered automatically
     const register = ctx.fridayTools.register;
     ctx.fridayTools.register = (tool) => { register(tool); if (tool.risk !== 'safe') ctx.approvals.register(tool.name, tool.run); };
     for (const tool of ctx.fridayTools.list()) if (tool.risk !== 'safe') ctx.approvals.register(tool.name, tool.run);
   }
+  ctx.mood = new Mood({ settings, store });
   ctx.brain = new Brain({
+    mood: ctx.mood,
     ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit, skills, policy: ctx.policy, approvals: ctx.approvals,
     contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory }),
   });
