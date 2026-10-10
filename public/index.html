@@ -3,49 +3,17 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#f4f6fb">
-    <meta name="description" content="Chat with Friday, your laptop companion.">
-    <title>Friday — chat</title>
+    <meta name="theme-color" content="#0a0c12">
+    <meta name="description" content="Friday — your personal AI.">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icon.svg">
+    <title>Friday</title>
     <link rel="stylesheet" href="/styles.css">
     <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <a class="skip-link" href="#chat-input">Skip to message input</a>
-
-    <section id="access-panel" class="access-panel" aria-labelledby="access-title">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">F</span><span>Friday</span></div>
-      <h1 id="access-title">Chat with Friday</h1>
-      <p class="muted">Enter your local access token from the laptop running Friday. It stays in this tab only.</p>
-      <form id="token-form">
-        <label for="token-input">Access token</label>
-        <div class="token-row">
-          <input id="token-input" name="token" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" required>
-          <button class="button primary" type="submit">Connect</button>
-        </div>
-      </form>
-      <p id="access-error" class="error" role="alert" hidden></p>
-    </section>
-
-    <div id="app-panel" class="app" hidden>
-      <aside class="sidebar" aria-label="Chat sessions">
-        <div class="brand"><span class="brand-mark" aria-hidden="true">F</span><span>Friday</span></div>
-        <button id="new-chat" class="button primary full" type="button">+ New chat</button>
-        <div id="chat-list" class="chat-list" aria-label="Sessions"></div>
-        <div class="sidebar-foot">
-          <span id="connection-label" class="muted" role="status">Not connected</span>
-          <button id="disconnect" class="button quiet" type="button">Sign out</button>
-        </div>
-      </aside>
-      <main class="chat-main">
-        <div id="brain-line" class="brain-line" role="status">Connecting…</div>
-        <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
-        <form id="chat-form" class="chat-form">
-          <label class="visually-hidden" for="chat-input">Message Friday</label>
-          <input id="chat-input" maxlength="20000" autocomplete="off" placeholder="Message Friday…">
-          <button id="chat-send" class="button primary" type="submit">Send</button>
-        </form>
-        <p id="chat-error" class="error" role="alert" hidden></p>
-      </main>
-    </div>
+    <noscript>Friday needs JavaScript.</noscript>
+    <div id="root"></div>
   </body>
 </html>

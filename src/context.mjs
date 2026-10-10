@@ -148,6 +148,7 @@ export function createContext({ appRoot, env = process.env }) {
 
   // Chat brain: Nemotron direct when keyed, else the DSH worker path when
   // verified, else honest local fallback.
+  ctx.chat.onMessage = ({ conversationId, role }) => bus.publish('chat.message', { conversationId, role });
   ctx.notifications = new Notifications(store, bus);
   // Task finished -> tell the user where they asked (chat) and in the inbox.
   const prevOnEvent = store.onEvent;

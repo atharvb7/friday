@@ -1,38 +1,43 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { extname, resolve, sep } from 'node:path';
 
-// Exact-path map only: the request path must be a key, so no traversal exists.
-// Served without auth (the token gate lives in app.js); /v1/* always requires it.
-const ASSETS = new Map([
-  ['/', ['index.html', 'text/html; charset=utf-8']],
-  ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
-  ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
-  ['/voice.js', ['voice.js', 'text/javascript; charset=utf-8']],
-  ['/pet.html', ['pet.html', 'text/html; charset=utf-8']],
-  ['/pet-viewer.js', ['pet-viewer.js', 'text/javascript; charset=utf-8']],
-  ['/pet.css', ['pet.css', 'text/css; charset=utf-8']],
-  ['/favicon.ico', ['favicon.svg', 'image/svg+xml']],
-  ['/vendor/three.module.js', ['vendor/three.module.js', 'text/javascript; charset=utf-8']],
-  ['/vendor/loaders/GLTFLoader.js', ['vendor/loaders/GLTFLoader.js', 'text/javascript; charset=utf-8']],
-  ['/vendor/utils/BufferGeometryUtils.js', ['vendor/utils/BufferGeometryUtils.js', 'text/javascript; charset=utf-8']],
-  ['/pet.js', ['pet.js', 'text/javascript; charset=utf-8']],
-  ['/pet.glb', ['assets/pet.glb', 'model/gltf-binary']],
-]);
+// Serves files under public/ only. A request resolves only if the real path stays
+// inside public/, the extension is allow-listed, and no segment is a dotfile, so
+// traversal and symlink escapes cannot leak anything. No auth (the token gate is
+// in the app; /v1/* always requires it).
+const TYPES = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json',
+  '.glb': 'model/gltf-binary', '.json': 'application/json; charset=utf-8', '.ico': 'image/x-icon',
+};
+const ALIASES = new Map([['/', '/index.html'], ['/favicon.ico', '/favicon.svg'], ['/pet.glb', '/assets/pet.glb']]);
 
 const SECURITY_HEADERS = {
-  'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self'",
+  'Referrer-Policy': 'no-referrer',
 };
+// The pet stage loads Three.js modules from the same origin (vendored); no CDN needed.
 
 export function makeStaticServer(publicDir) {
+  const root = realpathSync(publicDir);
   return function serveStatic(req, res, pathname) {
-    const asset = ASSETS.get(pathname);
-    if (!asset || req.method !== 'GET') return false;
-    let body;
-    try { body = readFileSync(resolve(publicDir, asset[0])); } catch { return false; }
-    res.writeHead(200, { 'Content-Type': asset[1], 'Content-Length': body.length, ...SECURITY_HEADERS });
-    res.end(body);
+    if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+    let p;
+    try { p = decodeURIComponent(ALIASES.get(pathname) ?? pathname); } catch { return false; }
+    if (p.includes('\0') || p.split('/').some((seg) => seg.startsWith('.') && seg.length > 0)) return false;
+    const type = TYPES[extname(p).toLowerCase()];
+    if (!type) return false;
+    const abs = resolve(root, `.${p}`);
+    if (!existsSync(abs)) return false;
+    let real;
+    try { real = realpathSync(abs); } catch { return false; }
+    if (real !== root && !real.startsWith(root + sep)) return false;
+    if (!statSync(real).isFile()) return false;
+    const body = readFileSync(real);
+    // The service worker must never be cached stale; everything else is no-store because content is private-adjacent.
+    res.writeHead(200, { 'Content-Type': type, 'Content-Length': body.length, 'Cache-Control': 'no-store', ...SECURITY_HEADERS, ...(p === '/sw.js' ? { 'Service-Worker-Allowed': '/' } : {}) });
+    res.end(req.method === 'HEAD' ? undefined : body);
     return true;
   };
 }
