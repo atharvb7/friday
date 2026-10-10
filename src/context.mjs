@@ -15,19 +15,8 @@ import { ResilientAdapter } from './provider.mjs';
 import { ToolRegistry } from './tools.mjs';
 import { JevClient } from './jev.mjs';
 import { ChatStore } from './chat.mjs';
-import { CodeWork } from './codework.mjs';
-import { ResearchStore } from './research.mjs';
-import { Scheduler } from './scheduler.mjs';
 import { Automations } from './automations.mjs';
 import { Audit } from './audit.mjs';
-import { VoicePipeline } from './voice.mjs';
-import { PetStateMachine } from './pet.mjs';
-import { BrowserDriver } from './browser.mjs';
-import { RealBrowser } from './browser-live.mjs';
-import { WhatsAppFlow } from './whatsapp.mjs';
-import { ComputerControlLease, AtSpiDriver, PortalInput } from './desktop.mjs';
-import { LiveDesktop } from './desktop-live.mjs';
-import { DueRunner } from './scheduler-runner.mjs';
 import { EventBus } from './events.mjs';
 import { Auth } from './auth.mjs';
 import { OpenAICompatProvider } from './ai/openai-compat.mjs';
@@ -111,8 +100,6 @@ export function createContext({ appRoot, env = process.env }) {
   const workspaceDir = resolve(env.FRIDAY_WORKSPACE ?? resolve(dataDir, 'workspace'));
   try { mkdirSync(workspaceDir, { recursive: true, mode: 0o700 }); chmodSync(workspaceDir, 0o700); } catch {}
 
-  const lease = new ComputerControlLease();
-  const scheduler = new Scheduler(store);
   // Model router: providers are interchangeable; nothing else names a vendor.
   const ai = new ModelRouter({ db: store.db, bus, chains: chainsFromEnv(env) });
   ai.register(new OpenAICompatProvider({ name: 'nvidia', baseUrl: env.FRIDAY_NEMOTRON_BASE_URL ?? 'https://integrate.api.nvidia.com/v1', apiKey: env.FRIDAY_NVIDIA_API_KEY ?? null }));
@@ -130,21 +117,8 @@ export function createContext({ appRoot, env = process.env }) {
     tools: new ToolRegistry({ workspace: workspaceDir }),
     jev: new JevClient({}),
     chat: new ChatStore(store),
-    codework: new CodeWork({ baseDir: resolve(dataDir, 'code-workspaces') }),
-    research: new ResearchStore({ store }),
-    scheduler,
     automations: new Automations(store),
     audit: new Audit(store),
-    voice: new VoicePipeline(),
-    pet: new PetStateMachine('sleeping'),
-    browser: new BrowserDriver(),
-    lease,
-    atspi: new AtSpiDriver(),
-    portal: new PortalInput({ lease }),
-    liveBrowser: new RealBrowser(),
-    liveDesktop: new LiveDesktop({ lease }),
-    whatsapp: new WhatsAppFlow({ effects, dataDir }),
-    dueRunner: new DueRunner({ store, scheduler, governor }),
     // Kill-switch latch: set via POST /v1/emergency-stop, cleared explicitly.
     state: { emergencyStopped: false, emergencyStoppedAt: null },
   };
@@ -227,7 +201,6 @@ export function createContext({ appRoot, env = process.env }) {
     governorTimer.unref();
     try { skills.syncTo(resolve(dataDir, 'dsh-home', 'skills')); } catch {}
     worker.start();
-    ctx.dueRunner.start();
     if (ai.hasProvider) indexer.start();
     ctx.jobs.start();
     ctx.proactive.start();
@@ -236,7 +209,6 @@ export function createContext({ appRoot, env = process.env }) {
     worker.stop();
     ctx.nodes?.stopAll();
     clearInterval(governorTimer);
-    try { ctx.dueRunner.stop?.(); } catch {}
     indexer.stop();
     ctx.jobs.stop();
     ctx.proactive.stop();

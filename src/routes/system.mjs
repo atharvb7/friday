@@ -1,7 +1,7 @@
 import { healthReport } from '../health.mjs';
 
 export function systemRoutes(router, ctx) {
-  const { governor, store, worker, dshAdapter, nemotron, state, jev, audit, pet, voice, lease } = ctx;
+  const { governor, store, worker, dshAdapter, nemotron, state, jev, audit } = ctx;
 
   router.get('/v1/status', () => {
     const adapterStatus = state.emergencyStopped
@@ -44,18 +44,10 @@ export function systemRoutes(router, ctx) {
     return [200, { emergencyStopped: false }];
   });
 
+  // Presence for the pet and other bodies: one derived state (see src/companion.mjs).
   router.get('/v1/presence', () => {
     const comp = ctx.companion.compute();
-    const petState = comp.pet;
-    return [200, {
-      presence: {
-        pet: petState, voice: voice.state ?? 'idle',
-        lease: lease.active ? { active: true, expiresAt: lease.active.expiresAt ?? null } : { active: false },
-        drivers: { browser: 'scaffold-disabled', atspi: 'not-verified', portal: 'lease-gated', localModel: false },
-        companion: comp,
-      },
-      jevConfigured: jev.configured,
-    }];
+    return [200, { presence: { pet: comp.pet, companion: comp, localModel: false }, jevConfigured: jev.configured }];
   });
 
   // Compact state for small devices (ESP32): poll this, or stream /v1/companion/stream.

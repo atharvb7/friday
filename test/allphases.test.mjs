@@ -25,7 +25,7 @@ async function stop(c) {
   await new Promise((res, rej) => { const t = setTimeout(() => rej(new Error('no exit')), 10000); c.on('exit', () => { clearTimeout(t); res(); }); });
 }
 
-test('all phases: jev route, schedules, research, workspaces, automations, audit, presence', async () => {
+test('all phases: jev route, automations, audit, presence', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'friday-all-'));
   const child = start(dir);
   try {
@@ -45,16 +45,7 @@ test('all phases: jev route, schedules, research, workspaces, automations, audit
     assert.ok(r2.route.riskScore >= 3);
     assert.equal((await api('/v1/route', J({ instruction: '' }))).status, 400);
 
-    // Scheduler + research + workspace + automations + audit + presence.
-    const sched = await (await api('/v1/schedules', J({ title: 't', instruction: 'i', runAt: '2026-10-01T00:00:00.000Z' }))).json();
-    assert.equal(sched.schedule.status, 'scheduled');
-    const src = await (await api('/v1/research/sources', J({ url: 'https://example.com/a', title: 'A' }))).json();
-    assert.ok(src.source.id);
-    assert.equal((await api('/v1/research/sources', J({ url: 'http://bad.com', title: 'B' }))).status, 400);
-    const ws = await (await api('/v1/workspaces', { method: 'POST' })).json();
-    const wid = ws.workspace.id;
-    assert.equal((await api(`/v1/workspaces/${wid}/write`, J({ path: 'a.txt', content: 'hi' }))).status, 200);
-    assert.equal((await api(`/v1/workspaces/${wid}/write`, J({ path: '../../x', content: 'hi' }))).status, 400);
+    // Automations (explicit, read-only capabilities, kill switch) + audit chain + presence.
     const auto = await (await api('/v1/automations', J({ owner: 'me', trigger: { kind: 'build_failed' }, capabilities: ['notify'] }))).json();
     assert.equal(auto.automation.killSwitch, true);
     assert.equal((await api('/v1/automations', J({ owner: 'me', trigger: { kind: 'build_failed' }, capabilities: ['send'] }))).status, 400);
@@ -62,7 +53,6 @@ test('all phases: jev route, schedules, research, workspaces, automations, audit
     const pres = await (await api('/v1/presence')).json();
     assert.equal(pres.presence.pet, 'offline', 'no brain and no agent runtime = offline pet');
     assert.equal(pres.presence.companion.state, 'offline');
-    assert.equal(pres.presence.drivers.browser, 'scaffold-disabled');
     assert.equal(pres.jevConfigured, false);
   } finally {
     await stop(child);

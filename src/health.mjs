@@ -1,6 +1,6 @@
 // Deterministic health report (no model involved). Each check is
 // { name, status: ok|degraded|down|off, detail }.
-import { statfsSync, existsSync } from 'node:fs';
+import { statfsSync } from 'node:fs';
 
 const MB = 1048576;
 
@@ -33,7 +33,6 @@ export function healthReport(ctx) {
   } catch (e) { add('disk', 'degraded', e.message); }
 
   add('serpapi', ctx.env.SERPAPI_API_KEY ? 'ok' : 'off', ctx.env.SERPAPI_API_KEY ? 'key configured' : 'no key');
-  add('browser', existsSync(ctx.env.FRIDAY_CHROME ?? '/usr/bin/google-chrome') ? 'ok' : 'off', 'read-only snapshot driver');
   try { const v = ctx.audit.verify(); add('audit_chain', v.ok === false ? 'down' : 'ok', v.ok === false ? 'hash chain broken' : 'verified'); }
   catch (e) { add('audit_chain', 'degraded', e.message); }
   add('remote_auth', ctx.auth.totpActive() ? 'ok' : 'degraded', ctx.auth.totpActive() ? 'TOTP active' : 'TOTP not enrolled (required before phone approvals)');

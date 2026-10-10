@@ -6,7 +6,7 @@ const DETERMINISTIC_LOCAL = new Set(['memory', 'file_search', 'file_read']);
 const QUEUE_AS_TASK = new Set(['coding', 'research', 'browser', 'desktop', 'voice']);
 
 export function chatRoutes(router, ctx) {
-  const { chat, store, memory, tools, jev, audit, pet, env, bus } = ctx;
+  const { chat, store, memory, tools, jev, audit, env, bus } = ctx;
 
   router.get('/v1/chats', () => [200, { conversations: chat.listConversations() }]);
 
@@ -57,10 +57,7 @@ export function chatRoutes(router, ctx) {
     reply = (reply || '…').slice(0, 20000);
     chat.addMessage(convo.id, 'assistant', reply);
     try { audit.append(convo.id, 'chat.reply', { intent: route.intent, brain: brain.name, source: route.source, tools: toolsUsed.map((t) => t.name) }); } catch {}
-    try { pet.transition('wake'); } catch {}
-    try { pet.transition('hear'); } catch {}
     bus.publish('chat.reply', { conversationId: convo.id, brain: brain.name });
-    try { bus.publish('pet.state_changed', { state: pet.state }); } catch {}
     return { conversation: chat.getConversation(convo.id), route, reply, brain: brain.name, model, toolsUsed };
   }
 
