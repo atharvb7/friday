@@ -47,6 +47,8 @@ import { loadMcpConfig, renderOverlay, envToForward, withDefaults } from './mcp-
 import { ResearchMemory } from './research-memory.mjs';
 import { NodeHub } from './nodes.mjs';
 import { WebPush } from './webpush.mjs';
+import { Companion } from './companion.mjs';
+import { VoiceServer } from './voice-server.mjs';
 import { KindRouterAdapter } from './adapters.mjs';
 import { ComputerAgent } from './agent/computer-agent.mjs';
 
@@ -184,6 +186,8 @@ export function createContext({ appRoot, env = process.env }) {
       }
     };
   }
+  ctx.companion = new Companion({ ctx });
+  ctx.voiceServer = new VoiceServer({ env, governor });
   ctx.jobs = new Jobs({ store, notifications: ctx.notifications, chat: ctx.chat, bus, settings });
   ctx.policy = new Policy({ settings, bus });
   ctx.approvals = new Approvals({ store, notifications: ctx.notifications, chat: ctx.chat, bus, audit: ctx.audit });

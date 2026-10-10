@@ -60,7 +60,8 @@ test('all phases: jev route, schedules, research, workspaces, automations, audit
     assert.equal((await api('/v1/automations', J({ owner: 'me', trigger: { kind: 'build_failed' }, capabilities: ['send'] }))).status, 400);
     assert.equal((await (await api('/v1/audit/verify')).json()).ok, true);
     const pres = await (await api('/v1/presence')).json();
-    assert.equal(pres.presence.pet, 'sleeping');
+    assert.equal(pres.presence.pet, 'offline', 'no brain and no agent runtime = offline pet');
+    assert.equal(pres.presence.companion.state, 'offline');
     assert.equal(pres.presence.drivers.browser, 'scaffold-disabled');
     assert.equal(pres.jevConfigured, false);
   } finally {

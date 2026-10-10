@@ -16,7 +16,11 @@ export function chatRoutes(router, ctx) {
   });
 
   // Shared turn logic. `hooks` carries streaming callbacks when the caller wants them.
-  async function turn({ convo, text, hooks = {}, signal = null }) {
+  async function turn(args) {
+    ctx.companion.chatStart();
+    try { return await turnInner(args); } finally { ctx.companion.chatEnd(); }
+  }
+  async function turnInner({ convo, text, hooks = {}, signal = null }) {
     chat.addMessage(convo.id, 'user', text);
     const brain = ctx.chatBrain();
     // JEV is off unless enabled; the local classifier is the deterministic default.
@@ -69,6 +73,12 @@ export function chatRoutes(router, ctx) {
     }
     return { convo: chat.createConversation(text.slice(0, 60)), text };
   }
+
+  // One-shot text turn for non-browser clients (voice devices): returns just the reply.
+  ctx.quickTurn = async (text, conversationId = null) => {
+    const convo = (conversationId && chat.getConversation(conversationId)) || chat.createConversation(text.slice(0, 60));
+    return turn({ convo, text });
+  };
 
   router.post('/v1/chat', async ({ body }) => {
     const b = await body();

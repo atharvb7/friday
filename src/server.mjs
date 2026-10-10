@@ -16,6 +16,7 @@ import { authRoutes } from './routes/auth.mjs';
 import { platformRoutes } from './routes/platform.mjs';
 import { assistantRoutes } from './routes/assistant.mjs';
 import { nodeRoutes } from './routes/node.mjs';
+import { voiceRoutes } from './routes/voice.mjs';
 import { openEventStream } from './http/sse.mjs';
 import { requiredScope, needsTotp } from './auth.mjs';
 
@@ -34,7 +35,7 @@ const ctx = createContext({ appRoot });
 ctx.start();
 
 const router = new Router();
-for (const register of [systemRoutes, taskRoutes, memoryRoutes, toolRoutes, chatRoutes, workRoutes, computerRoutes, authRoutes, platformRoutes, assistantRoutes, nodeRoutes]) register(router, ctx);
+for (const register of [systemRoutes, taskRoutes, memoryRoutes, toolRoutes, chatRoutes, workRoutes, computerRoutes, authRoutes, platformRoutes, assistantRoutes, nodeRoutes, voiceRoutes]) register(router, ctx);
 const serveStatic = makeStaticServer(resolve(appRoot, 'public'));
 
 // Buckets: authenticated traffic is keyed by principal (behind `tailscale serve`
@@ -58,6 +59,13 @@ function send(res, status, payload, extraHeaders = {}) {
 }
 
 const MAX_BODY = 64 * 1024;
+function rawReader(req) {
+  return async ({ max = 4 * 1024 * 1024 } = {}) => {
+    const chunks = []; let size = 0;
+    for await (const c of req) { size += c.length; if (size > max) throw new Error('body_too_large'); chunks.push(c); }
+    return Buffer.concat(chunks);
+  };
+}
 function bodyReader(req) {
   return async ({ optional = false, max = MAX_BODY } = {}) => {
     try {
@@ -94,7 +102,7 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/v1/events') return openEventStream(req, res, ctx.bus);
   try {
-    const out = await router.dispatch(req.method, url.pathname, { req, url, body: bodyReader(req), principal });
+    const out = await router.dispatch(req.method, url.pathname, { req, url, body: bodyReader(req), rawBody: rawReader(req), principal });
     if (!out) return send(res, 404, { error: 'not_found' });
     if (!Array.isArray(out) && typeof out.raw === 'function') return await out.raw(res);
     return send(res, out[0], out[1], out[2]);

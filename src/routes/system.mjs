@@ -45,16 +45,39 @@ export function systemRoutes(router, ctx) {
   });
 
   router.get('/v1/presence', () => {
-    let petState = 'sleeping';
-    try { petState = pet.state ?? petState; } catch {}
+    const comp = ctx.companion.compute();
+    const petState = comp.pet;
     return [200, {
       presence: {
         pet: petState, voice: voice.state ?? 'idle',
         lease: lease.active ? { active: true, expiresAt: lease.active.expiresAt ?? null } : { active: false },
         drivers: { browser: 'scaffold-disabled', atspi: 'not-verified', portal: 'lease-gated', localModel: false },
+        companion: comp,
       },
       jevConfigured: jev.configured,
     }];
+  });
+
+  // Compact state for small devices (ESP32): poll this, or stream /v1/companion/stream.
+  router.get('/v1/companion', () => [200, ctx.companion.compute()]);
+  router.get('/v1/companion/stream', ({ req }) => ({
+    raw: async (res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+      const send = (c) => res.write(`event: state\ndata: ${JSON.stringify(c)}\n\n`);
+      send(ctx.companion.compute());
+      const off = ctx.bus.subscribe((e) => { if (e.type === 'companion.state_changed') send(e.data); });
+      const hb = setInterval(() => res.write(': hb\n\n'), 15000);
+      req.on('close', () => { clearInterval(hb); off(); });
+    },
+  }));
+
+  // Hardware events (ESP32): presence sensor, button press. Pure telemetry, no authority.
+  router.post('/v1/companion/events', async ({ body, principal }) => {
+    const b = await body({ optional: true });
+    const type = ['presence', 'absence', 'button'].includes(b.type) ? b.type : null;
+    if (!type) return [400, { error: 'type must be presence|absence|button' }];
+    ctx.bus.publish(`companion.${type}`, { device: principal.name ?? principal.id, distanceCm: Number.isFinite(b.distanceCm) ? b.distanceCm : null });
+    return [200, { ok: true, state: ctx.companion.compute() }];
   });
 
   router.get('/v1/audit/verify', () => {
