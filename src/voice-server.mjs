@@ -53,7 +53,7 @@ export class VoiceServer {
       const f = join(dir, 'in.wav'); writeFileSync(f, wav, { mode: 0o600 });
       if (this.#pyStt()) {
         const r = await this.worker.call({ op: 'stt', wav: f, lang: language, prompt });
-        if (!r.ok) throw new Error('stt_failed');
+        if (!r.ok) { console.error(`voice stt error: ${r.error}`); throw new Error('stt_failed'); }
         return r.text.replace(/\s+/g, ' ').trim();
       }
       const out = await new Promise((res, rej) => execFile(this.whisper.bin, ['-m', this.whisper.model, '-f', f, '-nt', '-np'], { timeout: TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (e, so) => (e ? rej(new Error('stt_failed')) : res(so))));
@@ -72,7 +72,7 @@ export class VoiceServer {
       const out = join(dir, 'out.wav');
       if (this.#pyTts()) {
         const r = await this.worker.call({ op: 'tts', text: t, voice, speed: sp, out });
-        if (!r.ok) throw new Error('tts_failed');
+        if (!r.ok) { console.error(`voice tts error: ${r.error}`); throw new Error('tts_failed'); }
         return readFileSync(out);
       }
       await new Promise((res, rej) => {

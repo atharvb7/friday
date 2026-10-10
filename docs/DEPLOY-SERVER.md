@@ -51,7 +51,7 @@ the server unless you use `backup --with-secrets` (protect that file).
 ## 6. Operations
 `friday doctor` (pre-flight), `friday status`, `friday logs -f`, `/v1/health` (Settings → System health), `friday backup` on a cron
 (keeps the last 7), emergency stop from any device (■ Stop). Update: `git pull && node bin/friday.mjs restart`.
-Optional voice for hardware devices: install whisper.cpp + a Piper voice and set `FRIDAY_WHISPER_*`/`FRIDAY_PIPER_*` (see `.env.example`).
+Voice (browser mic + speaker and the ESP32): `node bin/friday.mjs voice setup` (needs `python3-venv`; ~600 MB download), then restart. The worker uses ~1 GB while a conversation is active and exits after 5 idle minutes; set `FRIDAY_STT_MODEL=base` to halve that.
 
 ## Things that are NOT verified yet (need the real server)
 bubblewrap under the server's kernel/container, Tailscale Serve + phone PWA install + Web Push end to end, memory under sustained

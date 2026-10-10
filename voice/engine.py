@@ -31,8 +31,18 @@ def kokoro():
         _kokoro = Kokoro(KOKORO_ONNX, KOKORO_VOICES)
     return _kokoro
 
+def load_audio(path):
+    """WAV -> float32 mono 16 kHz array (avoids PyAV decoding, which is version-fragile)."""
+    import numpy as np, soundfile as sf
+    data, rate = sf.read(path, dtype="float32", always_2d=True)
+    mono = data.mean(axis=1)
+    if rate != 16000:
+        n = int(round(len(mono) * 16000 / rate))
+        mono = np.interp(np.linspace(0, len(mono) - 1, n), np.arange(len(mono)), mono).astype("float32")
+    return mono
+
 def stt(req):
-    segments, info = whisper().transcribe(req["wav"], language=req.get("lang") or None, initial_prompt=req.get("prompt") or None,
+    segments, info = whisper().transcribe(load_audio(req["wav"]), language=req.get("lang") or None, initial_prompt=req.get("prompt") or None,
                                           beam_size=5, vad_filter=True, vad_parameters={"min_silence_duration_ms": 500},
                                           condition_on_previous_text=False, temperature=0.0)
     text = " ".join(s.text.strip() for s in segments).strip()

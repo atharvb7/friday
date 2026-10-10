@@ -67,7 +67,7 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 ## Phase 7 — Clients and voice  (UI verified in a real browser 2026-10-10)
 - [x] Dashboard + phone PWA (no build step): streaming chat with tool chips + voice in/out (browser speech), inbox with approvals (TOTP prompt for devices), tasks with execution trace, research browser with sources/contradictions, memory CRUD/pin/search, reminders, settings (personality, autonomy tiers, proactive, devices/TOTP, rules, health, models, skills), live SSE state orb, emergency stop, dark/light, responsive
 - [x] Web Push (VAPID + RFC 8291, dependency-free; encryption round-trip tested; NOT yet verified against a real push service/phone)
-- [x] Server-side voice adapters for hardware (whisper.cpp / Piper via CLI, temp audio deleted) — engines not installed here
+- [x] Voice: Whisper (faster-whisper `small`, English + Hinglish prompt) for listening and Kokoro (soft/warm blend, selectable in Settings) for speaking, via an on-demand Python worker (~1 GB RAM while loaded, unloads after 5 idle min); browser recorder with pause detection; verified in real Chrome with a fake microphone; whisper.cpp/Piper CLI fallback; browser speech as last resort
 - [ ] Verify PWA install + push on the real phone over Tailscale HTTPS
 
 ## Phase 8 — Companion
