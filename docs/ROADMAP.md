@@ -48,9 +48,13 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - [x] Autonomy tiers per category (ask/trusted/autonomous/high), `high` time-boxed (<=12h) + auto-expiry + revoked by emergency stop; critical actions only under high
 - [x] Approvals: exact-payload binding, execute-once, tamper check, 24h expiry; gated tools auto-register; devices need TOTP to decide
 - [ ] Web Push to the phone (needs HTTPS PWA + VAPID) — Phase 7
-## Phase 5 — Research, coding, GitHub
-- [ ] SerpApi MCP + fetch/extract + persisted research pipeline with citations
-- [ ] Agent-driven coding workspaces, tests, GitHub MCP PR flow
+## Phase 5 — Research, coding, GitHub  (research verified live 2026-10-10)
+- [x] SerpApi: native `web_search` tool (brain) + hosted MCP (`mcp.serpapi.com`, Bearer from env) auto-enabled for the DSH agent — both verified live
+- [x] Hardened `web_fetch` (SSRF-safe: validated sockets, IP-literal check, redirects/size/time caps, text only)
+- [x] Persistent research memory: agent writes findings.json + report.md -> ingested (sources w/ dates, claims w/ confidence, contradiction flags, FTS search); live run saved 19 sources / 11 claims; relevant research auto-injected into chat context
+- [x] `research_start`, `research_search`, `code_task` (named persistent project workspaces), `task_trace`
+- [x] GitHub MCP config auto-enabled when GITHUB_TOKEN is set (needs a token from the user to test)
+- [ ] GitHub PR flow tested end-to-end (needs token + a scratch repo)
 ## Phase 6 — Laptop node (computer use)
 - [ ] Node protocol + outbound connection, lease, activity-pause
 - [ ] Playwright persistent profile, screenshot/vision loop, AT-SPI, Wayland/X11 input

@@ -16,6 +16,9 @@ export function validateMcpConfig(cfg) {
     if (s.transport === 'stdio' && (typeof s.command !== 'string' || !s.command)) throw new TypeError(`${name}: command required`);
     if (s.transport === 'streamable-http' && !/^https:\/\//.test(s.url ?? '') && !/^http:\/\/(127\.0\.0\.1|localhost)/.test(s.url ?? '')) throw new TypeError(`${name}: url must be https (or loopback http)`);
     for (const e of s.envPassthrough ?? []) if (!ENV_RE.test(e)) throw new TypeError(`${name}: bad env name ${e}`);
+    for (const [h, v] of Object.entries(s.headersFromEnv ?? {})) {
+      if (!/^[A-Za-z][A-Za-z0-9-]{0,40}$/.test(h) || !ENV_RE.test(v?.env ?? '') || (v.prefix != null && !/^[A-Za-z0-9 ._-]{0,20}$/.test(v.prefix))) throw new TypeError(`${name}: bad headersFromEnv ${h}`);
+    }
   }
   return cfg;
 }
@@ -44,6 +47,8 @@ export function renderOverlay(cfg) {
       if (s.envPassthrough?.length) { lines.push('        env:'); for (const e of s.envPassthrough) lines.push(`          ${e}: !!js process.env.${e}`); }
     } else {
       lines.push(`        url: ${q(s.url)}`);
+      const hdrs = Object.entries(s.headersFromEnv ?? {});
+      if (hdrs.length) { lines.push('        headers:'); for (const [h, v] of hdrs) lines.push(`          ${h}: !!js '\`${v.prefix ?? ''}\${process.env.${v.env}}\`'`); }
     }
     if (s.toolCallTimeoutMs) lines.push(`        toolCallTimeoutMs: ${Number(s.toolCallTimeoutMs)}`);
     rows.push(lines.join('\n'));
@@ -54,6 +59,19 @@ export function renderOverlay(cfg) {
 
 export function envToForward(cfg) {
   const names = new Set();
-  for (const s of Object.values(cfg.servers)) if (s.enabled !== false) for (const e of s.envPassthrough ?? []) names.add(e);
+  for (const s of Object.values(cfg.servers)) if (s.enabled !== false) { for (const e of s.envPassthrough ?? []) names.add(e); for (const v of Object.values(s.headersFromEnv ?? {})) names.add(v.env); }
   return [...names];
+}
+
+// Servers Friday enables on its own when the matching credential exists in its
+// environment. User config with the same name always wins.
+export function withDefaults(cfg, env) {
+  const servers = { ...cfg.servers };
+  if (env.SERPAPI_API_KEY && !servers.serpapi) {
+    servers.serpapi = { transport: 'streamable-http', url: 'https://mcp.serpapi.com/mcp', headersFromEnv: { Authorization: { env: 'SERPAPI_API_KEY', prefix: 'Bearer ' } } };
+  }
+  if (env.GITHUB_TOKEN && !servers.github) {
+    servers.github = { transport: 'streamable-http', url: 'https://api.githubcopilot.com/mcp/', headersFromEnv: { Authorization: { env: 'GITHUB_TOKEN', prefix: 'Bearer ' } } };
+  }
+  return { servers };
 }

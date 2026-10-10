@@ -40,7 +40,8 @@ export class WorkerLoop {
       if (!this.adapter.status().ready) return;
       while (this.running.size < this.maxConcurrent) {
         if (!this.governor.canAdmit(this.workerClass).allowed) return;
-        const task = this.store.claimNextQueuedTask();
+        const kinds = this.adapter.readyKinds?.() ?? null;
+        const task = this.store.claimNextQueuedTask(kinds);
         if (!task) return;
         const lease = this.governor.acquire(this.workerClass);
         if (!lease.allowed) {
@@ -60,7 +61,7 @@ export class WorkerLoop {
   async #execute(task, controller, lease) {
     const trace = (kind, detail) => { try { this.store.addEvent(task.id, `trace.${kind}`, detail); } catch { /* trace is best effort */ } };
     try {
-      const result = await this.adapter.run({ taskId: task.id, instruction: task.instruction, signal: controller.signal, title: task.title, onTrace: trace });
+      const result = await this.adapter.run({ taskId: task.id, instruction: task.instruction, signal: controller.signal, title: task.title, kind: task.kind, workspace: task.workspace, onTrace: trace });
       if (this.store.getTask(task.id)?.status !== 'running') return;
       if (result.status === 'completed') this.store.transition(task.id, 'completed', { result: result.output ?? '' });
       else this.store.transition(task.id, 'failed', { error: result.error ?? result.status ?? 'worker failed' });

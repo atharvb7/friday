@@ -54,6 +54,8 @@ export class Store {
     if (!columns.has('result')) this.db.exec('ALTER TABLE tasks ADD COLUMN result TEXT');
     if (!columns.has('error')) this.db.exec('ALTER TABLE tasks ADD COLUMN error TEXT');
     if (!columns.has('conversation_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN conversation_id TEXT');
+    if (!columns.has('kind')) this.db.exec("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'");
+    if (!columns.has('workspace')) this.db.exec('ALTER TABLE tasks ADD COLUMN workspace TEXT');
     // A process may have disappeared after an external action. Never auto-retry such work.
     const recoveredAt = new Date().toISOString();
     this.db.exec('BEGIN IMMEDIATE');
@@ -67,7 +69,9 @@ export class Store {
     }
   }
 
-  createTask({ title, instruction, idempotencyKey = null, conversationId = null }) {
+  createTask({ title, instruction, idempotencyKey = null, conversationId = null, kind = 'agent', workspace = null }) {
+    if (!['agent', 'research', 'coding', 'computer'].includes(kind)) throw new TypeError('invalid task kind');
+    if (workspace !== null && !/^[a-z0-9][a-z0-9-]{0,39}$/.test(workspace)) throw new TypeError('invalid workspace name');
     if (idempotencyKey) {
       const existing = this.db.prepare('SELECT * FROM tasks WHERE idempotency_key=?').get(idempotencyKey);
       if (existing) return existing;
@@ -76,7 +80,7 @@ export class Store {
     const now = new Date().toISOString();
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.db.prepare('INSERT INTO tasks (id, title, instruction, status, created_at, updated_at, idempotency_key, conversation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, title, instruction, 'queued', now, now, idempotencyKey, conversationId);
+      this.db.prepare('INSERT INTO tasks (id, title, instruction, status, created_at, updated_at, idempotency_key, conversation_id, kind, workspace) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, title, instruction, 'queued', now, now, idempotencyKey, conversationId, kind, workspace);
       this.db.prepare('INSERT INTO events (task_id, kind, detail, created_at) VALUES (?, ?, ?, ?)').run(id, 'task.created', '{}', now);
       this.db.exec('COMMIT');
     } catch (error) {
@@ -96,11 +100,17 @@ export class Store {
   getTask(id) { return this.db.prepare('SELECT * FROM tasks WHERE id=?').get(id) ?? null; }
   listTasks() { return this.db.prepare('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100').all(); }
   countTasks() { return this.db.prepare('SELECT COUNT(*) AS n FROM tasks').get().n; }
-  nextQueuedTask() { return this.db.prepare("SELECT * FROM tasks WHERE status='queued' ORDER BY created_at ASC LIMIT 1").get() ?? null; }
-  claimNextQueuedTask() {
+  nextQueuedTask(kinds = null) {
+    if (!kinds) return this.db.prepare("SELECT * FROM tasks WHERE status='queued' ORDER BY created_at ASC LIMIT 1").get() ?? null;
+    if (!kinds.length) return null;
+    return this.db.prepare(`SELECT * FROM tasks WHERE status='queued' AND kind IN (${kinds.map(() => '?').join(',')}) ORDER BY created_at ASC LIMIT 1`).get(...kinds) ?? null;
+  }
+  // `kinds` restricts the claim to task kinds some adapter can currently run
+  // (e.g. computer tasks stay queued while the laptop is offline).
+  claimNextQueuedTask(kinds = null) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const task = this.nextQueuedTask();
+      const task = this.nextQueuedTask(kinds);
       if (!task) { this.db.exec('COMMIT'); return null; }
       const now = new Date().toISOString();
       this.db.prepare("UPDATE tasks SET status='running', updated_at=? WHERE id=? AND status='queued'").run(now, task.id);

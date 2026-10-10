@@ -22,6 +22,11 @@ export function platformRoutes(router, ctx) {
     try { saveMcpConfig(ctx.mcpPath, b.config); bus.publish('mcp.changed', {}); return [200, { config: loadMcpConfig(ctx.mcpPath) }]; } catch (e) { return bad(e); }
   });
 
+  router.get('/v1/research/projects', () => [200, { projects: ctx.researchMemory.list() }]);
+  router.get('/v1/research/projects/search', ({ url }) => [200, { projects: ctx.researchMemory.search(url.searchParams.get('q') ?? '') }]);
+  router.get('/v1/research/projects/:id([a-f0-9-]+)', ({ params }) => { const p = ctx.researchMemory.project(params.id); return p ? [200, { project: p }] : [404, { error: 'not_found' }]; });
+  router.get('/v1/research/projects/:id([a-f0-9-]+)/report', ({ params }) => { const r = ctx.researchMemory.report(params.id); return r ? [200, { markdown: r }] : [404, { error: 'not_found' }]; });
+
   router.get('/v1/notifications', ({ url }) => [200, { notifications: notifications.list({ unreadOnly: url.searchParams.get('unread') === '1' }), unread: notifications.unreadCount() }]);
   router.post('/v1/notifications/read-all', () => [200, { marked: notifications.markAllRead() }]);
   router.post('/v1/notifications/:id([a-f0-9-]+)/read', ({ params }) => { const ok = notifications.markRead(params.id); return [ok ? 200 : 404, { read: ok }]; });

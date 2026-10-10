@@ -17,6 +17,7 @@
 import { spawn } from 'node:child_process';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { RESEARCH_CONTRACT } from './research-memory.mjs';
 import { bwrapPath, bwrapUsable, buildBwrapArgs, dshInstallRoot } from './sandbox.mjs';
 
 const DEFAULT_TIMEOUT_MS = 20 * 60_000;
@@ -62,8 +63,13 @@ export class DshAdapter {
     return { ready: true, model: this.model, sandbox: this.sandbox };
   }
 
-  workDirFor(taskId) {
-    const d = join(this.workRoot, String(taskId).replace(/[^A-Za-z0-9_-]/g, '_'));
+  // Where a task works. Named workspaces persist across tasks (coding projects);
+  // otherwise each task gets a disposable directory.
+  pathFor(taskId, workspace = null) {
+    return workspace ? join(this.workRoot, '_projects', workspace) : join(this.workRoot, String(taskId).replace(/[^A-Za-z0-9_-]/g, '_'));
+  }
+  workDirFor(taskId, workspace = null) {
+    const d = this.pathFor(taskId, workspace);
     mkdirSync(d, { recursive: true, mode: 0o700 });
     return d;
   }
@@ -89,11 +95,11 @@ export class DshAdapter {
     return { cmd: bwrapPath(), args: [...args, '--chdir', workDir, this.nodePath, ...dshArgs] };
   }
 
-  run({ taskId, instruction, signal, onTrace = () => {} } = {}) {
+  run({ taskId, instruction, signal, onTrace = () => {}, kind = 'agent', workspace = null } = {}) {
     const st = this.status();
     if (!st.ready) return Promise.resolve({ status: 'failed', error: st.reason });
     if (signal?.aborted) return Promise.reject(abortError(signal.reason?.message));
-    const workDir = this.workDirFor(taskId);
+    const workDir = this.workDirFor(taskId, workspace);
     let prep = {};
     try { prep = this.prepare?.() ?? {}; } catch { prep = {}; } // MCP/skills prep must never block a run
     const { cmd, args } = this.buildCommand(workDir, prep.overlayPath ?? this.overlayPath);
@@ -140,7 +146,7 @@ export class DshAdapter {
       });
 
       child.stdin.on('error', () => {});
-      child.stdin.end(`${WORK_PREAMBLE(workDir)}${String(instruction ?? '')}`);
+      child.stdin.end(`${WORK_PREAMBLE(workDir)}${String(instruction ?? '')}${kind === 'research' ? RESEARCH_CONTRACT : ''}`);
     });
   }
 }

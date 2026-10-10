@@ -43,7 +43,10 @@ import { Proactive } from './proactive.mjs';
 import { Policy } from './policy.mjs';
 import { Approvals } from './approvals.mjs';
 import { Skills } from './skills.mjs';
-import { loadMcpConfig, renderOverlay, envToForward } from './mcp-config.mjs';
+import { loadMcpConfig, renderOverlay, envToForward, withDefaults } from './mcp-config.mjs';
+import { ResearchMemory } from './research-memory.mjs';
+import { NodeHub } from './nodes.mjs';
+import { KindRouterAdapter } from './adapters.mjs';
 
 function findDshBin() {
   const r = spawnSync('sh', ['-c', 'command -v dsh'], { encoding: 'utf8' });
@@ -76,7 +79,7 @@ export function createContext({ appRoot, env = process.env }) {
   const skills = new Skills({ roots: [resolve(appRoot, 'skills'), resolve(dataDir, 'skills')] });
   const overlayPath = resolve(dataDir, 'dsh-home', 'friday-overlay.yml');
   const dshPrepare = () => {
-    const cfg = loadMcpConfig(mcpPath);
+    const cfg = withDefaults(loadMcpConfig(mcpPath), env);
     writeFileSync(overlayPath, renderOverlay(cfg), { mode: 0o600 });
     skills.syncTo(resolve(dataDir, 'dsh-home', 'skills'));
     const extraEnv = {};
@@ -158,6 +161,23 @@ export function createContext({ appRoot, env = process.env }) {
       ctx.chat.addMessage(t.conversation_id, 'assistant', ok ? `✅ Finished “${t.title}”:\n\n${body || '(no output)'}` : `⚠️ “${t.title}” ${e.kind === 'task.failed' ? 'failed' : 'was blocked'}: ${body}`);
     }
   };
+  ctx.nodes = new NodeHub({ bus });
+  ctx.researchMemory = new ResearchMemory({ store, bus });
+  { // finished research tasks are ingested into persistent research memory
+    const prev = store.onEvent;
+    store.onEvent = (e) => {
+      prev?.(e);
+      if (e.kind !== 'task.completed') return;
+      const t = store.getTask(e.taskId);
+      if (t?.kind !== 'research') return;
+      try {
+        const r = ctx.researchMemory.ingestFromDir({ taskId: t.id, dir: dshInner.pathFor(t.id, t.workspace) });
+        ctx.notifications.create({ level: 'success', title: `Research saved: ${r.topic}`, body: `${r.sources} sources, ${r.claims} claims, ${r.contradictions} contradiction(s) stored.`, taskId: t.id, conversationId: t.conversation_id });
+      } catch (error) {
+        ctx.notifications.create({ level: 'warning', title: `Research finished but not saved: ${t.title}`, body: `The agent did not leave a valid findings.json (${String(error.message).slice(0, 120)}). The report text is still in the task result.`, taskId: t.id });
+      }
+    };
+  }
   ctx.jobs = new Jobs({ store, notifications: ctx.notifications, chat: ctx.chat, bus, settings });
   ctx.policy = new Policy({ settings, bus });
   ctx.approvals = new Approvals({ store, notifications: ctx.notifications, chat: ctx.chat, bus, audit: ctx.audit });
@@ -172,7 +192,7 @@ export function createContext({ appRoot, env = process.env }) {
   }
   ctx.brain = new Brain({
     ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit, skills, policy: ctx.policy, approvals: ctx.approvals,
-    contextBuilder: new ContextBuilder({ memory, store, indexer }),
+    contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory }),
   });
   ctx.chatBrain = () => {
     if (ai.hasProvider && !ctx.state.emergencyStopped) return { name: 'friday-brain', adapter: ctx.brain };
@@ -202,6 +222,7 @@ export function createContext({ appRoot, env = process.env }) {
   };
   ctx.stop = () => {
     worker.stop();
+    ctx.nodes?.stopAll();
     clearInterval(governorTimer);
     try { ctx.dueRunner.stop?.(); } catch {}
     indexer.stop();

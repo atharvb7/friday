@@ -4,7 +4,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { generateSecret, verifyTotp, otpauthUri } from './totp.mjs';
 
-export const SCOPES = Object.freeze(['read', 'chat', 'tasks', 'approve', 'admin']);
+export const SCOPES = Object.freeze(['read', 'chat', 'tasks', 'approve', 'node', 'admin']);
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 
 export class Auth {
@@ -80,6 +80,7 @@ export class Auth {
 // Which scope a request needs. Emergency stop is deliberately open to every
 // authenticated device: stopping must never be the hard part.
 export function requiredScope(method, pathname) {
+  if (pathname.startsWith('/v1/node/')) return 'node';
   if (pathname === '/v1/emergency-stop') return 'read';
   if (/^\/v1\/(devices|auth|backup|mcp)/.test(pathname) || pathname === '/v1/skills/install') return 'admin';
   if (pathname === '/v1/emergency-clear') return 'approve';
