@@ -11,7 +11,7 @@ const serverPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 's
 
 function startServer(dataDir) {
   const child = spawn(process.execPath, [serverPath], {
-    env: { ...process.env, FRIDAY_DATA_DIR: dataDir, FRIDAY_PORT: String(PORT) },
+    env: { ...process.env, FRIDAY_DATA_DIR: dataDir, FRIDAY_NO_DOTENV: '1', FRIDAY_PORT: String(PORT) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.stdout.resume();
