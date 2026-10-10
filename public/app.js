@@ -41,7 +41,7 @@ function rejectToken(message = 'That token was not accepted. Check it and try ag
 function renderBrainLine(brain) {
   const el = $('#brain-line');
   if (!el) return;
-  el.textContent = brain === 'nemotron-direct'
+  el.textContent = (brain === 'friday-brain' || brain === 'nemotron-direct')
     ? '● Full brain online — ask anything.'
     : brain === 'dsh'
       ? '● Agent runtime online — ask anything.'

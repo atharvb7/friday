@@ -93,6 +93,7 @@ const server = createServer(async (req, res) => {
   try {
     const out = await router.dispatch(req.method, url.pathname, { req, url, body: bodyReader(req), principal });
     if (!out) return send(res, 404, { error: 'not_found' });
+    if (!Array.isArray(out) && typeof out.raw === 'function') return await out.raw(res);
     return send(res, out[0], out[1], out[2]);
   } catch (error) {
     const [status, payload] = mapError(error);

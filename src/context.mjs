@@ -29,6 +29,13 @@ import { LiveDesktop } from './desktop-live.mjs';
 import { DueRunner } from './scheduler-runner.mjs';
 import { EventBus } from './events.mjs';
 import { Auth } from './auth.mjs';
+import { OpenAICompatProvider } from './ai/openai-compat.mjs';
+import { ModelRouter, chainsFromEnv } from './ai/router.mjs';
+import { MemoryIndexer } from './ai/memory-indexer.mjs';
+import { Settings } from './settings.mjs';
+import { ContextBuilder } from './agent/context-builder.mjs';
+import { buildFridayTools } from './agent/friday-tools.mjs';
+import { Brain } from './agent/brain.mjs';
 
 export function createContext({ appRoot, env = process.env }) {
   const dataDir = resolve(env.FRIDAY_DATA_DIR ?? resolve(appRoot, 'data'));
@@ -67,9 +74,19 @@ export function createContext({ appRoot, env = process.env }) {
 
   const lease = new ComputerControlLease();
   const scheduler = new Scheduler(store);
+  // Model router: providers are interchangeable; nothing else names a vendor.
+  const ai = new ModelRouter({ db: store.db, bus, chains: chainsFromEnv(env) });
+  ai.register(new OpenAICompatProvider({ name: 'nvidia', baseUrl: env.FRIDAY_NEMOTRON_BASE_URL ?? 'https://integrate.api.nvidia.com/v1', apiKey: env.FRIDAY_NVIDIA_API_KEY ?? null }));
+  if (env.FRIDAY_FALLBACK_BASE_URL && env.FRIDAY_FALLBACK_API_KEY) {
+    ai.register(new OpenAICompatProvider({ name: 'fallback', baseUrl: env.FRIDAY_FALLBACK_BASE_URL, apiKey: env.FRIDAY_FALLBACK_API_KEY }));
+  }
+  const settings = new Settings(store);
+  const indexer = new MemoryIndexer({ memory, ai, bus });
+  memory.onChange = (event, row) => { bus.publish(`memory.${event}`, { id: row.id }); indexer.kick(); };
+
   const ctx = {
     appRoot, env, dataDir, token,
-    bus, auth: new Auth(store, token),
+    bus, auth: new Auth(store, token), ai, settings, indexer,
     store, memory, effects, governor, worker, dshAdapter, nemotron, nemotronResilient,
     tools: new ToolRegistry({ workspace: workspaceDir }),
     jev: new JevClient({}),
@@ -95,7 +112,13 @@ export function createContext({ appRoot, env = process.env }) {
 
   // Chat brain: Nemotron direct when keyed, else the DSH worker path when
   // verified, else honest local fallback.
+  ctx.fridayTools = buildFridayTools(ctx);
+  ctx.brain = new Brain({
+    ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit,
+    contextBuilder: new ContextBuilder({ memory, store, indexer }),
+  });
   ctx.chatBrain = () => {
+    if (ai.hasProvider && !ctx.state.emergencyStopped) return { name: 'friday-brain', adapter: ctx.brain };
     if (ctx.nemotron.configured && !ctx.state.emergencyStopped) return { name: 'nemotron-direct', adapter: ctx.nemotronResilient };
     try {
       if (ctx.dshAdapter.status().ready && !ctx.state.emergencyStopped) return { name: 'dsh', adapter: ctx.dshAdapter };
@@ -115,11 +138,13 @@ export function createContext({ appRoot, env = process.env }) {
     governorTimer.unref();
     worker.start();
     ctx.dueRunner.start();
+    if (ai.hasProvider) indexer.start();
   };
   ctx.stop = () => {
     worker.stop();
     clearInterval(governorTimer);
     try { ctx.dueRunner.stop?.(); } catch {}
+    indexer.stop();
     try { store.close(); } catch {}
   };
   return ctx;

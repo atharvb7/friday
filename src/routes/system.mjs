@@ -15,7 +15,7 @@ export function systemRoutes(router, ctx) {
       worker: { running: worker.current !== null, currentTaskId: worker.current?.taskId ?? null, adapterReady: adapterStatus.ready, adapterReason: adapterStatus.reason ?? null },
       capabilities: { localModel: false, dsh: adapterStatus.ready, computerUse: false, remoteAccess: false },
       provider: { consecutiveFailures: dshAdapter.consecutiveFailures ?? 0, circuitOpen: (dshAdapter.breakerOpenUntil ?? 0) > Date.now() },
-      brain: ctx.chatBrain().name, nemotronConfigured: nemotron.configured,
+      brain: ctx.chatBrain().name, nemotronConfigured: nemotron.configured, aiConfigured: ctx.ai.hasProvider,
       emergencyStopped: state.emergencyStopped, emergencyStoppedAt: state.emergencyStoppedAt,
     }];
   });

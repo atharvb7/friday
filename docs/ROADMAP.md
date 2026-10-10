@@ -23,11 +23,15 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - [x] `/v1/health` deterministic report; `friday doctor`
 - [x] Backup/restore with retention (`friday backup|restore`), secrets excluded by default
 - [ ] Tailscale serve + real-phone test; deploy to the 6 GB server; measure RSS under load (needs the server)
-## Phase 2 — Brain
-- [ ] Model router: ai.chat / reason / plan / execute, provider health, fallback
-- [ ] Nemotron streaming + native tool calling
-- [ ] Personality config + real system prompt (separate from privileges)
-- [ ] Context builder (intent -> memory -> project -> files -> session), vector memory, edit/pin
+## Phase 2 — Brain  (done; verified live against Nemotron 2026-10-10)
+- [x] Model router: ai.chat/execute/reason/plan/embed, per-role chains, circuit breakers, call log (latency/tokens), model.* events
+- [x] OpenAI-compatible provider: streaming, native tool calls, reasoning kept out of replies; optional 2nd provider via FRIDAY_FALLBACK_*
+- [x] Tool-calling brain (memory_save/search/forget, task_create/list/cancel, file_search/read, time_now), max 6 steps / 12 calls
+- [x] Personality sliders (style only) + hard-rule system prompt; GET/POST /v1/personality
+- [x] Context builder (budgeted memories + active tasks), hybrid memory (FTS + nemotron-3-embed-1b vectors, RRF), edit/pin/forget, background embedding indexer
+- [x] Streaming chat (`POST /v1/chat {stream:true}` SSE), `/v1/models` stats
+- [ ] Episodic auto-summaries of long conversations; memory dedupe/consolidation (later polish)
+- Measured live: Super turn ~2.5 s avg with tools, Ultra ~12 s (so Ultra is used for reason/plan, Super for chat)
 ## Phase 3 — Agent spine
 - [ ] Install Friday DSH in ~/.friday-dsh, verify real CLI/profile, replace guessed flags
 - [ ] Tasks execute end to end, execution traces, retry/resume/cancel
