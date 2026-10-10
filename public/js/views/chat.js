@@ -1,7 +1,8 @@
 import { h, md, clear, timeAgo } from '../util.js';
-import { streamChat } from '../api.js';
+import { streamChat, auth } from '../api.js';
 import { chunkSpeak } from '/voice.js';
 import { emojiPicker, insertAtCursor } from '../emoji.js';
+import { startRecording, speakServer } from '../voice-io.js';
 
 const SUGGESTIONS = ['What did I ask you to remember?', 'Remind me in 1 hour to stretch', 'Research the latest in open-source AI agents', 'Brief me on today'];
 
@@ -10,6 +11,8 @@ const ACTION_WORD = /^(gasps?|giggles?|sighs?|swoons?|smirks?|winks?|grins?|laug
 const noActions = (t) => t.replace(/(^|[\s(])\*(?!\*)([^*\n]{2,90}?)\*(?=[\s).,!?…:;]|$)/g, (m, pre, inner) => (ACTION_WORD.test(inner.trim()) || inner.trim().split(/\s+/).length >= 4 ? pre : m));
 
 export function render({ app, api, toast }) {
+  const voiceCaps = { stt: false, tts: false }; let speaking = null, recording = null;
+  api('/v1/voice/status').then((v) => { voiceCaps.stt = v.stt === 'ready'; voiceCaps.tts = v.tts === 'ready'; }).catch(() => {});
   let convoId = null, busy = false, abort = null, speak = false, listening = false, rec = null, lastInputWasVoice = false;
   const convos = h('aside', { class: 'convos', id: 'convos' });
   const msgs = h('div', { class: 'msgs', id: 'msgs', 'aria-live': 'polite' });
@@ -109,14 +112,43 @@ export function render({ app, api, toast }) {
     busy = false; app.chatBusy = false; app.paint(); send.disabled = false; loadConvos(); input.focus();
   }
 
+  async function fetchWav(text) {
+    try {
+      const r = await fetch('/v1/voice/speak', { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      return r.ok ? await r.blob() : null;
+    } catch { return null; }
+  }
   function say(text) {
+    if (voiceCaps.tts) { speaking?.cancel(); speaking = speakServer(text, fetchWav); return; }
     if (!('speechSynthesis' in window)) return;
     for (const c of chunkSpeak(text.replace(/[`*#>|]/g, ''), 200)) speechSynthesis.speak(new SpeechSynthesisUtterance(c));
   }
 
+  async function serverMic() {
+    if (recording) { recording.stop(); return; }
+    speaking?.cancel(); speechSynthesis?.cancel();
+    try {
+      recording = startRecording({ onLevel: (l) => mic.style.setProperty('--lvl', String(Math.min(1, l * 12))) });
+      mic.classList.add('primary', 'rec'); input.placeholder = 'Listening… (stops when you pause)';
+      const wav = await recording.done; recording = null;
+      mic.classList.remove('primary', 'rec'); mic.style.removeProperty('--lvl'); input.placeholder = 'Message Friday…';
+      if (!wav) { toast('Didn’t catch anything — try again.'); return; }
+      input.placeholder = 'Transcribing…';
+      const res = await fetch('/v1/voice/transcribe', { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'audio/wav' }, body: wav });
+      input.placeholder = 'Message Friday…';
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { toast(`Voice: ${j.error || res.status}`); return; }
+      if (j.text) { input.value = j.text; lastInputWasVoice = true; submit(); } else toast('I couldn’t make out any words.');
+    } catch (e) {
+      recording = null; mic.classList.remove('primary', 'rec'); input.placeholder = 'Message Friday…';
+      toast(e.name === 'NotAllowedError' ? 'Microphone permission is blocked for this site.' : `Mic error: ${e.message}`);
+    }
+  }
+
   function toggleMic() {
+    if (voiceCaps.stt) return serverMic(); // Whisper on the server (accurate, handles Hinglish/accents)
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { toast('Voice input needs a browser with speech recognition (Chrome/Edge/Safari).'); return; }
+    if (!SR) { toast('Voice input needs a browser with speech recognition, or install Friday’s voice engine.'); return; }
     if (listening) { rec?.stop(); return; }
     speechSynthesis?.cancel();
     rec = new SR(); rec.interimResults = true; rec.lang = navigator.language || 'en-US';
@@ -136,5 +168,5 @@ export function render({ app, api, toast }) {
   app.listeners.add(onEvent);
 
   hello(); loadConvos();
-  return { el, destroy() { emoji.close(); app.listeners.delete(onEvent); abort?.abort(); rec?.stop(); speechSynthesis?.cancel(); } };
+  return { el, destroy() { speaking?.cancel(); recording?.stop(); emoji.close(); app.listeners.delete(onEvent); abort?.abort(); rec?.stop(); speechSynthesis?.cancel(); } };
 }

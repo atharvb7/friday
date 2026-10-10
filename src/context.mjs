@@ -167,7 +167,7 @@ export function createContext({ appRoot, env = process.env }) {
     };
   }
   ctx.companion = new Companion({ ctx });
-  ctx.voiceServer = new VoiceServer({ env, governor });
+  ctx.voiceServer = new VoiceServer({ env, governor, dataDir, appRoot });
   ctx.rules = new Rules({ store, bus, notifications: ctx.notifications });
   ctx.jobs = new Jobs({ store, notifications: ctx.notifications, chat: ctx.chat, bus, settings });
   ctx.policy = new Policy({ settings, bus });
@@ -224,6 +224,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.stop = () => {
     worker.stop();
     ctx.nodes?.stopAll();
+    ctx.voiceServer?.stop();
     clearInterval(governorTimer); clearInterval(pruneTimer);
     indexer.stop();
     ctx.jobs.stop();

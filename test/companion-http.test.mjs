@@ -28,7 +28,7 @@ test('companion over HTTP: read+chat device streams state, reports presence, voi
     assert.equal((await call(dev, '/v1/companion/events', { method: 'POST', body: JSON.stringify({ type: 'nuke' }) })).status, 400);
     assert.equal((await call(dev, '/v1/tasks', { method: 'POST', body: JSON.stringify({ title: 'x', instruction: 'y' }) })).status, 403, 'a desk device cannot create tasks');
     const st = await (await call(dev, '/v1/voice/status')).json();
-    assert.deepEqual(st, { stt: 'not_installed', tts: 'not_installed' });
+    assert.equal(st.stt, 'not_installed'); assert.equal(st.tts, 'not_installed'); assert.equal(st.engine, 'none');
     const ask = await fetch(base + '/v1/voice/ask', { method: 'POST', headers: { Authorization: `Bearer ${dev}`, 'Content-Type': 'audio/wav' }, body: Buffer.alloc(100) });
     assert.equal(ask.status, 501);
     ac.abort();

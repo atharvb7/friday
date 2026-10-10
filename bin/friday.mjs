@@ -137,6 +137,20 @@ async function restore(args) {
   catch (e) { console.error(`restore failed: ${e.message}`); return 1; }
 }
 
+async function voiceCmd(args) {
+  const home = resolve(dataDir, 'voice');
+  const py = resolve(home, 'venv', 'bin', 'python');
+  if (args[0] !== 'setup') { console.log('usage: friday voice setup   (installs Whisper + Kokoro into data/voice, ~600 MB)'); return 64; }
+  mkdirSync(home, { recursive: true });
+  if (!existsSync(py)) { console.log('Creating Python venv…'); if (spawnSync('python3', ['-m', 'venv', resolve(home, 'venv')], { stdio: 'inherit' }).status !== 0) return 1; }
+  console.log('Installing faster-whisper + kokoro-onnx (a few minutes)…');
+  if (spawnSync(py, ['-m', 'pip', 'install', '--disable-pip-version-check', 'faster-whisper', 'kokoro-onnx', 'soundfile', 'numpy'], { stdio: 'inherit' }).status !== 0) return 1;
+  console.log('Downloading models (Whisper small ~250 MB, Kokoro ~330 MB)…');
+  const r = spawnSync(py, [resolve(appRoot, 'voice', 'setup.py')], { stdio: 'inherit', env: { ...process.env, FRIDAY_VOICE_HOME: home } });
+  if (r.status === 0) console.log('Voice ready. Restart Friday: friday restart');
+  return r.status ?? 1;
+}
+
 async function doctor() {
   let bad = 0;
   const row = (ok, name, detail = '', warn = false) => { console.log(`${ok ? 'OK  ' : warn ? 'WARN' : 'FAIL'} ${name.padEnd(22)} ${detail}`); if (!ok && !warn) bad++; };
@@ -167,6 +181,6 @@ async function doctor() {
 }
 
 const [cmd = 'status', ...rest] = process.argv.slice(2);
-const table = { start, stop, status, logs: () => logs(rest), doctor, device: () => device(rest), totp: () => totpCmd(rest), backup: () => backup(rest), restore: () => restore(rest), restart: async () => { await stop(); return start(); } };
-if (!table[cmd]) { console.error('usage: friday start|stop|restart|status|logs [-f] [N]|doctor|device [add|revoke]|totp [confirm]|backup [dir] [--with-secrets]|restore <file> [--force]'); process.exit(64); }
+const table = { start, stop, status, logs: () => logs(rest), doctor, device: () => device(rest), voice: () => voiceCmd(rest), totp: () => totpCmd(rest), backup: () => backup(rest), restore: () => restore(rest), restart: async () => { await stop(); return start(); } };
+if (!table[cmd]) { console.error('usage: friday start|stop|restart|status|logs [-f] [N]|doctor|voice setup|device [add|revoke]|totp [confirm]|backup [dir] [--with-secrets]|restore <file> [--force]'); process.exit(64); }
 process.exit(await table[cmd]());

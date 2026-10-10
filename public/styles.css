@@ -169,3 +169,5 @@ dialog { background: var(--surface); color: var(--text); border: 1px solid var(-
 .convo-del { background: none; border: 0; cursor: pointer; opacity: 0; padding: 4px 8px; border-radius: 6px; color: var(--muted); }
 .convo-row:hover .convo-del, .convo-del:focus-visible { opacity: 1; } .convo-del:hover { color: var(--bad); background: rgba(255,107,129,.12); }
 @media (hover: none) { .convo-del { opacity: .7; } }
+
+.btn.rec { box-shadow: 0 0 0 calc(2px + 8px * var(--lvl, 0)) rgba(255,107,129,.45); background: var(--bad) !important; }

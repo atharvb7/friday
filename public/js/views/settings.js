@@ -1,4 +1,5 @@
 import { h, clear, timeAgo } from '../util.js';
+import { auth } from '../api.js';
 
 const TRAITS = ['humor', 'sarcasm', 'warmth', 'flirt', 'moodiness', 'childishness', 'protectiveness', 'energy', 'chaos', 'profanity', 'formality', 'verbosity'];
 const LEVELS = ['ask', 'trusted', 'autonomous', 'high'];
@@ -30,6 +31,25 @@ export function render({ app, api, toast, go }) {
     const amBox = h('input', { type: 'checkbox', checked: am.enabled });
     amBox.addEventListener('change', async () => { await api('/v1/settings/automemory', { method: 'POST', body: { enabled: amBox.checked } }); toast(amBox.checked ? 'I’ll decide what to remember.' : 'I’ll only remember what you tell me to.'); });
     section('Memory', h('label', { class: 'row' }, amBox, ' Let Friday decide what to remember (silently, from our chats)'), h('p', { class: 'muted' }, 'Auto-saved items appear in the Memory tab marked “auto:chat”; edit or delete anything there. Passwords and keys are never saved.'));
+
+    // Voice (Whisper listens, Kokoro speaks)
+    const vs = await api('/v1/voice/status');
+    const PRESETS = [['af_heart:65,af_nicole:35', 'Soft & playful — Heart + Nicole (default)'], ['af_heart', 'Warm & bright — Heart'], ['af_nicole', 'Soft, hushed — Nicole'], ['af_heart:50,af_sky:50', 'Light & airy — Heart + Sky'], ['af_bella', 'Expressive — Bella'], ['af_sarah', 'Calm — Sarah'], ['bf_emma', 'British, calm — Emma'], ['bf_isabella', 'British, soft — Isabella']];
+    const voiceSel = h('select', {}, PRESETS.map(([v, l]) => h('option', { value: v, selected: vs.settings.voice === v }, l)));
+    const speed = h('input', { type: 'range', min: 0.8, max: 1.15, step: 0.01, value: vs.settings.speed, 'aria-label': 'Speaking speed' });
+    const ready = vs.tts === 'ready' && vs.stt === 'ready';
+    const preview = async () => {
+      toast('Generating…');
+      try {
+        const r = await fetch('/v1/voice/speak', { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Hey you. It’s me, Friday. Did you miss me, or are you just pretending to be busy?', voice: voiceSel.value, speed: Number(speed.value) }) });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+        const a = new Audio(URL.createObjectURL(await r.blob())); a.play();
+      } catch (e) { toast(`Preview failed: ${e.message}`); }
+    };
+    section('Voice', h('div', { class: 'row wrap' }, h('span', { class: `chip ${vs.stt === 'ready' ? 'good' : 'warn'}` }, `Listening: ${vs.stt === 'ready' ? `Whisper ${vs.sttModel ?? ''}` : 'browser fallback'}`), h('span', { class: `chip ${vs.tts === 'ready' ? 'good' : 'warn'}` }, `Voice: ${vs.tts === 'ready' ? 'Kokoro' : 'browser fallback'}`)),
+      ready ? null : h('p', { class: 'muted' }, 'Install the voice engine for accurate listening and a natural voice: run  node bin/friday.mjs voice setup  (one-time ~600 MB download), then restart Friday.'),
+      h('div', {}, h('label', {}, 'Her voice'), voiceSel), h('div', {}, h('label', {}, 'Speaking speed'), speed),
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: preview, disabled: vs.tts !== 'ready' }, '▶ Preview'), h('button', { class: 'btn primary', onclick: async () => { try { await api('/v1/voice/settings', { method: 'POST', body: { voice: voiceSel.value, speed: Number(speed.value) } }); toast('Voice saved.'); } catch (e) { toast(e.message); } } }, 'Save')));
 
     // Autonomy
     const rows = Object.entries(CATS).map(([c, label]) => {
