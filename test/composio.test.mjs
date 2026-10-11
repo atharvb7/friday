@@ -63,3 +63,10 @@ test('composio: Instagram 24h-window error is explained with a fallback instead 
   const r = await c.execute('instagram', 'SEND_TEXT_MESSAGE', { recipient_id: '1', text: 'hi' });
   assert.equal(r.error, 'instagram_24h_window'); assert.match(r.explain, /24 hours[\s\S]*Allow access to messages/); assert.match(r.fallback, /computer_task/);
 });
+
+test('composio: username lookup for the laptop DM fallback', async () => {
+  const f = fake({ 'POST /tools/execute/INSTAGRAM_LIST_ALL_CONVERSATIONS': () => [200, { successful: true, data: { data: [{ id: 'c1', participants: { data: [{ id: '178', username: 'me' }, { id: '209', username: 'kanak' }] } }] } }] });
+  const c = new Composio({ apiKey: 'k', settings: settingsMem(), fetchImpl: f.fetchImpl });
+  assert.equal(await c.instagramUsername('209'), 'kanak');
+  assert.equal(await c.instagramUsername('999'), null);
+});

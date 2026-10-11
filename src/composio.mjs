@@ -94,6 +94,13 @@ export class Composio {
     return text.length > 12_000 ? { data_truncated: text.slice(0, 12_000) } : { data: r.data };
   }
 
+  // Username for an Instagram-scoped id, from the DM conversation list (for the laptop fallback).
+  async instagramUsername(igsid) {
+    const r = await this.execute('instagram', 'LIST_ALL_CONVERSATIONS', { limit: 50, fields: 'participants' }).catch(() => ({}));
+    for (const c of r.data?.data ?? []) for (const p of c.participants?.data ?? []) if (String(p.id) === String(igsid)) return p.username ?? null;
+    return null;
+  }
+
   // Instagram publishing is two-step (container -> wait until processed -> publish); done as ONE approved action.
   async instagramPublish({ image_url = null, video_url = null, caption = '', media_type = null }) {
     if (!image_url && !video_url) return { error: 'image_url or video_url (public https URL) required' };
