@@ -5,7 +5,7 @@
 set -euo pipefail
 HOST="${1:?host}"; BRANCH="${2:?branch}"; TITLE="${3:?title}"; BODY="${4:-}"
 git push -q origin "$BRANCH"
-ssh -o BatchMode=yes "$HOST" bash -s -- "$BRANCH" "$TITLE" "$BODY" <<'REMOTE'
+ssh -o BatchMode=yes "$HOST" "bash -s -- $(printf '%q ' "$BRANCH" "$TITLE" "$BODY")" <<'REMOTE'
 set -e; BR="$1"; TITLE="$2"; BODY="$3"
 cd ~/friday; TOK=$(grep "^GITHUB_TOKEN=" .env | tail -1 | cut -d= -f2-)
 api() { curl -s -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.github+json" "$@"; }
