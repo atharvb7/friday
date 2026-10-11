@@ -47,7 +47,7 @@ test('dm chat: finds the 1:1 thread (not a group), ignores old messages, replies
     await r.dm.tick();
     assert.deepEqual(r.sent, [{ action: 'ig_dm_send', username: 'pandeyy.jr', text: 'Haha bc = batch crew? 😄 How is college?' }]);
     const sys = r.replies[0][0].content;
-    assert.match(sys, /openly an AI assistant/); assert.match(sys, /Never share private info about Atharv/); assert.match(sys, /no romantic flirting/);
+    assert.match(sys, /openly an AI assistant/); assert.match(sys, /Never use em dashes/); assert.match(sys, /Never share private info about Atharv/); assert.match(sys, /no romantic flirting/);
     assert.match(r.chat.listMessages(r.conv.id).at(-1).content, /@pandeyy\.jr:\*\* woah bc legend[\s\S]*\*\*Me:\*\* Haha/);
     await r.dm.tick();
     assert.equal(r.sent.length, 1, 'same message never answered twice');
