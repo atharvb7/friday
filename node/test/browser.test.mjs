@@ -60,7 +60,7 @@ test('real Chrome: snapshot -> click/type/upload by ref, screenshot, private url
     await assert.rejects(() => b.upload({ ref: f2.ref, path: join(dir, 'profile', 'Default', 'Cookies') }), /path_not_allowed|ENOENT/);
     const shot = await b.screenshot();
     assert.equal(shot.mime, 'image/jpeg'); assert.ok(shot.base64.length > 500);
-    await assert.rejects(() => b.click({ ref: 9999 }), /Timeout|waiting/);
+    await assert.rejects(() => b.click({ ref: 9999 }), /stale_ref/);
     await assert.rejects(() => b.click({ ref: 'x' }), /invalid_ref/);
   } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
 });
@@ -80,4 +80,34 @@ test('real Chrome: private/loopback targets are blocked at the request level (in
       assert.ok(!text.includes('INTERNAL-SECRET'));
     }
   } finally { await b.close(); internal.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('real Chrome: div-based clickables (cursor:pointer) are listed and clickable; stale refs fail fast; waits are bounded; click by text', { skip: !existsSync(CHROME) }, async () => {
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`<html><title>Slots</title><body><h1>Pick a slot</h1>
+      <div class=slots><div class=slot style="cursor:pointer;padding:8px" onclick="document.getElementById('o').textContent='picked '+this.textContent">2:00 PM</div><div class=slot style="cursor:pointer;padding:8px" onclick="document.getElementById('o').textContent='picked '+this.textContent">3:00 PM</div></div>
+      <div id=o></div><p>plain text not clickable</p></body></html>`);
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const dir = mkdtempSync(join(tmpdir(), 'fn-br3-'));
+  const b = new BrowserController({ chromium, profileDir: join(dir, 'profile'), headless: true, allowedDirs: [], allowPrivate: true });
+  try {
+    const page = await b.ensure(); await page.goto(`http://127.0.0.1:${srv.address().port}/`);
+    const snap = await b.snapshot();
+    const slot = snap.elements.find((e) => /2:00 PM/.test(e.name));
+    assert.ok(slot && slot.role === 'clickable', `div slot should be listed as clickable: ${JSON.stringify(snap.elements)}`);
+    assert.ok(!snap.elements.some((e) => /plain text/.test(e.name)), 'non-clickable text is not listed');
+    await b.click({ ref: slot.ref });
+    assert.match((await b.snapshot()).text, /picked 2:00 PM/);
+    await b.click_text({ text: '3:00 PM' });
+    assert.match((await b.snapshot()).text, /picked 3:00 PM/);
+    const t0 = Date.now();
+    await assert.rejects(() => b.click({ ref: 999 }), /stale_ref/);
+    assert.ok(Date.now() - t0 < 4000, 'stale refs fail fast, not after a 10 s timeout');
+    const t1 = Date.now();
+    await assert.rejects(() => b.wait({ text: 'Select date', ms: 30000 }), /text_not_found.*snapshot/);
+    assert.ok(Date.now() - t1 < 8000, 'text waits are capped');
+    await assert.rejects(() => b.click_text({ text: 'Nonexistent button' }), /text_not_found/);
+  } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
 });

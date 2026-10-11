@@ -150,3 +150,16 @@ test('computer agent: risk is decided from the TARGET LABEL, not the model\'s se
     await r.approvals.decide(r.approvals.list()[0].id, false); await p;
   } finally { r.done(); }
 });
+
+test('computer agent: repeated waits are cut off and the model is told to snapshot; click_text is risk-classified by its text', async () => {
+  const r = rig();
+  try {
+    const w = (i) => r.call('browser_wait', { text: 'Select date', ms: 5000 }, `w${i}`);
+    r.script.push(turn([w(1)]), turn([w(2)]), turn([w(3)]), turn([w(4)]), end('ok'));
+    await r.agent.run({ taskId: 't', instruction: 'x', meta: { grant: true } });
+    assert.equal(r.sent.filter((x) => x.action === 'browser_wait').length, 2, 'only two consecutive waits reach the browser; the rest are refused with a hint to snapshot');
+    assert.equal(r.agent.decision('browser_click_text', { text: 'Confirm booking' }, true).cat, 'messaging');
+    assert.equal(r.agent.decision('browser_click_text', { text: 'Buy now' }, true).cat, 'spending');
+    assert.equal(r.agent.decision('browser_click_text', { text: '2:00 PM' }, true).decision, 'allow');
+  } finally { r.done(); }
+});
