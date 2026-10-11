@@ -56,3 +56,10 @@ test('composio: instagram publish = container, wait for processing, publish', as
   assert.equal(f.calls.find((x) => x.path.endsWith('PUBLISH')).body.arguments.creation_id, 'cont_1');
   assert.match((await c.instagramPublish({ caption: 'x' })).error, /image_url or video_url/);
 });
+
+test('composio: Instagram 24h-window error is explained with a fallback instead of a raw 403', async () => {
+  const f = fake({ 'POST /tools/execute/INSTAGRAM_SEND_TEXT_MESSAGE': () => [200, { successful: false, error: 'Failed to send message (status 403). Response: {"error":{"message":"This message is sent outside of allowed window.","code":10,"error_subcode":2534022}}' }] });
+  const c = new Composio({ apiKey: 'k', settings: settingsMem(), fetchImpl: f.fetchImpl });
+  const r = await c.execute('instagram', 'SEND_TEXT_MESSAGE', { recipient_id: '1', text: 'hi' });
+  assert.equal(r.error, 'instagram_24h_window'); assert.match(r.explain, /24 hours/); assert.match(r.fallback, /computer_task/);
+});

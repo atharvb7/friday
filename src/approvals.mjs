@@ -70,7 +70,7 @@ export class Approvals {
     catch (error) { result = { error: String(error.message).slice(0, 300) }; }
     this.db.prepare('UPDATE approvals SET result=? WHERE id=?').run(JSON.stringify(result).slice(0, 4000), id);
     if (a.conversation_id && this.chat.getConversation(a.conversation_id)) {
-      this.chat.addMessage(a.conversation_id, 'assistant', result?.error ? `❌ I tried “${a.summary}” after your approval but it failed: ${result.error}` : `✅ Done after your approval: ${a.summary}`);
+      this.chat.addMessage(a.conversation_id, 'assistant', result?.error ? `❌ I tried “${a.summary}” after your approval but it failed: ${result.explain ?? result.error}${result.fallback ? `\n\n${result.explain ? 'What I can do instead: ' : ''}${String(result.fallback).replace(/^Offer to /, '')}` : ''}` : `✅ Done after your approval: ${a.summary}`);
     }
     return this.get(id);
   }
