@@ -1,3 +1,4 @@
+import { svgIcon } from './icons.js';
 // Small dependency-free emoji picker (category tabs, search by name, recents). Inserts at the cursor.
 import { h, clear } from './util.js';
 
@@ -18,7 +19,7 @@ export function emojiPicker({ onPick, anchorLabel = 'Emoji' }) {
   const tabs = h('div', { class: 'emoji-tabs', role: 'tablist' });
   const grid = h('div', { class: 'emoji-grid', role: 'listbox', 'aria-label': 'Emoji' });
   const pop = h('div', { class: 'emoji-pop', hidden: true, role: 'dialog', 'aria-label': 'Emoji picker' }, search, tabs, grid);
-  const btn = h('button', { class: 'btn icon quiet', type: 'button', title: 'Emoji', 'aria-label': anchorLabel, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', onclick: toggle }, '😊');
+  const btn = h('button', { class: 'btn icon quiet', type: 'button', title: 'Emoji', 'aria-label': anchorLabel, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', onclick: toggle }, svgIcon('smile'));
   const wrap = h('div', { class: 'emoji-wrap' }, btn, pop);
 
   const pick = (e) => { onPick(e); remember(e); };

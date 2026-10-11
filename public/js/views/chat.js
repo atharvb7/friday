@@ -3,6 +3,7 @@ import { streamChat, auth } from '../api.js';
 import { chunkSpeak } from '/voice.js';
 import { emojiPicker, insertAtCursor } from '../emoji.js';
 import { startRecording, speakServer } from '../voice-io.js';
+import { svgIcon } from '../icons.js';
 
 const FILE_ICON = { docx: '📝', doc: '📝', odt: '📝', rtf: '📝', xlsx: '📊', xls: '📊', csv: '📊', tsv: '📊', pptx: '📽️', ppt: '📽️', pdf: '📕', md: '🗒️', txt: '🗒️', html: '🌐', json: '🧾', png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', webp: '🖼️', zip: '🗜️' };
 const fmtSize = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
@@ -19,7 +20,9 @@ function fileChip(f, onErr) {
     h('span', { class: 'fi' }, FILE_ICON[ext] ?? '📄'), h('span', { class: 'fn' }, f.name), h('span', { class: 'fs' }, `${fmtSize(f.size)} · ⬇`));
 }
 
-const SUGGESTIONS = ['What did I ask you to remember?', 'Remind me in 1 hour to stretch', 'Research the latest in open-source AI agents', 'Brief me on today'];
+const SUGGESTIONS = [['☀️', 'Brief me on today'], ['⏰', 'Remind me in 1 hour to stretch'], ['🔎', 'Research the latest in open-source AI agents'], ['🧠', 'What did I ask you to remember?']];
+const GREETS = { morning: ['Morning! ☕', 'Rise and shine ✨', 'Good morning, sleepyhead'], afternoon: ['Hey you 👋', 'Afternoon! What’s up?', 'Back already? 😏'], evening: ['Evening ✨', 'Hey, how was your day?', 'Wind-down time?'], night: ['Still up? 🌙', 'Night owl mode 🦉', 'Can’t sleep either?'] };
+const greeting = () => { const hr = new Date().getHours(); const k = hr < 5 ? 'night' : hr < 12 ? 'morning' : hr < 17 ? 'afternoon' : hr < 22 ? 'evening' : 'night'; const l = GREETS[k]; return l[Math.floor(Math.random() * l.length)]; };
 
 // Text chat has no stage directions: hide *actions* (keeps **bold**) even while streaming.
 const ACTION_WORD = /^(gasps?|giggles?|sighs?|swoons?|smirks?|winks?|grins?|laughs?|blushes?|pouts?|hugs?|waves?|nods?|shrugs?|clutch\w*|bounc\w*|pok\w*|rolls?|squeals?|cackles?|snorts?|yawns?|whispers?|screams?|faints?|facepalms?|dramatic\w*|flops?|spins?|twirls?|slumps?|stares?|glares?|leans?|sips?|munches|crunches|steals?|waggles?|taps?|tilts?|peeks?|hides?|jumps?|dances?|cries|sobs?|beams?|melts?|nuzzles?|cuddles?|snuggles?|kisses|smooches|sticks?|puffs?|crosses|raises?|covers?|buries|collapses?|fans?|pretends?|ahem)\b/i;
@@ -32,14 +35,15 @@ export function render({ app, api, toast }) {
   const convos = h('aside', { class: 'convos', id: 'convos' });
   const msgs = h('div', { class: 'msgs', id: 'msgs', 'aria-live': 'polite' });
   const input = h('textarea', { rows: 1, placeholder: 'Message Friday…', 'aria-label': 'Message Friday', maxlength: 20000 });
-  const send = h('button', { class: 'btn primary', type: 'submit' }, 'Send');
-  const mic = h('button', { class: 'btn icon', type: 'button', title: 'Push to talk', 'aria-label': 'Voice input', onclick: toggleMic }, '🎙');
-  const spk = h('button', { class: 'btn icon quiet', type: 'button', title: 'Read replies aloud', 'aria-label': 'Toggle spoken replies', onclick: () => { speak = !speak; spk.textContent = speak ? '🔊' : '🔇'; if (!speak) speechSynthesis?.cancel(); } }, '🔇');
+  // One round action button: mic when the box is empty, send when there is something to send.
+  const send = h('button', { class: 'act send', type: 'submit', 'aria-label': 'Send', title: 'Send' }, svgIcon('send', 20));
+  const mic = h('button', { class: 'act mic', type: 'button', title: 'Talk to Friday', 'aria-label': 'Voice input', onclick: toggleMic }, svgIcon('mic', 20));
+  const spk = h('button', { class: 'btn quiet icon', type: 'button', title: 'Read replies aloud', 'aria-label': 'Toggle spoken replies', 'aria-pressed': 'false', onclick: () => { speak = !speak; spk.replaceChildren(svgIcon(speak ? 'volume' : 'mute', 20)); spk.setAttribute('aria-pressed', String(speak)); spk.classList.toggle('on', speak); if (!speak) speechSynthesis?.cancel(); toast(speak ? 'I’ll read my replies out loud 🔊' : 'Quiet mode 🤫'); } }, svgIcon('mute', 20));
   const fileInput = h('input', { type: 'file', multiple: true, hidden: true, accept: '.docx,.xlsx,.pptx,.pdf,.md,.txt,.csv,.tsv,.html,.json,.xml,.png,.jpg,.jpeg,.gif,.webp,.doc,.xls,.ppt,.odt,.rtf,.zip' });
   const pending = []; // files uploaded and waiting to be sent with the next message
   const tray = h('div', { class: 'attach-tray', hidden: true });
-  const attachBtn = h('button', { class: 'btn quiet icon', type: 'button', title: 'Attach files', 'aria-label': 'Attach files', onclick: () => fileInput.click() }, '📎');
-  const paintTray = () => { clear(tray); tray.hidden = !pending.length; for (const f of pending) tray.append(h('span', { class: 'chip' }, `${FILE_ICON[f.name.split('.').pop().toLowerCase()] ?? '📄'} ${f.name}`, h('button', { class: 'x', type: 'button', 'aria-label': `Remove ${f.name}`, onclick: () => { pending.splice(pending.indexOf(f), 1); paintTray(); } }, '×'))); };
+  const attachBtn = h('button', { class: 'btn quiet icon', type: 'button', title: 'Attach files', 'aria-label': 'Attach files', onclick: () => fileInput.click() }, svgIcon('paperclip', 20));
+  const paintTray = () => { clear(tray); tray.hidden = !pending.length; form?.classList.toggle('has-text', Boolean(input.value.trim() || pending.length)); for (const f of pending) tray.append(h('span', { class: 'chip' }, `${FILE_ICON[f.name.split('.').pop().toLowerCase()] ?? '📄'} ${f.name}`, h('button', { class: 'x', type: 'button', 'aria-label': `Remove ${f.name}`, onclick: () => { pending.splice(pending.indexOf(f), 1); paintTray(); } }, '×'))); };
   async function uploadFiles(list) {
     for (const file of list) {
       if (file.size > 25 * 1024 * 1024) { toast(`${file.name} is over 25 MB`); continue; }
@@ -52,11 +56,16 @@ export function render({ app, api, toast }) {
     }
   }
   fileInput.addEventListener('change', () => { uploadFiles([...fileInput.files]); fileInput.value = ''; });
-  const histBtn = h('button', { class: 'btn quiet icon', type: 'button', 'aria-label': 'Conversations', onclick: () => convos.classList.toggle('open') }, '☰');
+  const histBtn = h('button', { class: 'btn quiet icon hist-btn', type: 'button', 'aria-label': 'Conversations', title: 'Conversations', onclick: () => convos.classList.toggle('open') }, svgIcon('history', 20));
+  const newBtn = h('button', { class: 'btn quiet icon', type: 'button', 'aria-label': 'New chat', title: 'New chat', onclick: () => open(null) }, svgIcon('newchat', 20));
+  app.setHeadSlot?.(histBtn);
+  app.setHeadRight?.(spk, newBtn);
 
   const emoji = emojiPicker({ onPick: (e) => insertAtCursor(input, e) });
   const form = h('form', { class: 'composer', onsubmit: (e) => { e.preventDefault(); submit(); } },
-    tray, h('div', { class: 'box' }, histBtn, attachBtn, fileInput, emoji.el, input, spk, mic, send));
+    tray, h('div', { class: 'box' }, h('div', { class: 'field' }, emoji.el, input, attachBtn, fileInput), mic, send));
+  const syncAct = () => form.classList.toggle('has-text', Boolean(input.value.trim() || pending.length));
+  input.addEventListener('input', syncAct);
   // drag & drop / paste files onto the composer
   form.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); form.classList.add('drop'); } });
   form.addEventListener('dragleave', () => form.classList.remove('drop'));
@@ -85,9 +94,9 @@ export function render({ app, api, toast }) {
   }
   function hello() {
     clear(msgs);
-    msgs.append(h('div', { class: 'hello' }, h('div', { class: 'orb idle' }), h('h2', {}, 'Hey, I’m Friday.'),
-      h('p', { class: 'muted' }, 'I remember, research, run background work, and operate your laptop. Ask me anything.'),
-      h('div', { class: 'suggest' }, SUGGESTIONS.map((s) => h('button', { class: 'chip', type: 'button', onclick: () => { input.value = s; submit(); } }, s)))));
+    msgs.append(h('div', { class: 'hello' }, h('div', { class: 'orb idle big', onclick: (e) => { const o = e.currentTarget; o.classList.remove('boop'); void o.offsetWidth; o.classList.add('boop'); } }), h('h2', {}, greeting()),
+      h('p', { class: 'muted' }, 'Ask me anything — I remember, research, run errands on your laptop and keep an eye on things for you.'),
+      h('div', { class: 'suggest' }, SUGGESTIONS.map(([e, s]) => h('button', { class: 'suggest-card', type: 'button', onclick: () => { input.value = s; syncAct(); submit(); } }, h('span', { class: 'se' }, e), h('span', {}, s))))));
   }
 
   async function loadConvos() {
@@ -124,7 +133,7 @@ export function render({ app, api, toast }) {
 
   async function submit() {
     const text = input.value.trim();
-    const files = pending.splice(0); paintTray();
+    const files = pending.splice(0); paintTray(); form.classList.remove('has-text');
     if ((!text && !files.length) || busy) { pending.push(...files); paintTray(); return; }
     busy = true; app.chatBusy = true; app.paint(); send.disabled = true;
     input.value = ''; input.style.setProperty('height', 'auto'); speechSynthesis?.cancel();

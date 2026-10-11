@@ -1,5 +1,6 @@
 import { h, $, clear, icon, toast } from './util.js';
 import { api, auth, startEvents, ApiError } from './api.js';
+import { svgIcon } from './icons.js';
 import * as chat from './views/chat.js';
 import * as inbox from './views/inbox.js';
 import * as tasks from './views/tasks.js';
@@ -10,6 +11,7 @@ import * as settings from './views/settings.js';
 
 const VIEWS = { chat, inbox, tasks, research, memory, reminders, settings };
 const LABELS = { chat: 'Chat', inbox: 'Inbox', tasks: 'Tasks', research: 'Research', memory: 'Memory', reminders: 'Reminders', settings: 'Settings' };
+const PRIMARY = ['chat', 'inbox', 'tasks']; // phone bottom bar; the rest live under More
 
 export const app = {
   me: null, status: null, unread: 0, pendingApprovals: 0, link: 'offline', current: null, view: null,
@@ -18,12 +20,13 @@ export const app = {
 const root = document.getElementById('root');
 
 // ---- theme -----------------------------------------------------------------
-function applyTheme() { try { const t = localStorage.getItem('friday.theme'); if (t) document.documentElement.dataset.theme = t; } catch { /* ignore */ } }
+function applyTheme() { let t = null; try { t = localStorage.getItem('friday.theme'); } catch { /* ignore */ } document.documentElement.dataset.theme = t || 'light'; const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = (t || 'light') === 'light' ? '#fff6f9' : '#1a0f16'; } // baby pink by default
 function toggleTheme() {
   const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
   const next = cur === 'light' ? 'dark' : 'light';
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('friday.theme', next); } catch { /* ignore */ }
+  applyTheme();
 }
 applyTheme();
 
@@ -46,27 +49,52 @@ function showLogin(message = '') {
 }
 
 // ---- shell -----------------------------------------------------------------
-let orb, stateText, linkDot, linkText, stopBtn, navEls = {}, mainEl;
+let orb, stateText, linkDot, linkText, stopBtn, navEls = {}, mainEl, moreBtn, sheet, titleEl, headSlot, headRight, stoppedBar;
+
+function isLight() { return (document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')) === 'light'; }
+
+function openSheet() {
+  const item = (icon, label, onclick, cls = '') => h('button', { class: `sheet-item ${cls}`, onclick: () => { closeSheet(); onclick(); } }, svgIcon(icon), h('span', {}, label));
+  clear(sheet.panel).append(
+    h('div', { class: 'sheet-grab' }),
+    h('div', { class: 'sheet-grid' }, ...Object.keys(VIEWS).filter((v) => !PRIMARY.includes(v)).map((v) => item(v, LABELS[v], () => go(v), app.current === v ? 'on' : ''))),
+    h('div', { class: 'sheet-list' },
+      item(isLight() ? 'moon' : 'sun', isLight() ? 'Dark mode' : 'Light mode', toggleTheme),
+      item('power', app.status?.emergencyStopped ? 'Resume Friday' : 'Emergency stop', emergency, 'danger'),
+      item('logout', 'Sign out', () => { if (confirm('Sign out of Friday on this device?')) app.signOut(); })));
+  sheet.hidden = false; requestAnimationFrame(() => sheet.classList.add('open'));
+}
+function closeSheet() { sheet.classList.remove('open'); setTimeout(() => { sheet.hidden = true; }, 220); }
 
 function buildShell() {
   clear(root);
   orb = h('div', { class: 'orb idle', id: 'orb' });
-  stateText = h('span', { class: 'muted' }, 'idle');
+  stateText = h('span', { class: 'state' }, 'idle');
   linkDot = h('span', { class: 'dot' }); linkText = h('span', {}, 'connecting');
-  stopBtn = h('button', { class: 'btn bad small', title: 'Stop all agents and revoke elevated autonomy', onclick: emergency }, '■ Stop');
+  stopBtn = h('button', { class: 'btn quiet icon stop-btn', title: 'Emergency stop: cancel all agents and revoke elevated autonomy', 'aria-label': 'Emergency stop', onclick: emergency }, svgIcon('power', 18), h('span', { class: 'hide-mobile' }, 'Stop'));
   const nav = h('nav', { class: 'sidebar', 'aria-label': 'Sections' }, h('div', { class: 'brand' }, h('div', { class: 'orb idle' }), 'Friday'));
   for (const name of Object.keys(VIEWS)) {
     const badge = h('span', { class: 'badge', hidden: true });
-    const b = h('button', { class: 'nav', 'data-view': name, onclick: () => go(name), 'aria-label': LABELS[name] }, h('span', { class: 'ico' }, icon(name)), h('span', {}, LABELS[name]), badge);
+    const b = h('button', { class: `nav${PRIMARY.includes(name) ? ' primary' : ''}`, 'data-view': name, onclick: () => go(name), 'aria-label': LABELS[name] }, h('span', { class: 'ico' }, svgIcon(name), badge), h('span', { class: 'lbl' }, LABELS[name]));
     navEls[name] = { b, badge };
     nav.append(b);
   }
+  moreBtn = h('button', { class: 'nav more', onclick: openSheet, 'aria-label': 'More' }, h('span', { class: 'ico' }, svgIcon('more')), h('span', { class: 'lbl' }, 'More'));
+  nav.append(moreBtn);
+  sheet = h('div', { class: 'sheet', hidden: true, onclick: (e) => { if (e.target === sheet) closeSheet(); } });
+  sheet.panel = h('div', { class: 'sheet-panel', role: 'dialog', 'aria-label': 'More' }); sheet.append(sheet.panel);
   mainEl = h('main', { class: 'main', id: 'main' });
-  const top = h('header', { class: 'topbar' }, orb, h('strong', {}, 'Friday'), stateText, h('span', { class: 'grow' }),
-    h('div', { class: 'status-line hide-mobile' }, linkDot, linkText), stopBtn,
-    h('button', { class: 'btn quiet icon', title: 'Toggle theme', 'aria-label': 'Toggle theme', onclick: toggleTheme }, '◐'));
-  root.append(h('div', { class: 'shell' }, top, nav, mainEl));
+  titleEl = h('strong', { class: 'title' }, 'Friday');
+  headSlot = h('div', { class: 'head-slot' }); // views put contextual buttons here (e.g. chat history)
+  headRight = h('div', { class: 'head-slot right' });
+  stoppedBar = h('div', { class: 'stopped-bar', hidden: true }, 'Friday is stopped — agents are paused. ', h('button', { class: 'btn small', onclick: emergency }, 'Resume'));
+  const top = h('header', { class: 'topbar' }, headSlot, orb, h('div', { class: 'who' }, titleEl, stateText), h('span', { class: 'grow' }),
+    h('div', { class: 'status-line hide-mobile' }, linkDot, linkText), headRight, stopBtn,
+    h('button', { class: 'btn quiet icon hide-mobile', title: 'Toggle theme', 'aria-label': 'Toggle theme', onclick: () => { toggleTheme(); } }, svgIcon('moon', 18)));
+  root.append(h('div', { class: 'shell' }, top, nav, h('div', { class: 'main-wrap' }, stoppedBar, mainEl), sheet));
 }
+app.setHeadSlot = (...els) => { clear(headSlot); headSlot.append(...els); };
+app.setHeadRight = (...els) => { clear(headRight); headRight.append(...els); };
 
 function go(name) {
   if (!VIEWS[name]) name = 'chat';
@@ -74,7 +102,9 @@ function go(name) {
   app.current = name;
   try { history.replaceState(null, '', `#${name}`); } catch { /* ignore */ }
   for (const [n, e] of Object.entries(navEls)) e.b.classList.toggle('active', n === name);
-  clear(mainEl);
+  moreBtn?.classList.toggle('active', !PRIMARY.includes(name));
+  clear(headSlot); clear(headRight); clear(mainEl);
+  mainEl.classList.remove('enter'); void mainEl.offsetWidth; mainEl.classList.add('enter'); // soft page transition
   mainEl.classList.toggle('fixed', name === 'chat');
   app.view = VIEWS[name].render({ app, api, toast, go, refresh });
   mainEl.append(app.view.el);
@@ -92,10 +122,11 @@ function paint() {
   const s = app.status;
   const state = app.link !== 'online' ? 'offline' : s?.emergencyStopped ? 'stopped' : app.chatBusy ? 'thinking' : (s?.worker?.running || s?.worker?.runningCount) ? 'working' : 'idle';
   orb.className = `orb ${state}`;
-  stateText.textContent = `${{ offline: 'offline', stopped: 'stopped', thinking: 'thinking…', working: `working${s?.worker?.runningCount > 1 ? ` (${s.worker.runningCount})` : ''}`, idle: 'idle' }[state]}${s?.mood?.emoji ? ` · ${s.mood.emoji} ${s.mood.mood}` : ''}`;
+  stateText.textContent = `${s?.mood?.emoji && state === 'idle' ? `${s.mood.emoji} ${s.mood.mood}` : { offline: 'offline', stopped: 'stopped', thinking: 'thinking…', working: `working${s?.worker?.runningCount > 1 ? ` (${s.worker.runningCount})` : ''}`, idle: 'online' }[state]}`;
+  stoppedBar.hidden = !s?.emergencyStopped;
   linkDot.className = `dot ${app.link === 'online' ? 'on' : 'bad'}`; linkText.textContent = app.link === 'online' ? `${s?.brain === 'friday-brain' ? 'brain online' : 'local mode'}${s?.nodes?.length ? ' · laptop' : ''}` : 'reconnecting…';
   const badge = app.unread + app.pendingApprovals;
-  navEls.inbox.badge.hidden = !badge; navEls.inbox.badge.textContent = badge;
+  navEls.inbox.badge.hidden = !badge; navEls.inbox.badge.textContent = badge > 9 ? '9+' : badge;
   document.title = badge ? `(${badge}) Friday` : 'Friday';
   stopBtn.hidden = !s || (app.me && !app.me.scopes.includes('read'));
 }
