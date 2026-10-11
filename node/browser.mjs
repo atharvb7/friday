@@ -235,17 +235,19 @@ export class BrowserController {
     const btn = page.getByRole('button', { name: /^message$/i }).or(page.getByRole('link', { name: /^message$/i })).first();
     try { await btn.waitFor({ state: 'visible', timeout: 12_000 }); } catch { throw new Error('no_message_button: cannot open a DM from this profile'); }
     await btn.click({ timeout: 8000 });
-    await page.waitForURL(/\/direct\/t\//, { timeout: 15_000 }).catch(() => {});
-    if (!/\/direct\/t\//.test(page.url())) throw new Error('dm_thread_did_not_open');
-    const box = page.locator('div[role="textbox"][contenteditable="true"], textarea[placeholder*="essage"]').last();
-    await box.waitFor({ state: 'visible', timeout: 15_000 });
-    // The thread header of a 1:1 chat links to that person's profile; a group header does not.
-    const header = await page.evaluate((name) => {
-      const links = [...document.querySelectorAll('a[href]')].filter((a) => a.getAttribute('href').replace(/\/$/, '').toLowerCase() === `/${name}`);
-      const top = links.filter((a) => { const r = a.getBoundingClientRect(); return r.top < 160 && r.width > 0; });
-      return { linked: top.length > 0, title: document.title };
-    }, u);
-    if (!header.linked) throw new Error('thread_not_verified: the open chat is not clearly the 1:1 chat with this user');
+    // Instagram opens either the full thread (/direct/t/…) or a small chat window over the profile. Either way we use
+    // the visible composer and verify that the chat around it belongs to exactly this one user.
+    const box = page.locator('div[role="textbox"][contenteditable="true"]').filter({ visible: true }).last();
+    try { await box.waitFor({ state: 'visible', timeout: 15_000 }); } catch { throw new Error('dm_composer_did_not_open'); }
+    const owner = await box.evaluate((el) => {
+      for (let i = 0; i < 24 && el; i++) {
+        el = el.parentElement; if (!el) break;
+        const users = [...new Set([...el.querySelectorAll('a[href]')].map((a) => a.getAttribute('href')).filter((h) => /^\/[A-Za-z0-9._]+\/?$/.test(h)).map((h) => h.replace(/\//g, '').toLowerCase()))];
+        if (users.length) return users;
+      }
+      return [];
+    });
+    if (owner.length !== 1 || owner[0] !== u) throw new Error(`thread_not_verified: the open chat belongs to ${owner.join(', ') || 'nobody identifiable'}, not @${u}`);
     await box.click();
     const lines = msg.split('\n');
     for (let i = 0; i < lines.length; i++) { if (i) await page.keyboard.press('Shift+Enter'); await page.keyboard.insertText(lines[i]); }

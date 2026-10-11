@@ -4,7 +4,7 @@ const MEM_BUDGET = 2400;
 const TASK_BUDGET = 900;
 
 export class ContextBuilder {
-  constructor({ memory, store, indexer = null, researchMemory = null, questions = null, profile = null }) { Object.assign(this, { memory, store, indexer, researchMemory, questions, profile }); }
+  constructor({ memory, store, indexer = null, researchMemory = null, questions = null, profile = null, dmChats = null }) { Object.assign(this, { memory, store, indexer, researchMemory, questions, profile, dmChats }); }
 
   async build({ text, project = null }) {
     const queryVector = this.indexer ? await this.indexer.queryVector(text) : null;
@@ -43,6 +43,8 @@ export class ContextBuilder {
     try {
       const qs = this.questions?.pending() ?? [];
       if (qs.length) parts.push(`A background task is PAUSED waiting for the user to answer (if their message answers one, call answer_task_question with its id and the answer):\n${qs.map((q) => `- [${q.id.slice(0, 8)}]${q.field ? ` (their ${q.field})` : ''} ${q.question}`).join('\n')}`);
+      const dms = this.dmChats?.list() ?? [];
+      if (dms.length) parts.push(`You are chatting on Instagram DM (auto-replies on) with: ${dms.map((d) => `@${d.username} (until ${d.until.slice(11, 16)} UTC${d.last_note ? `, last: ${d.last_note.slice(0, 80)}` : ''})`).join('; ')}. To answer someone's latest message now call dm_chat_reply_now; never compose those DMs yourself or with computer_task.`);
       const k = this.profile?.knownFields();
       if (k) parts.push(`Saved user details (values hidden; use profile_set when they tell you one): ${Object.entries(k).map(([f, v]) => `${f}=${v}`).join(', ')}`);
     } catch { /* optional */ }
