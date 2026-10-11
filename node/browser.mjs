@@ -58,7 +58,7 @@ const SNAPSHOT_FN = () => {
     if (c) o.name = `${o.name} — ${c}`;
   }
   const headings = [...document.querySelectorAll('h1,h2,h3')].filter(vis).slice(0, 12).map((h) => ({ level: h.tagName.toLowerCase(), text: h.innerText.trim().replace(/\s+/g, ' ').slice(0, 120) }));
-  return { url: location.href, title: document.title, headings, elements: out, text: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 3500) };
+  return { url: location.href, title: document.title, headings, elements: out, text: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1500) };
 };
 
 export function isPrivateHost(host) {
