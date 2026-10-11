@@ -34,7 +34,7 @@ test('REAL voice loop in Chrome: fake microphone says a sentence -> Whisper tran
     await page.waitForFunction(async () => (await (await fetch('/v1/voice/status', { headers: { Authorization: `Bearer ${localStorage.getItem('friday.token')}` } })).json()).stt === 'ready');
     // stop the auto-submit from needing a brain: we only check what lands in the box before/while submitting
     await page.evaluate(() => { const ta = document.querySelector('.composer textarea'); window.__seen = []; new MutationObserver(() => {}).observe(ta, { attributes: true }); const d = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value'); Object.defineProperty(ta, 'value', { get() { return d.get.call(this); }, set(v) { if (v) window.__seen.push(v); d.set.call(this, v); } }); });
-    await page.locator('.composer .btn:has-text("🎙")').click();
+    await page.locator('.composer .act.mic').click();
     await page.waitForFunction(() => window.__seen.length > 0, null, { timeout: 90_000 });
     const heard = (await page.evaluate(() => window.__seen))[0];
     assert.match(heard.toLowerCase(), /remind me to call my sister tomorrow evening/, `Whisper heard: ${heard}`);

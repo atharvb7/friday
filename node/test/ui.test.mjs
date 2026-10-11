@@ -50,7 +50,7 @@ test('UI smoke (real Chrome): every view renders without errors; emoji picker in
     assert.equal(atBottom, true, 'new content keeps the chat scrolled to the bottom');
     // delete a chat from the sidebar (confirm dialog accepted)
     await page.evaluate(() => { location.hash = 'chat'; });
-    await ta.fill('hello for deletion test'); await page.locator('.composer .btn.primary').click();
+    await ta.fill('hello for deletion test'); await ta.dispatchEvent('input'); await page.locator('.composer .act.send').click();
     await page.waitForSelector('.convo-row', { timeout: 10000 });
     const before = await page.locator('.convo-row').count();
     page.once('dialog', (d) => d.accept());
