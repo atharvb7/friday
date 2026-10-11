@@ -26,7 +26,7 @@ function rig() {
     if (interactive && userActiveFor > 0) { userActiveFor--; throw Object.assign(new Error('user_active'), { code: 'user_active', retryAfterMs: 10 }); }
     sent.push({ action, args }); return { ok: true, action };
   } };
-  const script = []; const ai = { hasProvider: true, execute: async () => script.shift(), run: async () => ({ content: 'a login form' }) };
+  const script = []; const ai = { hasProvider: true, execute: async () => script.shift(), run: async (role) => (role === 'computer' ? script.shift() : { content: 'a login form' }) };
   const call = (name, args, id = `c${Math.random()}`) => ({ id, name, args, argumentsText: JSON.stringify(args) });
   const agent = new ComputerAgent({ ai, nodes, policy, approvals, bus, sleep: async () => {} });
   return { dir, store, bus, policy, approvals, agent, nodes, sent, script, call, setActive: (n) => { userActiveFor = n; }, done: () => { store.close(); rmSync(dir, { recursive: true, force: true }); } };
