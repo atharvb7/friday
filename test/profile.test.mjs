@@ -93,17 +93,30 @@ test('autoSubmit lets the final confirm through; purchases still ask', () => {
 test('mustShow blocks a final submit on the wrong business, allows the right one', async () => {
   const r = rig();
   let page = 'Adhunik Hair Salon';
-  r.agent.nodes.dispatch = async ({ action }) => (action === 'browser_snapshot' ? { url: 'https://x', title: 't', headings: [{ level: 'h2', text: page }], elements: [] } : { ok: true });
+  r.agent.nodes.dispatch = async ({ action }) => (action === 'browser_snapshot' ? { url: 'https://x', title: 't', headings: [{ level: 'h2', text: page }], elements: [{ ref: 5, name: 'Send' }] } : { ok: true });
   try {
-    r.script.push(turn([r.call('browser_click', { ref: 5, intent: 'submit_external' })]), end('stopped'));
+    r.script.push(turn([r.call('browser_click', { ref: 5, intent: 'submit_external', expect: 'Send' })]), end('stopped'));
     const out = await r.agent.run({ taskId: 't', instruction: 'book demo salon', meta: { grant: true, mustShow: ['Demo Salon'] } });
     assert.equal(out.status, 'completed');
     assert.equal(r.approvals.list().length, 0, 'never even reached approval on the wrong page');
     page = 'Demo Salon';
-    r.script.push(turn([r.call('browser_click', { ref: 5, intent: 'submit_external' })]), end('asked'));
+    r.script.push(turn([r.call('browser_click', { ref: 5, intent: 'submit_external', expect: 'Send' })]), end('asked'));
     const p = r.agent.run({ taskId: 't2', instruction: 'book demo salon', meta: { grant: true, mustShow: ['demo salon'] } });
     await new Promise((res) => setTimeout(res, 30));
     assert.equal(r.approvals.list().length, 1, 'right page reaches approval');
     await r.approvals.decide(r.approvals.list()[0].id, false); await p;
+  } finally { r.done(); }
+});
+
+test('final-submit click must name its button and the live element must match (Confirm booking vs Change time)', async () => {
+  const r = rig();
+  r.agent.nodes.dispatch = async ({ action, args }) => { if (action === 'browser_snapshot') return { url: 'u', title: 't', elements: [{ ref: 52, name: 'Confirm booking' }, { ref: 53, name: 'Change time' }] }; r.sent.push({ action, args }); return { ok: true }; };
+  try {
+    r.script.push(turn([r.call('browser_click', { ref: 53, intent: 'submit_external' })]), turn([r.call('browser_click', { ref: 53, intent: 'submit_external', expect: 'Confirm booking' })]), end('stopped'));
+    await r.agent.run({ taskId: 't', instruction: 'confirm', meta: { grant: true, autoSubmit: true } });
+    assert.equal(r.sent.length, 0, 'neither the unlabeled nor the wrong-button click went through');
+    r.script.push(turn([r.call('browser_click', { ref: 52, intent: 'submit_external', expect: 'Confirm booking' })]), end('ok'));
+    await r.agent.run({ taskId: 't2', instruction: 'confirm', meta: { grant: true, autoSubmit: true } });
+    assert.deepEqual(r.sent.map((s) => s.args.ref), [52], 'right button goes through');
   } finally { r.done(); }
 });
