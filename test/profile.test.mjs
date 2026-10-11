@@ -89,3 +89,21 @@ test('autoSubmit lets the final confirm through; purchases still ask', () => {
     assert.equal(r.agent.decision('browser_click', { intent: 'purchase' }, true, '', true).decision, 'ask');
   } finally { r.done(); }
 });
+
+test('mustShow blocks a final submit on the wrong business, allows the right one', async () => {
+  const r = rig();
+  let page = 'Adhunik Hair Salon';
+  r.agent.nodes.dispatch = async ({ action }) => (action === 'browser_snapshot' ? { url: 'https://x', title: 't', headings: [{ level: 'h2', text: page }], elements: [] } : { ok: true });
+  try {
+    r.script.push(turn([r.call('browser_click', { ref: 5, intent: 'submit_external' })]), end('stopped'));
+    const out = await r.agent.run({ taskId: 't', instruction: 'book demo salon', meta: { grant: true, mustShow: ['Demo Salon'] } });
+    assert.equal(out.status, 'completed');
+    assert.equal(r.approvals.list().length, 0, 'never even reached approval on the wrong page');
+    page = 'Demo Salon';
+    r.script.push(turn([r.call('browser_click', { ref: 5, intent: 'submit_external' })]), end('asked'));
+    const p = r.agent.run({ taskId: 't2', instruction: 'book demo salon', meta: { grant: true, mustShow: ['demo salon'] } });
+    await new Promise((res) => setTimeout(res, 30));
+    assert.equal(r.approvals.list().length, 1, 'right page reaches approval');
+    await r.approvals.decide(r.approvals.list()[0].id, false); await p;
+  } finally { r.done(); }
+});
