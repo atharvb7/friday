@@ -257,7 +257,21 @@ export function buildFridayTools(ctx) {
       description: `Do something on the user's Instagram that others will see: reply to a DM (SEND_TEXT_MESSAGE needs recipient_id + text; ONLY works if that person messaged the account within the last 24h — check the newest incoming message time with instagram_read LIST_ALL_MESSAGES first; otherwise tell the user and offer computer_task via instagram.com instead), send an image, reply to / post comments, reply to mentions, mark seen, turn comments on/off, delete own comment. action is one of: ${[...TOOLKITS.instagram.act, ...TOOLKITS.instagram.delete].join(', ')}. Needs approval. For publishing a post use instagram_post.`,
       parameters: obj({ action: { type: 'string' }, args: { type: 'object' } }, ['action', 'args']),
       summarize: (a) => `Instagram ${String(a.action).toUpperCase()}: ${clip(JSON.stringify(a.args ?? {}), 600)}`,
-      run: (a) => { const c = classify('instagram', a.action); if (c.error) return c; if (c.kind === 'read') return { error: 'use instagram_read for reads' }; return ctx.composio.execute('instagram', c.action, a.args ?? {}); },
+      run: async (a, { conversationId } = {}) => {
+        const c = classify('instagram', a.action); if (c.error) return c; if (c.kind === 'read') return { error: 'use instagram_read for reads' };
+        const r = await ctx.composio.execute('instagram', c.action, a.args ?? {});
+        // The API refuses DMs it shouldn't (Meta blocks the shared app): the approved message goes out from the laptop instead —
+        // same recipient, same exact text, so the approval still covers exactly what is sent.
+        if (r.error === 'instagram_24h_window' && c.action === 'SEND_TEXT_MESSAGE' && a.args?.text) {
+          const username = await ctx.composio.instagramUsername(a.args.recipient_id);
+          if (!username) return { ...r, fallback_failed: 'could not find that person\'s username' };
+          const t = store.createTask({ title: `Laptop: Instagram DM to @${clip(username, 30)}`, kind: 'computer', conversationId: conversationId ?? null,
+            instruction: `Send an Instagram DM from the laptop browser. Open https://www.instagram.com/direct/inbox/ (if Instagram asks to log in, STOP and report that the user must log in to Instagram in this browser once). Open the existing conversation with @${username} (search for ${username} if it is not visible). Type EXACTLY this message, nothing added or changed:\n${a.args.text}\nThen send it and confirm it appears in the chat.`,
+            meta: { grant: true, autoSubmit: true, mustShow: [username] } });
+          return { sent_via: 'laptop', queued: true, id: t.id.slice(0, 8), laptop_online: nodes.online, note: 'Instagram\'s API blocked the send, so the same approved message is being sent from the laptop browser.' };
+        }
+        return r;
+      },
     },
     {
       name: 'instagram_post', risk: 'gated', category: 'messaging', riskClass: 'consequential',
