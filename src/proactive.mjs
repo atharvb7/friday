@@ -80,6 +80,14 @@ export class Proactive {
       if (chat.length && chat.every((e) => !e.configured || e.circuitOpen)) {
         sent += this.#send('brain-down', 6 * HOUR, { level: 'error', title: 'My cloud brain is unreachable', body: "Chat falls back to offline mode until a model answers again." }) ? 1 : 0;
       }
+      try { // things that are blocked on the user: one gentle nudge each, after 2 hours
+        for (const a of this.db.prepare("SELECT id, summary, created_at FROM approvals WHERE status='pending'").all()) {
+          if (now - Date.parse(a.created_at) > 2 * HOUR) sent += this.#send(`nudge-approval:${a.id}`, 365 * 24 * HOUR, { level: 'warning', title: 'Still waiting for your OK', body: `${String(a.summary).slice(0, 200)}\nApprove or deny it in the Inbox and I'll carry on.` }) ? 1 : 0;
+        }
+        for (const q of this.db.prepare("SELECT id, question, created_at FROM agent_questions WHERE status='pending'").all()) {
+          if (now - Date.parse(q.created_at) > 2 * HOUR) sent += this.#send(`nudge-question:${q.id}`, 365 * 24 * HOUR, { level: 'warning', title: 'A task is paused on your answer', body: String(q.question).slice(0, 200) }) ? 1 : 0;
+        }
+      } catch { /* tables may not exist in minimal setups */ }
       sent += (await this.maybeBriefing(cfg, tz)) ? 1 : 0;
     }
     return { sent, quiet };

@@ -79,8 +79,8 @@ Rules:
 - Finish with a short factual report: what you did, what you verified, anything that did not work. Never claim success you did not verify.`;
 
 export class ComputerAgent {
-  constructor({ ai, nodes, policy, approvals, bus, audit = null, profile = null, questions = null, sleep = (ms, sig) => new Promise((r, j) => { const t = setTimeout(r, ms); sig?.addEventListener('abort', () => { clearTimeout(t); j(sig.reason ?? new Error('aborted')); }, { once: true }); }) }) {
-    Object.assign(this, { ai, nodes, policy, approvals, bus, audit, sleep, profile, questions });
+  constructor({ ai, nodes, policy, approvals, bus, audit = null, profile = null, questions = null, learner = null, sleep = (ms, sig) => new Promise((r, j) => { const t = setTimeout(r, ms); sig?.addEventListener('abort', () => { clearTimeout(t); j(sig.reason ?? new Error('aborted')); }, { once: true }); }) }) {
+    Object.assign(this, { ai, nodes, policy, approvals, bus, audit, sleep, profile, questions, learner });
     approvals.register('computer_action', async () => ({ ok: true })); // the loop performs the action itself after approval
   }
 
@@ -137,7 +137,7 @@ export class ComputerAgent {
     catch (e) { if (signal?.aborted) throw e; return { error: 'no_answer' }; }
   }
 
-  async #perform(name, args, { grant, autoSubmit, mustShow = [], signal, taskId, onTrace }) {
+  async #perform(name, args, { grant, autoSubmit, mustShow = [], readOnly = false, signal, taskId, onTrace }) {
     if (name === 'describe_screen') return this.#describe(args, signal);
     if (name === 'ask_user') return this.#askUser(args, { signal, taskId, onTrace });
     if (!ACTIONS[name]) return { error: 'unknown_action' };
@@ -150,6 +150,7 @@ export class ComputerAgent {
     const label = this.labels.get(`${name.startsWith('ui_') ? 'u' : 'b'}${args?.ref}`) ?? '';
     if (name === 'browser_type') this.lastTyped = label;
     const d = this.decision(name, args, grant, label, autoSubmit);
+    if (readOnly && (['messaging', 'spending', 'deletion'].includes(d.cat) || ['browser_type', 'ui_set_text', 'browser_upload', 'browser_press'].includes(name))) return { error: 'read_only_check: this is a look-only check; do not type, send, confirm or change anything. Just read and answer.' };
     // Hard guard: a final-submit click must name the button it means, and the live element at that ref must carry that label
     // (refs shift and neighbouring buttons look alike: "Confirm booking" vs "Change time").
     if (name === 'browser_click' && ['submit_external', 'purchase'].includes(intent)) {
@@ -215,14 +216,16 @@ export class ComputerAgent {
 
   async run({ taskId, instruction, signal, onTrace = () => {}, meta = null }) {
     const grant = Boolean(meta?.grant); const autoSubmit = Boolean(meta?.autoSubmit);
+    const readOnly = meta?.readOnly === true;
+    const maxSteps = Math.min(MAX_STEPS, Math.max(3, Number(meta?.maxSteps) || MAX_STEPS));
     const mustShow = Array.isArray(meta?.mustShow) ? meta.mustShow.map(String).filter(Boolean).slice(0, 6) : [];
     const known = this.profile ? this.profile.knownFields() : {};
     const profileNote = `\nUSER DETAILS STATUS (values are hidden from you): ${Object.entries(known).map(([k, v]) => `${k}=${v}`).join(', ') || 'none'}.`;
-    const messages = [{ role: 'system', content: COMPUTER_PROMPT + profileNote }, { role: 'user', content: String(instruction) }];
+    const messages = [{ role: 'system', content: COMPUTER_PROMPT + profileNote + (this.learner?.hintsFor(instruction) ?? '') }, { role: 'user', content: String(instruction) }];
     const seen = new Map();
     const pages = new Set(); // tool messages that still carry a full page listing
     let waitStreak = 0;
-    for (let step = 1; step <= MAX_STEPS; step++) {
+    for (let step = 1; step <= maxSteps; step++) {
       if (signal?.aborted) throw signal.reason ?? new Error('aborted');
       if (!this.nodes.online) return { status: 'failed', error: 'laptop_went_offline' };
       const out = await this.ai.run('computer', { messages, tools: COMPUTER_TOOLS, signal, maxTokens: 2048, temperature: 0.1 });
@@ -239,7 +242,7 @@ export class ComputerAgent {
         else if (isWait && waitStreak > 2) result = { error: 'stop_waiting', hint: 'You have waited several times in a row. Do NOT wait again: call browser_snapshot and act on what is really on the page.' };
         else {
           onTrace('tool_call', { tool: c.name, input: JSON.stringify(c.args).slice(0, 300) });
-          result = await this.#perform(c.name, c.args, { grant, autoSubmit, mustShow, signal, taskId, onTrace });
+          result = await this.#perform(c.name, c.args, { grant, autoSubmit, mustShow, readOnly, signal, taskId, onTrace });
           if (result?.base64) result = { ...result, base64: `[image ${result.base64.length} b64 chars]` };
           if (this.profile) result = JSON.parse(this.profile.redact(JSON.stringify(result))); // real personal values never go back to the model or the logs
           onTrace('tool_result', { status: result?.error ? 'error' : 'ok', result: JSON.stringify(result).slice(0, 300) });

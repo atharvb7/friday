@@ -94,11 +94,14 @@ export class Brain {
     if (call.args === null) return { error: 'invalid_json_arguments' };
     if (tool.risk !== 'safe') {
       // Gated tools: the policy (never the model, never the personality) decides.
-      const decision = this.policy ? this.policy.decide({ category: tool.category, risk: tool.riskClass ?? 'consequential', forbidden: tool.forbidden }) : 'ask';
+      // category/riskClass may depend on the arguments (e.g. a watch that only notifies vs one that queues actions)
+      const category = typeof tool.category === 'function' ? tool.category(call.args) : tool.category;
+      const riskClass = (typeof tool.riskClass === 'function' ? tool.riskClass(call.args) : tool.riskClass) ?? 'consequential';
+      const decision = this.policy ? this.policy.decide({ category, risk: riskClass, forbidden: tool.forbidden }) : 'ask';
       if (decision === 'deny') return { error: 'forbidden_action' };
       if (decision === 'ask') {
         if (!this.approvals) return { error: 'requires_approval', note: 'This action needs approval and no approval flow is available; it was NOT performed.' };
-        const a = this.approvals.request({ category: tool.category, risk: tool.riskClass ?? 'consequential', tool: tool.name, summary: tool.summarize ? tool.summarize(call.args) : `${tool.name}`, payload: call.args, conversationId });
+        const a = this.approvals.request({ category, risk: riskClass, tool: tool.name, summary: tool.summarize ? tool.summarize(call.args) : `${tool.name}`, payload: call.args, conversationId });
         return { requires_approval: true, approval_id: a.id.slice(0, 8), note: 'Staged and waiting for the user to approve in their inbox. It was NOT performed yet. Tell the user.' };
       }
     }

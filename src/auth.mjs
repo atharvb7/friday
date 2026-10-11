@@ -99,6 +99,7 @@ export function requiredScope(method, pathname) {
   if (pathname === '/v1/emergency-clear') return 'approve';
   if (/^\/v1\/effects\/[^/]+\/approve$/.test(pathname) || /^\/v1\/approvals\/[^/]+\/decide$/.test(pathname) || (method !== 'GET' && pathname === '/v1/autonomy')) return 'approve';
   if (pathname === '/v1/companion/events') return 'read';
+  if (/^\/v1\/(learned|watches)/.test(pathname) && method !== 'GET') return 'tasks';
   if (pathname.startsWith('/v1/voice/') || pathname.startsWith('/v1/profile') || pathname.startsWith('/v1/questions')) return method === 'GET' ? 'read' : 'chat';
   if (pathname === '/v1/chat' || pathname.startsWith('/v1/chat/') || pathname.startsWith('/v1/memory')) return method === 'GET' ? 'read' : 'chat';
   return method === 'GET' ? 'read' : 'tasks';

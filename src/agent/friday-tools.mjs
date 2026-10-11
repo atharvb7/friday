@@ -1,3 +1,4 @@
+import { validatePlan } from './team.mjs';
 // Model-facing tools. Each tool declares a risk class:
 //   safe  — runs immediately (reads, the user's own memory, queueing tasks)
 //   gated — never runs directly; the brain stages it for explicit approval
@@ -173,6 +174,66 @@ export function buildFridayTools(ctx) {
         const t = store.createTask({ title: `Code: ${project}`, kind: 'coding', workspace: project, conversationId: conversationId ?? null, instruction: `Use the coding skill (read it first). Project workspace: ${project}\n${str(a.instruction, 'instruction', 20000)}` });
         return { queued: true, id: t.id.slice(0, 8), workspace: project };
       },
+    },
+    {
+      name: 'hermes_task', risk: 'gated', category: 'coding', riskClass: 'consequential',
+      description: 'Delegate a self-contained job to Hermes Agent (a separate autonomous agent on the server with its own skills, terminal, web tools and a different model). Good for: server-side scripting/ops, long multi-tool jobs, a second opinion, anything Hermes has a skill for. Runs in the background; result arrives in this chat. Give the complete job with all details.',
+      parameters: obj({ job: { type: 'string', description: 'Complete, self-contained job description incl. expected output' } }, ['job']),
+      summarize: (a) => `Hand to Hermes Agent: ${clip(a.job, 1200)}`,
+      run: (a, { conversationId } = {}) => {
+        const t = store.createTask({ title: `Hermes: ${clip(a.job, 80)}`, kind: 'hermes', instruction: str(a.job, 'job', 8000), conversationId: conversationId ?? null, meta: { grant: true } });
+        return { queued: true, id: t.id.slice(0, 8), hermes_online: ctx.hermes?.status().ready ?? false };
+      },
+    },
+    {
+      name: 'team_task', risk: 'gated', category: 'computer', riskClass: 'consequential',
+      description: 'Split a BIG goal into 2-8 subtasks run by different agents in parallel, then merge the results. runtime per subtask: research (deep web research with sources), coding (repo work in a workspace), agent (general background agent), hermes (Hermes Agent), computer (the user\'s laptop/browser — one at a time). Use dependsOn when a step needs another step\'s result (it receives that result automatically). One approval covers the whole team. Use only when parts are genuinely separable; otherwise use a single task.',
+      parameters: obj({
+        goal: { type: 'string', description: 'The overall goal in the user\'s words, with all details' },
+        subtasks: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, runtime: { type: 'string', enum: ['research', 'coding', 'agent', 'hermes', 'computer'] }, instruction: { type: 'string', description: 'Complete, self-contained instruction for this agent' }, dependsOn: { type: 'array', items: { type: 'string' } }, mustShow: { type: 'array', items: { type: 'string' } }, workspace: { type: 'string' } }, required: ['id', 'runtime', 'instruction'] } },
+        autoSubmit: { type: 'boolean' },
+      }, ['goal', 'subtasks']),
+      summarize: (a) => `Team job: ${clip(a.goal, 400)}\n${(a.subtasks ?? []).map((s) => `• ${s.id} [${s.runtime}]${s.dependsOn?.length ? ` after ${s.dependsOn.join(', ')}` : ''}: ${clip(s.instruction, 200)}`).join('\n')}`,
+      run: (a, { conversationId } = {}) => {
+        const plan = validatePlan(a.subtasks);
+        const t = store.createTask({ title: `Team: ${clip(a.goal, 80)}`, kind: 'team', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: a.autoSubmit !== false, plan } });
+        return { queued: true, id: t.id.slice(0, 8), steps: plan.length };
+      },
+    },
+    {
+      name: 'watch_create', risk: 'gated',
+      category: (a) => (a?.action?.kind === 'task' ? (a.action.runtime === 'computer' ? 'computer' : 'coding') : a?.kind === 'laptop' ? 'computer' : 'research'),
+      riskClass: (a) => (a?.action?.kind === 'task' ? 'consequential' : 'routine'),
+      description: 'Keep an eye on something and react when a condition is met — proactively, without the user asking again. kind "web": a public URL polled from the server (min every 5 min). kind "laptop": a short read-only look on the laptop, e.g. target "WhatsApp Web chat with Salex Now", condition "a new message asking to confirm a booking" (min every 15 min). action notify (default) or task (queue a follow-up job; e.g. runtime computer + instruction "open that WhatsApp message and press Confirm booking"). Approving the watch also approves its follow-up task.',
+      parameters: obj({
+        title: { type: 'string' }, kind: { type: 'string', enum: ['web', 'laptop'] }, target: { type: 'string', description: 'URL (web) or what to look at (laptop)' },
+        condition: { type: 'string', description: 'Natural-language condition; omit to fire on any change' }, everyMinutes: { type: 'integer' }, hours: { type: 'integer', description: 'How long to keep watching (default 72, max 720)' },
+        repeat: { type: 'boolean', description: 'Keep watching after it fires' },
+        action: { type: 'object', description: '{kind:"notify"} or {kind:"task", runtime:"agent|computer|hermes|research", instruction:"complete job"}' },
+      }, ['title', 'kind', 'target']),
+      summarize: (a) => `Watch “${clip(a.title, 80)}” (${a.kind}: ${clip(a.target, 160)})${a.condition ? ` until: ${clip(a.condition, 200)}` : ''} — then ${a.action?.kind === 'task' ? `run [${a.action.runtime ?? 'agent'}]: ${clip(a.action.instruction, 300)}` : 'tell you'}`,
+      run: (a, { conversationId } = {}) => {
+        const w = ctx.watches.create({ title: a.title, kind: a.kind, target: a.target, condition: a.condition ?? null, everyMin: a.everyMinutes, hours: a.hours, repeat: a.repeat === true, action: a.action ?? { kind: 'notify' }, conversationId: conversationId ?? null });
+        return { watching: true, id: w.id.slice(0, 8), every_minutes: w.every_min, until: w.expires_at };
+      },
+    },
+    {
+      name: 'watch_list', risk: 'safe',
+      description: 'List active watches (what Friday is keeping an eye on) with their last observation.',
+      parameters: obj({}),
+      run: () => ({ watches: ctx.watches.list().map((w) => ({ id: w.id.slice(0, 8), title: w.title, kind: w.kind, every_min: w.every_min, last_note: w.last_note, fired: w.fired, until: w.expires_at })) }),
+    },
+    {
+      name: 'watch_cancel', risk: 'safe',
+      description: 'Stop a watch by id prefix.',
+      parameters: obj({ id: { type: 'string' } }, ['id']),
+      run: (a) => ({ cancelled: ctx.watches.cancel(str(a.id, 'id', 40)) }),
+    },
+    {
+      name: 'learned_skills', risk: 'safe',
+      description: 'List the playbooks Friday has learned from her own successful laptop/Hermes runs (she uses them automatically to go faster).',
+      parameters: obj({}),
+      run: () => ({ playbooks: ctx.learner.playbooks().map((p) => ({ name: p.name, description: p.description, hosts: p.hosts })) }),
     },
     {
       name: 'task_trace', risk: 'safe',

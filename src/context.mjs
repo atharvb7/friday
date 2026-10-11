@@ -47,6 +47,10 @@ import { VoiceServer } from './voice-server.mjs';
 import { KindRouterAdapter } from './adapters.mjs';
 import { ComputerAgent } from './agent/computer-agent.mjs';
 import { Profile } from './profile.mjs';
+import { HermesAdapter } from './hermes.mjs';
+import { TeamOrchestrator } from './agent/team.mjs';
+import { Learner } from './agent/learning.mjs';
+import { Watches } from './watches.mjs';
 import { Questions } from './questions.mjs';
 
 function findDshBin() {
@@ -156,7 +160,7 @@ export function createContext({ appRoot, env = process.env }) {
     prevOnEvent?.(e);
     if (!['task.completed', 'task.failed', 'task.blocked'].includes(e.kind)) return;
     const t = store.getTask(e.taskId);
-    if (!t) return;
+    if (!t || String(t.kind).startsWith('sub:') || t.kind === 'watch') return; // team subtasks report through their parent
     const ok = e.kind === 'task.completed';
     const body = ok ? String(t.result ?? '').slice(0, 1500) : String(t.error ?? e.kind).slice(0, 500);
     ctx.notifications.create({ level: ok ? 'success' : e.kind === 'task.failed' ? 'error' : 'warning', title: `${ok ? 'Done' : e.kind === 'task.failed' ? 'Failed' : 'Blocked'}: ${t.title}`, body, taskId: t.id, conversationId: t.conversation_id });
@@ -195,8 +199,20 @@ export function createContext({ appRoot, env = process.env }) {
     agentReady: () => ctx.dshAdapter.status().ready,
   });
   ctx.profile = new Profile({ settings });
+  ctx.learner = new Learner({ ai, store, skills, dir: resolve(dataDir, 'skills'), profile: ctx.profile, bus, settings });
+  { // successful laptop/Hermes runs become (or improve) playbooks, off the hot path
+    const prev = store.onEvent;
+    store.onEvent = (e) => { prev?.(e); if (e.kind === 'task.completed') setTimeout(() => { ctx.learner.learnFrom(e.taskId).catch(() => {}); }, 2000).unref?.(); };
+  }
   ctx.questions = new Questions({ store, chat: ctx.chat, notifications: ctx.notifications, bus, profile: ctx.profile });
-  kindRouter.byKind.computer = new ComputerAgent({ ai, nodes: ctx.nodes, policy: ctx.policy, approvals: ctx.approvals, bus, audit: ctx.audit, profile: ctx.profile, questions: ctx.questions });
+  kindRouter.byKind.computer = new ComputerAgent({ ai, nodes: ctx.nodes, policy: ctx.policy, approvals: ctx.approvals, bus, audit: ctx.audit, profile: ctx.profile, questions: ctx.questions, learner: ctx.learner });
+  ctx.hermes = new HermesAdapter({ url: env.FRIDAY_HERMES_URL, key: env.FRIDAY_HERMES_KEY, approvals: ctx.approvals, policy: ctx.policy, learner: ctx.learner });
+  ctx.approvals.register('hermes_action', async () => ({ ok: true })); // the adapter answers Hermes itself after the decision
+  kindRouter.byKind.hermes = ctx.hermes;
+  kindRouter.byKind.watch = kindRouter.byKind.computer; // read-only laptop checks for watches
+  ctx.watches = new Watches({ store, ai, jobs: ctx.jobs, notifications: ctx.notifications, chat: ctx.chat, bus, settings });
+  { const prev = store.onEvent; store.onEvent = (e) => { prev?.(e); if (['task.completed', 'task.failed'].includes(e.kind)) setTimeout(() => { ctx.watches.onTaskFinished(e.taskId, e.kind).catch(() => {}); }, 500).unref?.(); }; }
+  kindRouter.byKind.team = new TeamOrchestrator({ store, router: kindRouter, ai });
   ctx.rules.proactive = ctx.proactive;
   ctx.proactive.mood = ctx.mood;
   ctx.fridayTools = buildFridayTools(ctx);
@@ -237,6 +253,8 @@ export function createContext({ appRoot, env = process.env }) {
     worker.start();
     if (ai.hasProvider) indexer.start();
     ctx.jobs.start();
+    ctx.hermes.start();
+    ctx.watches.start();
     pruneTimer = setInterval(() => { try { prune(store.db); } catch { /* retention is best effort */ } }, 6 * 3600_000); pruneTimer.unref();
     try { prune(store.db); } catch {}
     ctx.rules.start();
@@ -244,6 +262,8 @@ export function createContext({ appRoot, env = process.env }) {
   };
   ctx.stop = () => {
     worker.stop();
+    ctx.hermes.stop();
+    ctx.watches.stop();
     ctx.nodes?.stopAll();
     ctx.voiceServer?.stop();
     clearInterval(governorTimer); clearInterval(pruneTimer); dshInner.stop?.();

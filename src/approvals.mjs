@@ -31,6 +31,18 @@ export class Approvals {
     return this.get(id);
   }
 
+  // Resolves true/false once the approval is decided (false on timeout/expiry); rejects on abort.
+  waitFor(id, signal, timeoutMs = TTL_MS) {
+    return new Promise((resolve, reject) => {
+      const done = (v) => { clearTimeout(timer); off(); signal?.removeEventListener('abort', onAbort); resolve(v); };
+      const off = this.bus.subscribe((e) => { if (e.data?.id !== id) return; if (e.type === 'approval.approved') done(true); else if (e.type === 'approval.denied') done(false); });
+      const timer = setTimeout(() => done(false), timeoutMs);
+      const onAbort = () => { clearTimeout(timer); off(); reject(signal.reason ?? new Error('aborted')); };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      const cur = this.get(id); if (cur && cur.status !== 'pending') done(cur.status === 'approved');
+    });
+  }
+
   get(id) { const r = this.db.prepare('SELECT * FROM approvals WHERE id=?').get(id); return r ? { ...r, payload: JSON.parse(r.payload) } : null; }
 
   list(status = 'pending') {
