@@ -2,7 +2,7 @@
 // DOM/accessibility refs first (reliable); vision only to *describe* a screen.
 // Every action passes the autonomy policy; sending/buying/uploading escalate to
 // the user's approval, and the loop waits for the answer.
-const MAX_STEPS = 60;
+const MAX_STEPS = 80;
 const APPROVAL_WAIT_MS = 15 * 60_000;
 const RESULT_CHARS = 6000;
 

@@ -123,19 +123,41 @@ export class BrowserController {
     return { url: page.url(), title: await page.title() };
   }
   // settleMs lets SPA transitions finish before reading the page (used for the automatic post-action snapshot).
-  async snapshot({ settleMs = 0 } = {}) { const page = await this.ensure(); if (settleMs) await page.waitForTimeout(Math.min(Number(settleMs) || 0, 3000)); return page.evaluate(SNAPSHOT_FN); }
-  #loc(page, ref) { if (!Number.isInteger(ref) || ref < 1) throw new Error('invalid_ref'); return page.locator(`[data-friday-ref="${ref}"]`).first(); }
-  async #present(l) { try { await l.waitFor({ state: 'attached', timeout: 2000 }); } catch { throw new Error('stale_ref: that element is no longer on the page — call browser_snapshot again and use the new refs'); } }
+  async snapshot({ settleMs = 0 } = {}) {
+    const page = await this.ensure(); if (settleMs) await page.waitForTimeout(Math.min(Number(settleMs) || 0, 3000));
+    const snap = await page.evaluate(SNAPSHOT_FN);
+    this.sigs = new Map(snap.elements.map((e) => [e.ref, { tag: e.tag, role: e.role, name: String(e.name ?? '').split(' — ')[0].trim(), full: e.name }]));
+    return snap;
+  }
+  // Refs are attributes written at snapshot time; SPAs re-render and drop them. If the ref is gone but the element it
+  // named still exists on the page (same tag + same visible text), act on that one instead of failing.
+  async #resolve(page, ref) {
+    if (!Number.isInteger(ref) || ref < 1) throw new Error('invalid_ref');
+    const direct = page.locator(`[data-friday-ref="${ref}"]`).first();
+    if (await direct.count()) return direct;
+    const sig = this.sigs?.get(ref);
+    if (sig?.name && sig.name.length >= 2) {
+      const base = sig.tag === 'clickable' || sig.role === 'clickable' ? page.locator('div,span,li,td,label,p,button,a') : page.locator(sig.tag);
+      const cands = base.filter({ hasText: sig.name });
+      const n = await cands.count();
+      for (let i = 0; i < Math.min(n, 12); i++) { // prefer the innermost visible match whose text equals the remembered name
+        const c = cands.nth(i);
+        if (await c.isVisible().catch(() => false) && (await c.innerText().catch(() => '')).trim().replace(/\s+/g, ' ').startsWith(sig.name)) { this.healed = (this.healed ?? 0) + 1; return c; }
+      }
+    }
+    throw new Error('stale_ref: that element is no longer on the page — use a ref from the latest page listing');
+  }
+  #loc(page, ref) { return this.#resolve(page, ref); }
   async click({ ref }) {
     const page = await this.ensure();
-    const l = this.#loc(page, ref); await this.#present(l);
+    const l = await this.#loc(page, ref);
     await l.click({ timeout: 8_000 });
     await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
     return { url: page.url(), title: await page.title() };
   }
   async type({ ref, text, clear = true, submit = false }) {
     const page = await this.ensure();
-    const l = this.#loc(page, ref); await this.#present(l);
+    const l = await this.#loc(page, ref);
     if (clear) await l.fill(String(text), { timeout: 10_000 }); else await l.pressSequentially(String(text), { timeout: 10_000 });
     if (submit) await l.press('Enter');
     return { typed: String(text).length, submitted: Boolean(submit) };
@@ -144,7 +166,7 @@ export class BrowserController {
   async upload({ ref, path }) {
     const page = await this.ensure();
     const real = checkFile(path, this.allowedDirs);
-    await this.#loc(page, ref).setInputFiles(real, { timeout: 10_000 });
+    await (await this.#loc(page, ref)).setInputFiles(real, { timeout: 10_000 });
     return { uploaded: real.split('/').pop() };
   }
   async scroll({ dy = 600 }) { const page = await this.ensure(); await page.mouse.wheel(0, Math.max(-5000, Math.min(5000, Number(dy)))); return { scrolled: dy }; }
