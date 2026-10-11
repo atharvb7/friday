@@ -16,8 +16,8 @@ const jsonIn = (s) => { try { return JSON.parse(/\{[\s\S]*\}/.exec(String(s ?? '
 
 export class Watches {
   #timer = null;
-  constructor({ store, ai, jobs, notifications, chat, bus, settings, composio = null, fetchText = async (u) => (await safeFetch(u)).text, now = () => Date.now() }) {
-    Object.assign(this, { store, ai, jobs, notifications, chat, bus, settings, composio, fetchText, now });
+  constructor({ store, ai, jobs, notifications, chat, bus, settings, gmail = null, fetchText = async (u) => (await safeFetch(u)).text, now = () => Date.now() }) {
+    Object.assign(this, { store, ai, jobs, notifications, chat, bus, settings, gmail, fetchText, now });
     this.db = store.db;
     this.db.exec(`CREATE TABLE IF NOT EXISTS watches (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, condition TEXT,
@@ -85,17 +85,15 @@ export class Watches {
 
   // Email: run the Gmail search (target = Gmail query); any message not seen before is judged against the condition.
   async #checkEmail(w) {
-    if (!this.composio?.configured) throw new Error('gmail not connected');
-    const r = await this.composio.execute('gmail', 'FETCH_EMAILS', { query: w.target, max_results: 10 }, { raw: true });
-    if (r.error) throw new Error(r.error);
-    const list = r.data?.messages ?? r.data?.data?.messages ?? [];
-    const ids = list.map((m) => m.messageId ?? m.id).filter(Boolean);
+    if (!this.gmail?.ready) throw new Error('gmail not connected');
+    const list = (await this.gmail.search({ query: w.target, max: 10 })).messages;
+    const ids = list.map((m) => m.id).filter(Boolean);
     const seen = new Set(String(w.last_hash ?? '').split(',').filter(Boolean));
     this.db.prepare('UPDATE watches SET last_hash=? WHERE id=?').run(ids.slice(0, 30).join(','), w.id);
     if (!w.last_hash) { this.db.prepare('UPDATE watches SET last_note=? WHERE id=?').run(`baseline: ${ids.length} matching emails`, w.id); return; }
-    const fresh = list.filter((m) => !seen.has(m.messageId ?? m.id));
+    const fresh = list.filter((m) => !seen.has(m.id));
     if (!fresh.length) return;
-    const text = fresh.map((m) => `From: ${m.sender ?? m.from ?? '?'}\nSubject: ${m.subject ?? '?'}\n${String(m.preview?.body ?? m.snippet ?? m.messageText ?? '').slice(0, 600)}`).join('\n---\n');
+    const text = fresh.map((m) => `From: ${m.from ?? '?'}\nSubject: ${m.subject ?? '?'}\n${String(m.snippet ?? '').slice(0, 600)}`).join('\n---\n');
     const j = await this.#judge(w, text);
     this.db.prepare('UPDATE watches SET last_note=? WHERE id=?').run(j.summary, w.id);
     if (j.met) this.#fire(w, `${j.summary}${fresh[0]?.subject ? ` (“${String(fresh[0].subject).slice(0, 100)}”)` : ''}`);

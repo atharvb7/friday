@@ -15,15 +15,6 @@ export const TOOLKITS = Object.freeze({
       'POST_IG_USER_MEDIA', 'POST_IG_USER_MEDIA_PUBLISH', 'CREATE_CAROUSEL_CONTAINER'],
     delete: ['DELETE_COMMENT'],
   },
-  gmail: {
-    label: 'Gmail',
-    note: 'Friday can read, search, label and draft freely; sending, replying and moving to trash need your approval. Permanent deletion is never allowed.',
-    read: ['FETCH_EMAILS', 'FETCH_MESSAGE_BY_MESSAGE_ID', 'FETCH_MESSAGE_BY_THREAD_ID', 'LIST_THREADS', 'LIST_LABELS', 'GET_PROFILE', 'LIST_DRAFTS', 'GET_ATTACHMENT', 'GET_CONTACTS', 'SEARCH_PEOPLE'],
-    // changes to his own mailbox that are reversible and invisible to anyone else
-    organize: ['ADD_LABEL_TO_EMAIL', 'MODIFY_THREAD_LABELS', 'BATCH_MODIFY_MESSAGES', 'CREATE_LABEL', 'CREATE_EMAIL_DRAFT', 'UPDATE_DRAFT'],
-    act: ['SEND_EMAIL', 'REPLY_TO_THREAD', 'SEND_DRAFT', 'FORWARD_MESSAGE'],
-    delete: ['MOVE_TO_TRASH', 'MOVE_THREAD_TO_TRASH'],
-  },
 });
 
 export function classify(toolkit, action) {
