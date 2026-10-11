@@ -265,6 +265,10 @@ export function buildFridayTools(ctx) {
         if (r.error === 'instagram_24h_window' && c.action === 'SEND_TEXT_MESSAGE' && a.args?.text) {
           const username = await ctx.composio.instagramUsername(a.args.recipient_id);
           if (!username) return { ...r, fallback_failed: 'could not find that person\'s username' };
+          try { // verified 1:1 send from the laptop (profile -> Message -> check header -> send -> confirm)
+            const sent = await nodes.dispatch({ action: 'ig_dm_send', args: { username, text: a.args.text }, timeoutMs: 90_000 });
+            return { sent: true, sent_via: 'laptop', to: `@${username}`, thread: sent?.thread ?? null };
+          } catch (e) { if (!/node_lacks_capability/.test(e.message)) return { error: `laptop send failed: ${e.message}`, to: `@${username}` }; }
           const t = store.createTask({ title: `Laptop: Instagram DM to @${clip(username, 30)}`, kind: 'computer', conversationId: conversationId ?? null,
             instruction: `Send an Instagram DM from the laptop browser. Open https://www.instagram.com/direct/inbox/ (if Instagram asks to log in, STOP and report that the user must log in to Instagram in this browser once). Open the existing conversation with @${username} (search for ${username} if it is not visible). Type EXACTLY this message, nothing added or changed:\n${a.args.text}\nThen send it and confirm it appears in the chat.`,
             meta: { grant: true, autoSubmit: true, mustShow: [username] } });
@@ -279,6 +283,25 @@ export function buildFridayTools(ctx) {
       parameters: obj({ caption: { type: 'string' }, image_url: { type: 'string' }, video_url: { type: 'string' }, media_type: { type: 'string', enum: ['REELS', 'VIDEO'] } }, ['caption']),
       summarize: (a) => `Publish to Instagram (${a.video_url ? 'video/Reel' : 'image'} ${clip(a.image_url ?? a.video_url ?? '', 200)}): “${clip(a.caption, 600)}”`,
       run: (a) => ctx.composio.instagramPublish(a),
+    },
+    {
+      name: 'dm_chat_start', risk: 'gated', category: 'messaging', riskClass: 'consequential',
+      description: 'Let Friday chat on Instagram DM with specific people (by username) for a limited time, replying on her own whenever they message — the user approves ONCE for the whole session. Use this for "chat with X when they reply", "keep talking to them", "have a chat with both". Optionally send an intro first. Friday stays an openly-AI, friendly assistant, never shares his private info, and tells him if someone needs him. Find exact usernames with instagram_read LIST_ALL_CONVERSATIONS (fields participants) first.',
+      parameters: obj({ usernames: { type: 'array', items: { type: 'string' } }, minutes: { type: 'integer', description: 'How long to keep chatting (default 60, max 180)' }, goal: { type: 'string', description: 'What he wants, e.g. "introduce yourself, keep it playful"' }, intro: { type: 'string', description: 'Optional first message to send now (same for everyone)' } }, ['usernames']),
+      summarize: (a) => `Chat on Instagram with ${(a.usernames ?? []).map((u) => `@${String(u).replace(/^@/, '')}`).join(', ')} for ${Math.min(180, a.minutes ?? 60)} min, replying on my own${a.goal ? ` (${clip(a.goal, 200)})` : ''}${a.intro ? ` — first message: “${clip(a.intro, 400)}”` : ''}`,
+      run: async (a, { conversationId } = {}) => ({ sessions: await ctx.dmChats.start({ usernames: a.usernames, minutes: a.minutes, goal: a.goal ?? null, introText: a.intro ?? null, conversationId: conversationId ?? null }) }),
+    },
+    {
+      name: 'dm_chat_status', risk: 'safe',
+      description: 'Which Instagram DM chats Friday is currently running, until when, and how many replies she sent.',
+      parameters: obj({}),
+      run: () => ({ chats: ctx.dmChats.list().map((s) => ({ username: s.username, until: s.until, replies: s.replies, last: s.last_note })) }),
+    },
+    {
+      name: 'dm_chat_stop', risk: 'safe',
+      description: 'Stop Friday chatting with one person (username) or everyone (omit username).',
+      parameters: obj({ username: { type: 'string' } }),
+      run: (a) => ({ stopped: ctx.dmChats.stop(a.username ?? null) }),
     },
     {
       name: 'app_action_schema', risk: 'safe',

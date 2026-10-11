@@ -49,6 +49,7 @@ const handlers = {
     browser_open: (a) => browser.open(a), browser_snapshot: (a) => browser.snapshot(a), browser_click: (a) => browser.click(a), browser_type: (a) => browser.type(a),
     browser_press: (a) => browser.press(a), browser_upload: (a) => browser.upload(a), browser_scroll: (a) => browser.scroll(a), browser_back: () => browser.back(),
     browser_wait: (a) => browser.wait(a), browser_click_text: (a) => browser.click_text(a), browser_screenshot: (a) => browser.screenshot(a),
+    ig_dm_send: (a) => browser.ig_dm_send(a),
   } : {}),
   file_find: (a) => desktop.file_find(a), open_target: (a) => desktop.open_target(a), open_app: (a) => desktop.open_app(a),
 };

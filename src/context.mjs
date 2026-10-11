@@ -54,6 +54,7 @@ import { Watches } from './watches.mjs';
 import { Composio } from './composio.mjs';
 import { Files } from './files.mjs';
 import { Documents } from './documents.mjs';
+import { DmChats } from './dm-chat.mjs';
 import { Questions } from './questions.mjs';
 
 function findDshBin() {
@@ -230,6 +231,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.approvals.register('hermes_action', async () => ({ ok: true })); // the adapter answers Hermes itself after the decision
   kindRouter.byKind.hermes = ctx.hermes;
   kindRouter.byKind.watch = kindRouter.byKind.computer; // read-only laptop checks for watches
+  ctx.dmChats = new DmChats({ store, ai, composio: ctx.composio, nodes: ctx.nodes, chat: ctx.chat, notifications: ctx.notifications, bus, settings });
   ctx.watches = new Watches({ store, ai, jobs: ctx.jobs, notifications: ctx.notifications, chat: ctx.chat, bus, settings });
   { const prev = store.onEvent; store.onEvent = (e) => { prev?.(e); if (['task.completed', 'task.failed'].includes(e.kind)) setTimeout(() => { ctx.watches.onTaskFinished(e.taskId, e.kind).catch(() => {}); }, 500).unref?.(); }; }
   kindRouter.byKind.team = new TeamOrchestrator({ store, router: kindRouter, ai });
@@ -275,6 +277,7 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.jobs.start();
     ctx.hermes.start();
     ctx.watches.start();
+    ctx.dmChats.start_timer();
     pruneTimer = setInterval(() => { try { prune(store.db); } catch { /* retention is best effort */ } }, 6 * 3600_000); pruneTimer.unref();
     try { prune(store.db); } catch {}
     ctx.rules.start();
@@ -284,6 +287,7 @@ export function createContext({ appRoot, env = process.env }) {
     worker.stop();
     ctx.hermes.stop();
     ctx.watches.stop();
+    ctx.dmChats.stop_timer();
     ctx.nodes?.stopAll();
     ctx.voiceServer?.stop();
     clearInterval(governorTimer); clearInterval(pruneTimer); dshInner.stop?.();

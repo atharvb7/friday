@@ -43,7 +43,7 @@ export class Profile {
   // Replace real values with their placeholders (applied to anything the model or logs could see).
   redact(text) {
     let out = String(text ?? ''); const a = this.all();
-    for (const f of PROFILE_FIELDS) { const v = a[f]; if (v && v.length >= 4) out = out.split(v).join(`{{profile.${f}}}`); }
+    for (const f of PROFILE_FIELDS) { if (f === 'name') continue; const v = a[f]; if (v && v.length >= 4) out = out.split(v).join(`{{profile.${f}}}`); } // his name isn't secret; hiding it garbles page text
     const digits = a.phone ? a.phone.replace(/^\+/, '') : null;
     if (digits && digits.length >= 7) out = out.split(digits).join('{{profile.phone}}');
     return out;

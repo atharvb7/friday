@@ -222,6 +222,38 @@ export class BrowserController {
     await page.waitForLoadState('domcontentloaded', { timeout: 4000 }).catch(() => {});
     return { clicked: String(text).slice(0, 60), url: page.url() };
   }
+  // Deterministic Instagram DM: profile -> Message -> verify the open thread is the 1:1 chat with exactly this user
+  // (never a group they are in) -> type -> send -> confirm the text shows up. No model in the loop, no guessing.
+  async ig_dm_send({ username, text }) {
+    const u = String(username ?? '').trim().replace(/^@/, '').toLowerCase();
+    if (!/^[a-z0-9._]{1,30}$/.test(u)) throw new Error('invalid_username');
+    const msg = String(text ?? '').trim();
+    if (!msg || msg.length > 1000) throw new Error('invalid_text');
+    await this.open({ url: `https://www.instagram.com/${u}/` });
+    const page = this.page;
+    if (/accounts\/login/.test(page.url())) throw new Error('instagram_login_required');
+    const btn = page.getByRole('button', { name: /^message$/i }).or(page.getByRole('link', { name: /^message$/i })).first();
+    try { await btn.waitFor({ state: 'visible', timeout: 12_000 }); } catch { throw new Error('no_message_button: cannot open a DM from this profile'); }
+    await btn.click({ timeout: 8000 });
+    await page.waitForURL(/\/direct\/t\//, { timeout: 15_000 }).catch(() => {});
+    if (!/\/direct\/t\//.test(page.url())) throw new Error('dm_thread_did_not_open');
+    const box = page.locator('div[role="textbox"][contenteditable="true"], textarea[placeholder*="essage"]').last();
+    await box.waitFor({ state: 'visible', timeout: 15_000 });
+    // The thread header of a 1:1 chat links to that person's profile; a group header does not.
+    const header = await page.evaluate((name) => {
+      const links = [...document.querySelectorAll('a[href]')].filter((a) => a.getAttribute('href').replace(/\/$/, '').toLowerCase() === `/${name}`);
+      const top = links.filter((a) => { const r = a.getBoundingClientRect(); return r.top < 160 && r.width > 0; });
+      return { linked: top.length > 0, title: document.title };
+    }, u);
+    if (!header.linked) throw new Error('thread_not_verified: the open chat is not clearly the 1:1 chat with this user');
+    await box.click();
+    const lines = msg.split('\n');
+    for (let i = 0; i < lines.length; i++) { if (i) await page.keyboard.press('Shift+Enter'); await page.keyboard.insertText(lines[i]); }
+    await page.keyboard.press('Enter');
+    const probe = lines[0].slice(0, 40);
+    try { await page.getByText(probe, { exact: false }).last().waitFor({ state: 'visible', timeout: 10_000 }); } catch { throw new Error('send_not_confirmed: the message did not appear in the chat'); }
+    return { sent: true, to: u, thread: page.url() };
+  }
   async screenshot({ scale = 0.6 } = {}) {
     const page = await this.ensure();
     const buf = await page.screenshot({ type: 'jpeg', quality: 60, scale: 'css' });
