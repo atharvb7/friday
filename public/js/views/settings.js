@@ -27,6 +27,14 @@ export function render({ app, api, toast, go }) {
         try { await api('/v1/personality', { method: 'POST', body: { personality: vals, userName: name.value } }); if (tzi.value !== tz.timezone) await api('/v1/settings/timezone', { method: 'POST', body: { timezone: tzi.value.trim() } }); toast('Saved.'); } catch (e) { toast(e.message); }
       } }, 'Save'));
 
+    const prof = (await api('/v1/profile')).profile;
+    const pin = Object.fromEntries(['name', 'phone', 'email', 'address'].map((f) => [f, h('input', { type: 'text', value: prof[f] ?? '', placeholder: f === 'phone' ? '+91…' : `Your ${f}` })]));
+    section('My details', h('p', { class: 'muted' }, 'Used to fill forms for you (bookings, sign-ups). I never show these to the AI model — only type them in. If one is empty I’ll ask you the first time.'),
+      ...Object.entries(pin).map(([f, i]) => h('div', {}, h('label', {}, f[0].toUpperCase() + f.slice(1)), i)),
+      h('button', { class: 'btn primary', onclick: async () => {
+        try { for (const [f, i] of Object.entries(pin)) if (i.value.trim() && i.value.trim() !== (prof[f] ?? '')) await api('/v1/profile', { method: 'POST', body: { field: f, value: i.value.trim() } }); toast('Saved.'); } catch (e) { toast(e.message); }
+      } }, 'Save details'));
+
     const am = await api('/v1/settings/automemory');
     const amBox = h('input', { type: 'checkbox', checked: am.enabled });
     amBox.addEventListener('change', async () => { await api('/v1/settings/automemory', { method: 'POST', body: { enabled: amBox.checked } }); toast(amBox.checked ? 'I’ll decide what to remember.' : 'I’ll only remember what you tell me to.'); });

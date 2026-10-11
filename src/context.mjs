@@ -46,6 +46,8 @@ import { prune } from './retention.mjs';
 import { VoiceServer } from './voice-server.mjs';
 import { KindRouterAdapter } from './adapters.mjs';
 import { ComputerAgent } from './agent/computer-agent.mjs';
+import { Profile } from './profile.mjs';
+import { Questions } from './questions.mjs';
 
 function findDshBin() {
   const r = spawnSync('sh', ['-c', 'command -v dsh'], { encoding: 'utf8' });
@@ -192,7 +194,9 @@ export function createContext({ appRoot, env = process.env }) {
     store, notifications: ctx.notifications, jobs: ctx.jobs, ai, memory, settings, bus, dataDir,
     agentReady: () => ctx.dshAdapter.status().ready,
   });
-  kindRouter.byKind.computer = new ComputerAgent({ ai, nodes: ctx.nodes, policy: ctx.policy, approvals: ctx.approvals, bus, audit: ctx.audit });
+  ctx.profile = new Profile({ settings });
+  ctx.questions = new Questions({ store, chat: ctx.chat, notifications: ctx.notifications, bus, profile: ctx.profile });
+  kindRouter.byKind.computer = new ComputerAgent({ ai, nodes: ctx.nodes, policy: ctx.policy, approvals: ctx.approvals, bus, audit: ctx.audit, profile: ctx.profile, questions: ctx.questions });
   ctx.rules.proactive = ctx.proactive;
   ctx.proactive.mood = ctx.mood;
   ctx.fridayTools = buildFridayTools(ctx);
@@ -207,7 +211,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.brain = new Brain({
     mood: ctx.mood, habits: ctx.habits,
     ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit, skills, policy: ctx.policy, approvals: ctx.approvals,
-    contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory }),
+    contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory, questions: ctx.questions, profile: ctx.profile }),
   });
   ctx.chatBrain = () => {
     if (ai.hasProvider && !ctx.state.emergencyStopped) return { name: 'friday-brain', adapter: ctx.brain };

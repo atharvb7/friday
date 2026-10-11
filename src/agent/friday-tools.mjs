@@ -113,11 +113,27 @@ export function buildFridayTools(ctx) {
     {
       name: 'computer_task', risk: 'gated', category: 'computer', riskClass: 'consequential',
       description: "Operate the user's laptop to achieve a goal (browse sites, find files in Downloads/Documents, use their logged-in browser profile, fill forms, attach files). Runs in the background, stepwise, verifying results; sending/posting/buying inside it needs separate approval. Queues until the laptop is online. Give the complete goal incl. exact names.",
-      parameters: obj({ goal: { type: 'string', description: 'Complete goal with exact file names, recipients, sites' } }, ['goal']),
-      summarize: (a) => `Control your laptop to: ${clip(a.goal, 1200)}`,
+      parameters: obj({ goal: { type: 'string', description: 'Complete goal with exact file names, recipients, sites' }, autoSubmit: { type: 'boolean', description: 'true when the user clearly asked for the final outcome (book it, send it, confirm it): the last submit/confirm click then needs no second approval. Spending, deleting and critical actions still ask.' } }, ['goal']),
+      summarize: (a) => `Control your laptop to: ${clip(a.goal, 1200)}${a.autoSubmit ? ' (and complete the final submit/confirm)' : ''}`,
       run: (a, { conversationId } = {}) => {
-        const t = store.createTask({ title: `Laptop: ${clip(a.goal, 80)}`, kind: 'computer', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true } });
+        const t = store.createTask({ title: `Laptop: ${clip(a.goal, 80)}`, kind: 'computer', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: a.autoSubmit === true } });
         return { queued: true, id: t.id.slice(0, 8), laptop_online: nodes.online };
+      },
+    },
+    {
+      name: 'profile_set', risk: 'safe',
+      description: "Save one of the owner's own personal details (name, phone, email, address) when they tell you it, so forms can be filled automatically from now on. Only the owner's own details, only when they state them.",
+      parameters: obj({ field: { type: 'string', enum: ['name', 'phone', 'email', 'address'] }, value: { type: 'string' } }, ['field', 'value']),
+      run: (a) => { ctx.profile.set(a.field, str(a.value, 'value', 300)); return { saved: a.field }; },
+    },
+    {
+      name: 'answer_task_question', risk: 'safe',
+      description: 'Pass the user\'s answer to a question a paused background task asked (see the paused-task list in your context). Use the id shown there.',
+      parameters: obj({ id: { type: 'string', description: 'Question id (first 8 chars ok)' }, answer: { type: 'string' } }, ['id', 'answer']),
+      run: (a) => {
+        const q = ctx.questions.pending().find((x) => x.id.startsWith(String(a.id)));
+        if (!q) return { error: 'no_such_pending_question' };
+        try { ctx.questions.answer(q.id, str(a.answer, 'answer', 500)); return { delivered: true, task_resumes: true }; } catch (e) { return { error: e.message }; }
       },
     },
     {
