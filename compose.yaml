@@ -24,7 +24,7 @@ services:
       FRIDAY_AGENT_SECRET: ${FRIDAY_AGENT_SECRET:?set FRIDAY_AGENT_SECRET in .env}
       TZ: ${TZ:-Asia/Kolkata}
     volumes: ["${FRIDAY_DATA:-./data}:/data"]
-    tmpfs: ["/tmp:size=512m"]
+    tmpfs: ["/tmp:size=512m,exec"]   # espeak (Kokoro) is extracted to /tmp and dlopen()ed
     ports: ["127.0.0.1:4317:4317"]
     networks: [agentnet, egress]
     mem_limit: 2g

@@ -11,7 +11,7 @@ const words = (t) => new Set(String(t).toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)
 const jaccard = (a, b) => { const A = words(a), B = words(b); if (!A.size || !B.size) return 0; let i = 0; for (const x of A) if (B.has(x)) i++; return i / (A.size + B.size - i); };
 
 const SYSTEM = `You maintain a personal assistant's long-term memory about ONE user. From the exchange below, extract only durable, useful facts worth remembering about the USER: preferences, personal facts (people, pets, places, routines, health, studies, job), plans and deadlines, decisions, goals, projects, and emotionally significant events (e.g. "failed an exam today", "got the internship"). 
-NOT worth saving: small talk, jokes, questions, the assistant's own words, temporary context, things already known, opinions about the assistant, anything secret (passwords, keys, card numbers).
+NOT worth saving: statements about what is NOT known or missing ("name not yet known"), small talk, jokes, questions, the assistant's own words, temporary context, things already known, opinions about the assistant, anything secret (passwords, keys, card numbers).
 Output ONLY a JSON array, max 3 items, each {"content": "User ... (third person, one clear sentence, include a date/time reference if it is an event)", "kind": "preference|long_term|project|episodic", "importance": 0.0-1.0, "project": null or "name"}. Output [] if nothing is worth saving.`;
 
 export class AutoMemory {
