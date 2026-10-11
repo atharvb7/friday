@@ -48,7 +48,7 @@ services:
       NODE_USE_ENV_PROXY: "1"
       TZ: ${TZ:-Asia/Kolkata}
     volumes: ["agent-home:/agent/home", "agent-work:/agent/work", "agent-state:/agent/state"]
-    tmpfs: ["/tmp:size=1g"]
+    tmpfs: ["/tmp:size=1g,exec"]   # DSH copies its native addon into /tmp and dlopen()s it: docker tmpfs is noexec by default
     networks: [agentnet]
     depends_on: [proxy]
     mem_limit: 1536m
