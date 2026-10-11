@@ -122,7 +122,8 @@ export class BrowserController {
     await page.goto(checkUrl(url), { waitUntil: 'domcontentloaded', timeout: 30_000 });
     return { url: page.url(), title: await page.title() };
   }
-  async snapshot() { return (await this.ensure()).evaluate(SNAPSHOT_FN); }
+  // settleMs lets SPA transitions finish before reading the page (used for the automatic post-action snapshot).
+  async snapshot({ settleMs = 0 } = {}) { const page = await this.ensure(); if (settleMs) await page.waitForTimeout(Math.min(Number(settleMs) || 0, 3000)); return page.evaluate(SNAPSHOT_FN); }
   #loc(page, ref) { if (!Number.isInteger(ref) || ref < 1) throw new Error('invalid_ref'); return page.locator(`[data-friday-ref="${ref}"]`).first(); }
   async #present(l) { try { await l.waitFor({ state: 'attached', timeout: 2000 }); } catch { throw new Error('stale_ref: that element is no longer on the page — call browser_snapshot again and use the new refs'); } }
   async click({ ref }) {
