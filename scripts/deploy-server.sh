@@ -3,7 +3,7 @@
 # First run: clones the repo, creates the server .env from your local .env (keys only), builds and starts the stack.
 # Later runs: git pull + rebuild + restart.  Data lives in ~/friday-data on the server (never in the repo).
 set -euo pipefail
-HOST="${1:?usage: deploy-server.sh user@host [branch]}"; BRANCH="${2:-feat/foundation-wiring}"
+HOST="${1:?usage: deploy-server.sh user@host [branch]}"; BRANCH="${2:-develop}"
 REPO="${FRIDAY_REPO:-https://github.com/atharvb7/friday.git}"
 SSH=(ssh -o BatchMode=yes "$HOST")
 
