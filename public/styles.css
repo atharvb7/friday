@@ -181,3 +181,12 @@ dialog { background: var(--surface); color: var(--text); border: 1px solid var(-
 .msg.user .file-chip { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.3); }
 .attach-tray { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 6px; } .attach-tray .x { margin-left: 4px; border: 0; background: none; color: inherit; cursor: pointer; font-size: 15px; }
 .composer.drop .box { outline: 2px dashed var(--accent, #7c5cff); outline-offset: 2px; }
+
+/* authenticator setup */
+.totp-dialog { max-width: 420px; width: calc(100% - 32px); border: 1px solid var(--line); color: inherit; background: var(--bg, #fff); }
+.totp-dialog::backdrop { background: rgba(0,0,0,.45); }
+.totp-dialog .qr-wrap { display: flex; justify-content: center; padding: 8px 0; }
+.totp-dialog .qr { width: 220px; height: 220px; border-radius: 8px; background: #fff; }
+.totp-dialog input { font-size: 20px; letter-spacing: 6px; text-align: center; }
+
+.banner .qr-wrap { display: flex; justify-content: center; padding: 6px 0; } .banner .qr { width: 220px; height: 220px; background: #fff; border-radius: 8px; }

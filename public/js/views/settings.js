@@ -1,5 +1,6 @@
 import { h, clear, timeAgo } from '../util.js';
 import { auth } from '../api.js';
+import { qrSvg } from '../qr.js';
 
 const TRAITS = ['humor', 'sarcasm', 'warmth', 'flirt', 'moodiness', 'childishness', 'protectiveness', 'energy', 'chaos', 'profanity', 'formality', 'verbosity'];
 const LEVELS = ['ask', 'trusted', 'autonomous', 'high'];
@@ -135,7 +136,15 @@ export function render({ app, api, toast, go }) {
         h('div', { class: 'row wrap' }, h('div', { class: 'grow' }, dn), sc, h('button', { class: 'btn primary', onclick: async () => {
           if (!dn.value.trim()) return;
           try { const r = await api('/v1/devices', { method: 'POST', body: { name: dn.value, scopes: sc.value.split(',') } });
-            clear(reveal).append(h('div', { class: 'banner' }, 'Copy this token now — it is shown once:', h('pre', { class: 'mono' }, r.device.token))); } catch (e) { toast(e.message); } } }, 'Add device')), reveal,
+            // Pairing QR: the token travels in the URL fragment (#…), which browsers never send to any server.
+            const link = `${location.origin}/#pair=${encodeURIComponent(r.device.token)}`;
+            const svg = new DOMParser().parseFromString(qrSvg(link, { scale: 4 }), 'image/svg+xml').documentElement;
+            svg.setAttribute('class', 'qr'); svg.setAttribute('aria-label', `QR code to sign in ${r.device.name}`);
+            clear(reveal).append(h('div', { class: 'banner stack' },
+              h('strong', {}, `Scan with ${r.device.name}'s camera to sign it in`), h('div', { class: 'qr-wrap' }, svg),
+              h('p', { class: 'faint small' }, 'The phone must be on your Tailscale network. Shown once — close this when done.'),
+              h('details', {}, h('summary', {}, 'Or copy the token'), h('pre', { class: 'mono' }, r.device.token)),
+              h('button', { class: 'btn small', onclick: () => clear(reveal) }, 'Done'))); } catch (e) { toast(e.message); } } }, 'Add device')), reveal,
         h('div', { class: 'row' }, app.totpActive ? h('span', { class: 'chip good' }, '✓ Authenticator active — phone approvals require a code') : h('button', { class: 'btn', onclick: enrollTotp }, 'Set up authenticator (recommended before using the phone)')));
     }
 
@@ -163,8 +172,31 @@ export function render({ app, api, toast, go }) {
   async function enrollTotp() {
     try {
       const r = await api('/v1/auth/totp/enroll', { method: 'POST' });
-      const code = prompt(`Add this to your authenticator app, then enter a code.\n\nSecret: ${r.secret}\n\n(or open: ${r.uri})`);
-      if (code) { await api('/v1/auth/totp/confirm', { method: 'POST', body: { code: code.trim() } }); app.totpActive = true; toast('Authenticator active.'); build(); }
+      const svg = new DOMParser().parseFromString(qrSvg(r.uri, { scale: 5 }), 'image/svg+xml').documentElement;
+      svg.setAttribute('class', 'qr'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'QR code for your authenticator app');
+      const code = h('input', { type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 6, placeholder: '123456', 'aria-label': '6-digit code' });
+      const err = h('p', { class: 'bad small', hidden: true });
+      const grouped = r.secret.replace(/(.{4})/g, '$1 ').trim();
+      const dlg = h('dialog', { class: 'card totp-dialog' },
+        h('h3', {}, 'Set up your authenticator'),
+        h('ol', { class: 'muted' }, h('li', {}, 'Open Google Authenticator, Microsoft Authenticator, Authy or 2FAS on your phone.'), h('li', {}, 'Tap + → Scan a QR code, and scan this:')),
+        h('div', { class: 'qr-wrap' }, svg),
+        h('details', {}, h('summary', {}, 'Can’t scan? Enter the key manually'), h('p', {}, 'Account: Friday · Key: ', h('code', { class: 'mono' }, grouped)), h('p', { class: 'faint small' }, 'Time-based, 6 digits, every 30 seconds.'),
+          h('button', { class: 'btn small', type: 'button', onclick: () => navigator.clipboard?.writeText(r.secret).then(() => toast('Key copied.')) }, 'Copy key')),
+        h('label', {}, '3. Enter the 6-digit code it shows'), code, err,
+        h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'button', onclick: confirmCode }, 'Activate'), h('button', { class: 'btn', type: 'button', onclick: () => dlg.close() }, 'Cancel')));
+      async function confirmCode() {
+        const c = code.value.replace(/\D/g, '');
+        if (c.length !== 6) { err.textContent = 'Enter the 6 digits from the app.'; err.hidden = false; return; }
+        try {
+          const res = await api('/v1/auth/totp/confirm', { method: 'POST', body: { code: c } });
+          if (!res.active) throw new Error('wrong code');
+          dlg.close(); app.totpActive = true; toast('Authenticator active ✓'); build();
+        } catch { err.textContent = 'That code didn’t match — check the phone’s time is automatic and try the current code.'; err.hidden = false; code.select(); }
+      }
+      code.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmCode(); });
+      dlg.addEventListener('close', () => dlg.remove());
+      document.body.append(dlg); dlg.showModal(); code.focus();
     } catch (e) { toast(e.message); }
   }
   function refreshApp() { api('/v1/status').then((s) => { app.status = s; app.paint(); }).catch(() => {}); }

@@ -30,3 +30,14 @@ test('static: serves allow-listed files with CSP; blocks traversal, dotfiles, sy
     assert.equal(call(serve, '/', 'HEAD').body, undefined);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('qr encoder: deterministic, right version/size for an otpauth link, finder patterns in the corners', async () => {
+  const { encodeQr, qrSvg } = await import('../public/js/qr.js');
+  const uri = 'otpauth://totp/Friday:owner?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Friday';
+  const a = encodeQr(uri), b = encodeQr(uri);
+  assert.deepEqual(a.modules, b.modules);
+  assert.equal(a.size, a.version * 4 + 17);
+  for (const [x, y] of [[0, 0], [a.size - 7, 0], [0, a.size - 7]]) { assert.equal(a.modules[y][x], true); assert.equal(a.modules[y + 1][x + 1], false); assert.equal(a.modules[y + 3][x + 3], true); }
+  assert.match(qrSvg('hi'), /^<svg[\s\S]*<path d="M/);
+  assert.throws(() => encodeQr('x'.repeat(3000)), /too long/);
+});
