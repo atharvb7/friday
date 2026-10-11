@@ -239,13 +239,14 @@ export class BrowserController {
     // the visible composer and verify that the chat around it belongs to exactly this one user.
     const box = page.locator('div[role="textbox"][contenteditable="true"]').filter({ visible: true }).last();
     try { await box.waitFor({ state: 'visible', timeout: 15_000 }); } catch { throw new Error('dm_composer_did_not_open'); }
+    // Who is in this chat? Profile links in the composer's column (above it): a 1:1 chat shows only that person;
+    // a group shows several members; the inbox list beside it is in another column and is ignored.
     const owner = await box.evaluate((el) => {
-      for (let i = 0; i < 24 && el; i++) {
-        el = el.parentElement; if (!el) break;
-        const users = [...new Set([...el.querySelectorAll('a[href]')].map((a) => a.getAttribute('href')).filter((h) => /^\/[A-Za-z0-9._]+\/?$/.test(h)).map((h) => h.replace(/\//g, '').toLowerCase()))];
-        if (users.length) return users;
-      }
-      return [];
+      const r = el.getBoundingClientRect();
+      return [...new Set([...document.querySelectorAll('a[href]')].filter((a) => /^\/[A-Za-z0-9._]+\/?$/.test(a.getAttribute('href')))
+        .map((a) => ({ u: a.getAttribute('href').replace(/\//g, '').toLowerCase(), b: a.getBoundingClientRect() }))
+        .filter(({ b }) => b.width > 0 && b.right > r.left - 40 && b.left < r.right + 40 && b.bottom <= r.bottom + 5 && b.top > r.top - 900)
+        .map((x) => x.u))];
     });
     if (owner.length !== 1 || owner[0] !== u) throw new Error(`thread_not_verified: the open chat belongs to ${owner.join(', ') || 'nobody identifiable'}, not @${u}`);
     await box.click();
