@@ -41,10 +41,10 @@ export class DshAdapter {
   constructor({
     homeDir, workRoot = null, bin = null, nodePath = process.execPath, model = 'nvidia/nemotron-3-super-120b-a12b', provider = 'nvidia',
     apiKey = null, timeoutMs = DEFAULT_TIMEOUT_MS, maxOutputBytes = DEFAULT_MAX_OUTPUT, sandbox = 'bwrap', enabled = true,
-    appRoot = null, dataDir = null, home = process.env.HOME ?? null, permissionMode = 'danger-full-access', overlayPath = null, prepare = null, agentsHome = null,
+    appRoot = null, dataDir = null, home = process.env.HOME ?? null, permissionMode = 'danger-full-access', overlayPath = null, prepare = null, agentsHome = null, passEnv = {},
   } = {}) {
     if (!homeDir || typeof homeDir !== 'string') throw new TypeError('homeDir is required');
-    Object.assign(this, { homeDir: resolve(homeDir), bin, nodePath, model, provider, apiKey, timeoutMs, maxOutputBytes, sandbox, enabled, appRoot, dataDir, home, permissionMode, overlayPath, prepare });
+    Object.assign(this, { homeDir: resolve(homeDir), bin, nodePath, model, provider, apiKey, timeoutMs, maxOutputBytes, sandbox, enabled, appRoot, dataDir, home, permissionMode, overlayPath, prepare, passEnv });
     // Skills/agents live OUTSIDE the agent-writable home and are mounted read-only into the sandbox.
     this.agentsHome = resolve(agentsHome ?? join(this.homeDir, '..', 'dsh-agents'));
     this.workRoot = resolve(workRoot ?? join(this.homeDir, '..', 'dsh-workspaces'));
@@ -79,6 +79,7 @@ export class DshAdapter {
 
   #childEnv(extra = {}) {
     return {
+      ...this.passEnv, // non-secret plumbing only (proxy settings, NODE_OPTIONS preload) supplied by the embedding service
       ...extra,
       PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', LANG: process.env.LANG ?? 'C.UTF-8', TERM: 'dumb',
       HOME: this.homeDir, DSH_HOME: this.homeDir, DSH_AGENTS_HOME: this.agentsHome,
