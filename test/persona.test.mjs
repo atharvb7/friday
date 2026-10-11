@@ -205,3 +205,12 @@ test('brain: a false "queued" claim is corrected by forcing the tool call; persi
     store.close();
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
+
+test('lookup guard: describing a search that never ran is caught; real searches and other tools pass', async () => {
+  const { claimsLookupWithoutTool } = await import('../src/agent/brain.mjs');
+  assert.equal(claimsLookupWithoutTool('*searches web*\nTop results are still about 2023', [], 'just search semix summit 2026'), true);
+  assert.equal(claimsLookupWithoutTool('Here is what I know', [], 'search semix summit 2026'), true, 'user asked to search, nothing ran');
+  assert.equal(claimsLookupWithoutTool('Found it: Oct 14-17', [{ name: 'web_search' }], 'search semix summit 2026'), false);
+  assert.equal(claimsLookupWithoutTool('Queued on your laptop', [{ name: 'computer_task' }], 'find the file on my laptop'), false);
+  assert.equal(claimsLookupWithoutTool('Morning! Coffee?', [], 'good morning'), false);
+});
