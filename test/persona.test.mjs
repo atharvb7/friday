@@ -147,3 +147,61 @@ test('auto-memory: model-decided saves, de-duplicated, secrets and trivia skippe
     store.close();
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
+
+import { claimsActionWithoutTool } from '../src/agent/brain.mjs';
+import { Brain } from '../src/agent/brain.mjs';
+import { ChatStore } from '../src/chat.mjs';
+import { ContextBuilder } from '../src/agent/context-builder.mjs';
+import { buildFridayTools } from '../src/agent/friday-tools.mjs';
+import { ModelRouter } from '../src/ai/router.mjs';
+import { OpenAICompatProvider } from '../src/ai/openai-compat.mjs';
+import { EventBus } from '../src/events.mjs';
+import { Policy } from '../src/policy.mjs';
+import { Approvals } from '../src/approvals.mjs';
+import { Notifications } from '../src/notifications.mjs';
+
+test('claim guard: detects "queued/sent for approval" claims without a tool call', () => {
+  const none = [];
+  for (const t of ['I’ve queued the task to open salexnow.com in your laptop browser.', 'I’ve sent another request for approval to open it.', 'Please check your inbox and confirm it.', 'The reminder has been created.', 'Your task is queued and waiting on your approval.']) assert.equal(claimsActionWithoutTool(t, none), true, t);
+  for (const t of ['I can do that — want me to?', 'Sure, what is the site?', 'Haha no, I wouldn’t queue that for you.']) assert.equal(claimsActionWithoutTool(t, none), false, t);
+  assert.equal(claimsActionWithoutTool('I’ve queued the task', [{ name: 'computer_task', ok: true }]), false, 'backed by a real tool call');
+  assert.equal(claimsActionWithoutTool('I’ve queued the task', [{ name: 'memory_search', ok: true }]), true, 'an unrelated tool does not back the claim');
+});
+
+test('brain: a false "queued" claim is corrected by forcing the tool call; persistent false claims are retracted honestly', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'friday-guard-'));
+  try {
+    const store = new Store(join(d, 'db.sqlite')); const settings = new Settings(store); const chat = new ChatStore(store); const bus = new EventBus();
+    const memory = new Memory(store); const notifications = new Notifications(store, bus);
+    const policy = new Policy({ settings, bus }); const approvals = new Approvals({ store, notifications, chat, bus });
+    const ctx = { memory, store, tools: null, indexer: null, worker: { cancel() {} }, jobs: {}, settings, proactive: {}, skills: null, nodes: { online: true, list: () => [] }, researchMemory: null };
+    const ft = buildFridayTools(ctx);
+    const convo = chat.createConversation('t'); chat.addMessage(convo.id, 'user', 'open salexnow.com on my laptop');
+    const mkBrain = (script) => {
+      const calls = [];
+      const prov = new OpenAICompatProvider({ name: 'p', baseUrl: 'http://x', apiKey: 'k'.repeat(12), fetchImpl: async (u, { body }) => {
+        const b = JSON.parse(body); calls.push(b.messages.at(-1).content?.toString().slice(0, 40) ?? b.messages.at(-1).role);
+        const out = script.shift();
+        return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ choices: [{ message: out, finish_reason: out.tool_calls ? 'tool_calls' : 'stop' }] }), text: async () => '' };
+      } });
+      const ai = new ModelRouter({ chains: { execute: [{ provider: 'p', model: 'm' }] } }).register(prov);
+      return { calls, brain: new Brain({ ai, fridayTools: ft, settings, chat, bus, contextBuilder: new ContextBuilder({ memory, store }), policy, approvals }) };
+    };
+    // 1) false claim -> guard note -> model calls computer_task -> approval staged -> honest final reply
+    const a = mkBrain([
+      { content: 'I’ve queued the task to open salexnow.com. Please check your inbox and approve it.' },
+      { content: null, tool_calls: [{ id: 'c1', function: { name: 'computer_task', arguments: '{"goal":"Open https://salexnow.com"}' } }] },
+      { content: 'Done — approval request is in your inbox.' },
+    ]);
+    const out = await a.brain.respond({ conversationId: convo.id, text: 'open salexnow.com on my laptop' });
+    assert.equal(out.reply, 'Done — approval request is in your inbox.');
+    assert.equal(approvals.list().length, 1, 'the approval really exists now');
+    assert.ok(a.calls.some((c) => /system check/.test(c)), 'the model was confronted with the false claim');
+    // 2) model keeps lying -> honest retraction, no phantom promise
+    const b = mkBrain([{ content: 'I’ve queued it, check your inbox.' }, { content: 'Yes I have queued it, waiting on your approval.' }]);
+    const out2 = await b.brain.respond({ conversationId: convo.id, text: 'again' });
+    assert.match(out2.reply, /I didn’t actually run anything, so nothing is queued/);
+    assert.equal(approvals.list().length, 1, 'no extra phantom approval');
+    store.close();
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
