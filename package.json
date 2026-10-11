@@ -8,9 +8,11 @@
   },
   "scripts": {
     "start": "node src/server.mjs",
-    "test": "node --test",
+    "test": "node --test \"test/*.test.mjs\"",
     "friday": "node bin/friday.mjs",
-    "check": "node --check bin/friday.mjs && node --check public/app.js && node --check src/server.mjs"
+    "check": "node --check bin/friday.mjs && node --check public/app.js && node --check src/server.mjs",
+    "test:node": "cd node && node --test \"test/*.test.mjs\"",
+    "test:all": "npm test && npm run test:node"
   },
   "bin": {
     "friday": "bin/friday.mjs"

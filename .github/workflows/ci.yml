@@ -14,5 +14,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+      # Server tests: zero dependencies, hermetic (fake model/agent engines).
       - run: npm test
       - run: npm run check
+      # Laptop-node + real-browser UI tests: need playwright-core and the runner's Google Chrome.
+      - run: npm ci
+        working-directory: node
+      - run: npm run test:node
