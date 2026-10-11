@@ -31,8 +31,10 @@ export function chatRoutes(router, ctx) {
     ctx.companion.chatStart();
     try { return await turnInner(args); } finally { ctx.companion.chatEnd(); }
   }
-  async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner', channel = 'chat' }) {
-    chat.addMessage(convo.id, 'user', text);
+  async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner', channel = 'chat', attachments = [] }) {
+    if (attachments.length) ctx.files?.claim(attachments, convo.id);
+    chat.addMessage(convo.id, 'user', text, { attachments });
+    let replyFiles = [];
     const brain = ctx.chatBrain();
     // JEV is off unless enabled; the local classifier is the deterministic default.
     const route = env.FRIDAY_JEV_ENABLED === '1' ? await jev.routeInstruction(text) : classifyLocal(text);
@@ -44,7 +46,7 @@ export function chatRoutes(router, ctx) {
         reply = 'I’m offline right now — try me again in a bit.';
       } else if (brain.name === 'friday-brain') {
         const out = await brain.adapter.respond({ conversationId: convo.id, text, signal, speaker, channel, ...hooks });
-        reply = out.reply; model = out.model; toolsUsed = out.toolsUsed;
+        reply = out.reply; model = out.model; toolsUsed = out.toolsUsed; replyFiles = out.attachments ?? [];
       } else if (route.riskScore >= 3) {
         reply = (await answerLocal({ ...route, needsApproval: true }, text, { memory, tools })).text;
       } else if (DETERMINISTIC_LOCAL.has(route.intent)) {
@@ -67,12 +69,13 @@ export function chatRoutes(router, ctx) {
         reply = `My brain providers aren’t answering right now (${String(error.message).slice(0, 160)}). Your message is saved. Memory, files and tasks still work — try again in a moment.`;
       }
     }
-    reply = (reply || '…').slice(0, 20000);
-    chat.addMessage(convo.id, 'assistant', reply);
+    reply = (reply || (replyFiles.length ? '' : '…')).slice(0, 20000);
+    const saved = chat.addMessage(convo.id, 'assistant', reply, { attachments: replyFiles });
     if (speaker === 'owner' && brain.name === 'friday-brain') void ctx.autoMemory.observe({ userText: text, assistantText: reply }).catch(() => {}); // the brain decides what is worth remembering
     try { audit.append(convo.id, 'chat.reply', { intent: route.intent, brain: brain.name, source: route.source, tools: toolsUsed.map((t) => t.name) }); } catch {}
     bus.publish('chat.reply', { conversationId: convo.id, brain: brain.name });
-    return { conversation: chat.getConversation(convo.id), route, reply, brain: brain.name, model, toolsUsed };
+    const files = (saved.attachments ?? []).map((id) => ctx.files?.public(ctx.files.get(id))).filter(Boolean);
+    return { conversation: chat.getConversation(convo.id), route, reply, brain: brain.name, model, toolsUsed, files };
   }
 
   function openConversation(b, principal) {
@@ -83,13 +86,15 @@ export function chatRoutes(router, ctx) {
       const existing = chat.listConversations().find((c) => c.title === title);
       return { convo: existing ?? chat.createConversation(title), text: b.message.trim(), speaker: 'guest' };
     }
-    if (typeof b.message !== 'string' || !b.message.trim() || b.message.length > 20000) return { error: [400, { error: 'invalid_message' }] };
-    const text = b.message.trim();
+    // Files the user attached (uploaded first via POST /v1/files); only known file ids are accepted.
+    const attachments = Array.isArray(b.attachments) ? b.attachments.filter((id) => ctx.files?.get(id)).slice(0, 10) : [];
+    if (typeof b.message !== 'string' || b.message.length > 20000 || (!b.message.trim() && !attachments.length)) return { error: [400, { error: 'invalid_message' }] };
+    const text = b.message.trim() || (attachments.length ? '(sent you a file)' : '');
     if (b.conversationId !== undefined && b.conversationId !== null) {
       const convo = chat.getConversation(b.conversationId);
-      return convo ? { convo, text, channel: b.channel === 'voice' ? 'voice' : 'chat' } : { error: [404, { error: 'conversation_not_found' }] };
+      return convo ? { convo, text, attachments, channel: b.channel === 'voice' ? 'voice' : 'chat' } : { error: [404, { error: 'conversation_not_found' }] };
     }
-    return { convo: chat.createConversation(text.slice(0, 60)), text, channel: b.channel === 'voice' ? 'voice' : 'chat' };
+    return { convo: chat.createConversation(text.slice(0, 60)), text, attachments, channel: b.channel === 'voice' ? 'voice' : 'chat' };
   }
 
   // One-shot text turn for non-browser clients (voice devices): returns just the reply.
@@ -118,7 +123,7 @@ export function chatRoutes(router, ctx) {
             ...opened, signal: ctrl.signal,
             hooks: { onDelta: (t) => { thinking = false; send('delta', { text: t }); }, onThinking: () => { if (!thinking) { thinking = true; send('thinking', {}); } }, onTool: (t) => { thinking = false; send('tool', t); } },
           });
-          send('done', { reply: out.reply, brain: out.brain, model: out.model, toolsUsed: out.toolsUsed, conversationId: out.conversation.id });
+          send('done', { reply: out.reply, brain: out.brain, model: out.model, toolsUsed: out.toolsUsed, conversationId: out.conversation.id, files: out.files });
         } catch (error) { send('error', { error: ctrl.signal.aborted ? 'cancelled' : 'internal_error' }); }
         res.end();
       },

@@ -18,6 +18,7 @@ import { nodeRoutes } from './routes/node.mjs';
 import { voiceRoutes } from './routes/voice.mjs';
 import { profileRoutes } from './routes/profile.mjs';
 import { agentRoutes } from './routes/agents.mjs';
+import { fileRoutes } from './routes/files.mjs';
 import { openEventStream } from './http/sse.mjs';
 import { requiredScope, needsTotp } from './auth.mjs';
 
@@ -36,7 +37,7 @@ const ctx = createContext({ appRoot });
 ctx.start();
 
 const router = new Router();
-for (const register of [systemRoutes, taskRoutes, memoryRoutes, toolRoutes, chatRoutes, workRoutes, authRoutes, platformRoutes, assistantRoutes, nodeRoutes, voiceRoutes, profileRoutes, agentRoutes]) register(router, ctx);
+for (const register of [systemRoutes, taskRoutes, memoryRoutes, toolRoutes, chatRoutes, workRoutes, authRoutes, platformRoutes, assistantRoutes, nodeRoutes, voiceRoutes, profileRoutes, agentRoutes, fileRoutes]) register(router, ctx);
 const serveStatic = makeStaticServer(resolve(appRoot, 'public'));
 
 // Buckets: authenticated traffic is keyed by principal (behind `tailscale serve`

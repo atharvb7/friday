@@ -3,7 +3,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { ensureRealDir, writeFileReplacing } from './safefs.mjs';
 import { Store } from './store.mjs';
 import { Memory } from './memory.mjs';
@@ -52,6 +52,8 @@ import { TeamOrchestrator } from './agent/team.mjs';
 import { Learner } from './agent/learning.mjs';
 import { Watches } from './watches.mjs';
 import { Composio } from './composio.mjs';
+import { Files } from './files.mjs';
+import { Documents } from './documents.mjs';
 import { Questions } from './questions.mjs';
 
 function findDshBin() {
@@ -179,14 +181,27 @@ export function createContext({ appRoot, env = process.env }) {
       if (e.kind !== 'task.completed') return;
       const t = store.getTask(e.taskId);
       if (t?.kind !== 'research') return;
+      let reportMd = null;
       try {
         const files = dshInner.takeFiles?.(t.id);
+        reportMd = files?.['report.md'] ?? (() => { try { return readFileSync(join(dshInner.pathFor(t.id, t.workspace), 'report.md'), 'utf8'); } catch { return null; } })();
         const r = files
           ? ctx.researchMemory.ingest({ taskId: t.id, findings: JSON.parse(files['findings.json'] ?? 'null'), reportMd: files['report.md'] ?? null })
           : ctx.researchMemory.ingestFromDir({ taskId: t.id, dir: dshInner.pathFor(t.id, t.workspace) });
         ctx.notifications.create({ level: 'success', title: `Research saved: ${r.topic}`, body: `${r.sources} sources, ${r.claims} claims, ${r.contradictions} contradiction(s) stored.`, taskId: t.id, conversationId: t.conversation_id });
       } catch (error) {
         ctx.notifications.create({ level: 'warning', title: `Research finished but not saved: ${t.title}`, body: `The agent did not leave a valid findings.json (${String(error.message).slice(0, 120)}). The report text is still in the task result.`, taskId: t.id });
+      }
+      // The full report as downloadable files in the chat: Markdown right away, a Word version once rendered.
+      const text = reportMd ?? (String(t.result ?? '').length > 400 ? String(t.result) : null);
+      if (text && t.conversation_id && ctx.chat.getConversation(t.conversation_id)) {
+        const name = `Research - ${t.title.replace(/^Research:\s*/, '').slice(0, 60)}`;
+        try {
+          const md = ctx.files.save({ name: `${name}.md`, data: text, source: 'task', conversationId: t.conversation_id, taskId: t.id });
+          ctx.documents.create({ format: 'docx', name, title: t.title.replace(/^Research:\s*/, ''), markdown: text, conversationId: t.conversation_id })
+            .then((d) => { const ids = [md.id, ...(d._attach ?? [])]; ctx.chat.addMessage(t.conversation_id, 'assistant', '📎 Full research report — download it below.', { attachments: ids }); })
+            .catch(() => { ctx.chat.addMessage(t.conversation_id, 'assistant', '📎 Full research report — download it below.', { attachments: [md.id] }); });
+        } catch { /* attaching is best effort */ }
       }
     };
   }
@@ -202,6 +217,8 @@ export function createContext({ appRoot, env = process.env }) {
   });
   ctx.profile = new Profile({ settings });
   ctx.composio = new Composio({ apiKey: env.COMPOSIO_API_KEY, settings });
+  ctx.files = new Files({ store, dir: resolve(dataDir, 'files'), bus });
+  ctx.documents = new Documents({ files: ctx.files, appRoot, python: env.FRIDAY_DOCS_PYTHON ?? 'python3' });
   ctx.learner = new Learner({ ai, store, skills, dir: resolve(dataDir, 'skills'), profile: ctx.profile, bus, settings });
   { // successful laptop/Hermes runs become (or improve) playbooks, off the hot path
     const prev = store.onEvent;

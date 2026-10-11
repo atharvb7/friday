@@ -172,3 +172,12 @@ dialog { background: var(--surface); color: var(--text); border: 1px solid var(-
 @media (hover: none) { .convo-del { opacity: .7; } }
 
 .btn.rec { box-shadow: 0 0 0 calc(2px + 8px * var(--lvl, 0)) rgba(255,107,129,.45); background: var(--bad) !important; }
+
+/* files in chat */
+.files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.file-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.file-chip:hover { border-color: var(--accent, #7c5cff); }
+.file-chip .fi { font-size: 20px; } .file-chip .fn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; } .file-chip .fs { font-size: 12px; opacity: .7; white-space: nowrap; }
+.msg.user .file-chip { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.3); }
+.attach-tray { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 6px; } .attach-tray .x { margin-left: 4px; border: 0; background: none; color: inherit; cursor: pointer; font-size: 15px; }
+.composer.drop .box { outline: 2px dashed var(--accent, #7c5cff); outline-offset: 2px; }

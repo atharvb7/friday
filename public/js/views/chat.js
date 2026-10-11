@@ -4,6 +4,21 @@ import { chunkSpeak } from '/voice.js';
 import { emojiPicker, insertAtCursor } from '../emoji.js';
 import { startRecording, speakServer } from '../voice-io.js';
 
+const FILE_ICON = { docx: '📝', doc: '📝', odt: '📝', rtf: '📝', xlsx: '📊', xls: '📊', csv: '📊', tsv: '📊', pptx: '📽️', ppt: '📽️', pdf: '📕', md: '🗒️', txt: '🗒️', html: '🌐', json: '🧾', png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', webp: '🖼️', zip: '🗜️' };
+const fmtSize = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
+async function download(f) {
+  const r = await fetch(`/v1/files/${f.id}`, { headers: { Authorization: `Bearer ${auth.token}` }, cache: 'no-store' });
+  if (!r.ok) throw new Error(`download failed (${r.status})`);
+  const url = URL.createObjectURL(await r.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: f.name });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+function fileChip(f, onErr) {
+  const ext = f.name.split('.').pop().toLowerCase();
+  return h('button', { class: 'file-chip', type: 'button', title: `Download ${f.name}`, onclick: () => download(f).catch((e) => onErr?.(e.message)) },
+    h('span', { class: 'fi' }, FILE_ICON[ext] ?? '📄'), h('span', { class: 'fn' }, f.name), h('span', { class: 'fs' }, `${fmtSize(f.size)} · ⬇`));
+}
+
 const SUGGESTIONS = ['What did I ask you to remember?', 'Remind me in 1 hour to stretch', 'Research the latest in open-source AI agents', 'Brief me on today'];
 
 // Text chat has no stage directions: hide *actions* (keeps **bold**) even while streaming.
@@ -20,11 +35,33 @@ export function render({ app, api, toast }) {
   const send = h('button', { class: 'btn primary', type: 'submit' }, 'Send');
   const mic = h('button', { class: 'btn icon', type: 'button', title: 'Push to talk', 'aria-label': 'Voice input', onclick: toggleMic }, '🎙');
   const spk = h('button', { class: 'btn icon quiet', type: 'button', title: 'Read replies aloud', 'aria-label': 'Toggle spoken replies', onclick: () => { speak = !speak; spk.textContent = speak ? '🔊' : '🔇'; if (!speak) speechSynthesis?.cancel(); } }, '🔇');
+  const fileInput = h('input', { type: 'file', multiple: true, hidden: true, accept: '.docx,.xlsx,.pptx,.pdf,.md,.txt,.csv,.tsv,.html,.json,.xml,.png,.jpg,.jpeg,.gif,.webp,.doc,.xls,.ppt,.odt,.rtf,.zip' });
+  const pending = []; // files uploaded and waiting to be sent with the next message
+  const tray = h('div', { class: 'attach-tray', hidden: true });
+  const attachBtn = h('button', { class: 'btn quiet icon', type: 'button', title: 'Attach files', 'aria-label': 'Attach files', onclick: () => fileInput.click() }, '📎');
+  const paintTray = () => { clear(tray); tray.hidden = !pending.length; for (const f of pending) tray.append(h('span', { class: 'chip' }, `${FILE_ICON[f.name.split('.').pop().toLowerCase()] ?? '📄'} ${f.name}`, h('button', { class: 'x', type: 'button', 'aria-label': `Remove ${f.name}`, onclick: () => { pending.splice(pending.indexOf(f), 1); paintTray(); } }, '×'))); };
+  async function uploadFiles(list) {
+    for (const file of list) {
+      if (file.size > 25 * 1024 * 1024) { toast(`${file.name} is over 25 MB`); continue; }
+      try {
+        const r = await fetch(`/v1/files?name=${encodeURIComponent(file.name)}${convoId ? `&conversation=${convoId}` : ''}`, { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/octet-stream' }, body: file });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { toast(`${file.name}: ${j.error || r.status}`); continue; }
+        pending.push(j.file); paintTray();
+      } catch (e) { toast(`Upload failed: ${e.message}`); }
+    }
+  }
+  fileInput.addEventListener('change', () => { uploadFiles([...fileInput.files]); fileInput.value = ''; });
   const histBtn = h('button', { class: 'btn quiet icon', type: 'button', 'aria-label': 'Conversations', onclick: () => convos.classList.toggle('open') }, '☰');
 
   const emoji = emojiPicker({ onPick: (e) => insertAtCursor(input, e) });
   const form = h('form', { class: 'composer', onsubmit: (e) => { e.preventDefault(); submit(); } },
-    h('div', { class: 'box' }, histBtn, emoji.el, input, spk, mic, send));
+    tray, h('div', { class: 'box' }, histBtn, attachBtn, fileInput, emoji.el, input, spk, mic, send));
+  // drag & drop / paste files onto the composer
+  form.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); form.classList.add('drop'); } });
+  form.addEventListener('dragleave', () => form.classList.remove('drop'));
+  form.addEventListener('drop', (e) => { if (e.dataTransfer?.files?.length) { e.preventDefault(); form.classList.remove('drop'); uploadFiles([...e.dataTransfer.files]); } });
+  input.addEventListener('paste', (e) => { const fl = [...(e.clipboardData?.files ?? [])]; if (fl.length) { e.preventDefault(); uploadFiles(fl); } });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); } });
   input.addEventListener('input', () => { input.style.setProperty('height', 'auto'); input.style.setProperty('height', `${Math.min(input.scrollHeight, 160)}px`); });
 
@@ -43,6 +80,7 @@ export function render({ app, api, toast }) {
     const body = h('div', { class: 'bubble' });
     if (extra.tools?.length) body.append(h('div', { class: 'tools' }, extra.tools.map((t) => h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`))));
     if (content) body.append(role === 'assistant' ? md(content) : h('div', {}, content));
+    if (extra.files?.length) body.append(h('div', { class: 'files' }, extra.files.map((f) => fileChip(f, toast))));
     return h('div', { class: `msg ${role}` }, h('div', { class: 'av' }, role === 'user' ? 'You' : 'F'), body);
   }
   function hello() {
@@ -79,18 +117,19 @@ export function render({ app, api, toast }) {
     if (!id) { hello(); loadConvos(); return; }
     try {
       const { messages } = await api(`/v1/chat/${id}`);
-      clear(msgs); for (const m of messages) msgs.append(bubble(m.role, m.content));
+      clear(msgs); for (const m of messages) msgs.append(bubble(m.role, m.content, { files: m.attachments }));
       pinned = true; scroll(true); loadConvos();
     } catch { toast('Could not open that conversation'); }
   }
 
   async function submit() {
     const text = input.value.trim();
-    if (!text || busy) return;
+    const files = pending.splice(0); paintTray();
+    if ((!text && !files.length) || busy) { pending.push(...files); paintTray(); return; }
     busy = true; app.chatBusy = true; app.paint(); send.disabled = true;
     input.value = ''; input.style.setProperty('height', 'auto'); speechSynthesis?.cancel();
     if (!convoId) clear(msgs);
-    pinned = true; msgs.append(bubble('user', text));
+    pinned = true; msgs.append(bubble('user', text, { files }));
     const tools = []; let acc = '';
     const viaVoice = lastInputWasVoice; lastInputWasVoice = false;
     const toolsEl = h('div', { class: 'tools' });
@@ -100,12 +139,12 @@ export function render({ app, api, toast }) {
     abort = new AbortController();
     const paintReply = () => { live.lastChild?.remove(); live.append(md(noActions(acc))); scroll(); };
     try {
-      await streamChat({ message: text, conversationId: convoId, channel: viaVoice ? 'voice' : 'chat' }, {
+      await streamChat({ message: text, conversationId: convoId, channel: viaVoice ? 'voice' : 'chat', attachments: files.map((f) => f.id) }, {
         meta: (d) => { convoId = d.conversationId; },
         delta: (d) => { acc += d.text; paintReply(); },
         thinking: () => {},
         tool: (t) => { tools.push(t); toolsEl.append(h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`)); },
-        done: (d) => { acc = d.reply; paintReply(); if (speak && acc) say(acc); },
+        done: (d) => { acc = d.reply; paintReply(); if (d.files?.length) live.append(h('div', { class: 'files' }, d.files.map((f) => fileChip(f, toast)))); if (speak && acc) say(acc); },
         error: () => { acc ||= '(That didn’t go through. Try again?)'; paintReply(); },
       }, abort.signal);
     } catch (e) { acc ||= `Couldn’t reach my brain: ${e.message}`; paintReply(); }

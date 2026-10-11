@@ -52,6 +52,7 @@ export class Brain {
     const messages = [{ role: 'system', content: system }, ...this.chat.historyForProvider(conversationId, 20)];
     const schemas = this.fridayTools.schemas();
     const toolsUsed = [];
+    const attachments = []; // files tools produced this turn (documents) — attached to the reply
     let calls = 0;
     let guardTries = 0;
     let lookupTries = 0;
@@ -78,6 +79,7 @@ export class Brain {
       for (const call of last.toolCalls) {
         calls += 1;
         const result = calls > MAX_TOOL_CALLS ? { error: 'tool_call_limit_reached' } : await this.#runTool(call, conversationId);
+        if (Array.isArray(result?._attach)) { attachments.push(...result._attach); delete result._attach; result.attached_to_your_reply = true; }
         toolsUsed.push({ name: call.name, ok: !result.error });
         onTool?.({ name: call.name, ok: !result.error });
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, RESULT_CHARS) });
@@ -92,7 +94,7 @@ export class Brain {
     }
     const reply = channel === 'voice' ? last.content.trim() : stripStageDirections(last.content);
     this.habits?.record(reply);
-    return { reply, model: last.model, provider: last.provider, toolsUsed, usage: last.usage, usedVector: ctxInfo.usedVector, memoryIds: ctxInfo.memoryIds };
+    return { reply, model: last.model, provider: last.provider, toolsUsed, attachments: [...new Set(attachments)], usage: last.usage, usedVector: ctxInfo.usedVector, memoryIds: ctxInfo.memoryIds };
   }
 
   // Guests get persona only: no memory, no context, no tools, and a separate conversation.
