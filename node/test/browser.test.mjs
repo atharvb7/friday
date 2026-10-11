@@ -154,3 +154,24 @@ test('real Chrome: a ref that vanished after a re-render is healed by name; trul
     await assert.rejects(() => b.click({ ref: 777 }), /stale_ref/);
   } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('real Chrome: smart waits return as soon as the page is still; popups are followed', { skip: !existsSync(CHROME) }, async () => {
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    if (req.url === '/pop') return res.end('<html><title>Popup</title><body><button>Confirm booking</button></body></html>');
+    res.end(`<html><title>Main</title><body>${Array.from({ length: 8 }, (_, i) => `<button>b${i}</button>`).join('')}<a href="/pop" target="_blank">open</a></body></html>`);
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const dir = mkdtempSync(join(tmpdir(), 'fn-br2-'));
+  const b = new BrowserController({ chromium, profileDir: join(dir, 'profile'), headless: true, allowPrivate: true });
+  try {
+    const page = await b.ensure();
+    await page.goto(`http://127.0.0.1:${srv.address().port}/`);
+    const t0 = Date.now(); const w = await b.wait({ ms: 10_000 });
+    assert.ok(Date.now() - t0 < 3000 && w.ms < 3000, `static page: wait returns early (${w.ms}ms)`);
+    const t1 = Date.now(); await b.snapshot({ settleMs: 1500 }); assert.ok(Date.now() - t1 < 1400, 'post-action settle exits early on a still page');
+    await b.click_text({ text: 'open' });
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(await b.page.title(), 'Popup', 'new tab became the active page');
+  } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
+});

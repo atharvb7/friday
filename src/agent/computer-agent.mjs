@@ -67,6 +67,7 @@ Rules:
 - EVERY browser action's result already includes the fresh page ("page": URL, headings, numbered elements, visible text). READ it and pick your next action from it; refs change on each update, so only use refs from the latest result. Do not wait, scroll or re-open the URL unless the page is genuinely still loading — re-opening a wizard URL resets it to step 1. NEVER wait for text you guessed. Waits are for a second or two only. Calendar days, time slots and cards appear as "clickable" elements; if one is missing, scroll and snapshot again or use browser_click_text.
 - Work in a tight loop: browser_snapshot -> choose ONE action -> do it -> browser_snapshot. Multi-step flows (booking, checkout) are wizards: read the step title (the h1/heading), do what that step needs, press Continue/Next, and repeat until the final Confirm step. Pre-selected options (marked ✓ or already chosen) need no clicking.
 - PERSONAL DETAILS: you never see the user's private details. When a form needs their name, phone, email or address, type the placeholder {{profile.name}} / {{profile.phone}} / {{profile.email}} / {{profile.address}} — it is filled in for you. If the status below says a field is unknown, call ask_user (with that field) BEFORE filling the form and wait. NEVER invent or use dummy details ("test user", fake numbers, example emails), even if the form accepts them.
+- BE FAST: every step costs seconds. When several fields on the SAME form are independent (name, phone, email), fill them all in ONE turn with multiple tool calls. Never wait or snapshot "just to check" — every action already returns the fresh page, and browser_open/browser_wait already wait until the page is loaded. Once the page shows the goal is done (e.g. a confirmed message), stop immediately and report; do not go back to re-verify on other sites.
 - FINISH THE WHOLE FLOW YOURSELF: if a site says the last step happens elsewhere ("confirm on WhatsApp", a code by email/SMS, a link in a message), go there in the browser yourself (WhatsApp: open https://web.whatsapp.com, wait for chats to load, open the chat of that business, use the NEWEST message — the lowest one) and complete it. Do not stop and hand it back to the user. The user's approval of this task already covers that final confirm.
 - Report success ONLY with evidence on the page after the click (e.g. a "confirmed" message). If the outcome is unclear or the page shows something unexpected (a different button became active, an error, a reply like "choose another time"), say so plainly and do not claim it worked.
 - Before any final submit/confirm/pay click, re-read the page and verify it is for EXACTLY what the goal names (business, service, date, time). If the page shows a different business or details, do not submit: navigate to the right one or stop and report the mismatch. Never continue on a page you did not verify.
@@ -191,7 +192,7 @@ export class ComputerAgent {
         this.#remember(name, args, res);
         if (name === 'browser_snapshot' && Array.isArray(res?.elements)) return { page: compactSnapshot(res) };
         if (STATE_CHANGING.has(name)) {
-          try { const snap = await this.nodes.dispatch({ action: 'browser_snapshot', args: { settleMs: 700 } }); this.#remember('browser_snapshot', {}, snap); res = { ...res, page: compactSnapshot(snap) }; } catch { /* the action succeeded; the model can still ask for a snapshot */ }
+          try { const snap = await this.nodes.dispatch({ action: 'browser_snapshot', args: { settleMs: 1500 } }); this.#remember('browser_snapshot', {}, snap); res = { ...res, page: compactSnapshot(snap) }; } catch { /* the action succeeded; the model can still ask for a snapshot */ }
         }
         return res;
       }
@@ -219,6 +220,7 @@ export class ComputerAgent {
     const profileNote = `\nUSER DETAILS STATUS (values are hidden from you): ${Object.entries(known).map(([k, v]) => `${k}=${v}`).join(', ') || 'none'}.`;
     const messages = [{ role: 'system', content: COMPUTER_PROMPT + profileNote }, { role: 'user', content: String(instruction) }];
     const seen = new Map();
+    const pages = new Set(); // tool messages that still carry a full page listing
     let waitStreak = 0;
     for (let step = 1; step <= MAX_STEPS; step++) {
       if (signal?.aborted) throw signal.reason ?? new Error('aborted');
@@ -243,7 +245,14 @@ export class ComputerAgent {
           onTrace('tool_result', { status: result?.error ? 'error' : 'ok', result: JSON.stringify(result).slice(0, 300) });
           try { this.audit?.append(taskId, 'computer.action', { tool: c.name, ok: !result?.error }); } catch {}
         }
-        messages.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(result).slice(0, RESULT_CHARS) });
+        // Only the newest page listing matters (refs are only valid there): shrink older ones so every step
+        // doesn't resend 10k+ tokens of stale pages — this is most of the per-step model latency.
+        if (result && typeof result === 'object' && typeof result.page === 'string') {
+          for (const m of messages) if (pages.has(m)) { m.content = m.content.replace(/"page":"(?:[^"\\]|\\.)*"/, (s) => `"page":"(older page, refs expired) ${s.slice(8, 120).replace(/\\n.*$/, '')}"`); pages.delete(m); }
+        }
+        const msg = { role: 'tool', tool_call_id: c.id, content: JSON.stringify(result).slice(0, RESULT_CHARS) };
+        if (typeof result?.page === 'string') pages.add(msg);
+        messages.push(msg);
       }
     }
     return { status: 'failed', error: 'step_budget_exhausted' };
