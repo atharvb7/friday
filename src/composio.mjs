@@ -86,7 +86,7 @@ export class Composio {
       const err = String(r.error ?? 'failed');
       // Meta only lets a business account message someone who messaged IT within the last 24 hours.
       if (toolkit === 'instagram' && /2534022|outside of allowed window/i.test(err)) {
-        return { error: 'instagram_24h_window', explain: "Instagram's API only allows replying to people who messaged this account in the last 24 hours, and it cannot start new conversations. This person hasn't messaged within 24h, so nothing was sent.", fallback: 'Offer to send it from the laptop instead (computer_task: open instagram.com/direct in the browser and send it like a person would — the user must be logged in to Instagram in Friday\'s browser), or wait until they message first.' };
+        return { error: 'instagram_24h_window', explain: "Instagram refused it as \"outside the allowed messaging window\", so nothing was sent. Normally that means the person hasn't messaged this account in the last 24 hours. If they DID message recently, Instagram is blocking the app itself: check Instagram → Settings → Messages and story replies → Message controls → Connected tools → \"Allow access to messages\" is ON.", fallback: 'Offer to send it from the laptop instead (computer_task: open instagram.com/direct in the browser and send it like a person would — the user must be logged in to Instagram in Friday\'s browser), or wait until they message first.' };
       }
       return { error: err.slice(0, 500) };
     }
