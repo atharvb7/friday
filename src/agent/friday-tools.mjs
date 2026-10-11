@@ -115,7 +115,7 @@ export function buildFridayTools(ctx) {
     },
     {
       name: 'computer_task', risk: 'gated', category: 'computer', riskClass: 'consequential',
-      description: "Operate the user's laptop to achieve a goal (browse sites, find files in Downloads/Documents, use their logged-in browser profile, fill forms, attach files). Runs in the background, stepwise, verifying results; sending/posting/buying inside it needs separate approval. Queues until the laptop is online. Give the complete goal incl. exact names.",
+      description: "Operate the user's laptop to achieve a goal (NOT for Instagram DMs — use instagram_action or the dm_chat tools, which verify the right chat) (browse sites, find files in Downloads/Documents, use their logged-in browser profile, fill forms, attach files). Runs in the background, stepwise, verifying results; sending/posting/buying inside it needs separate approval. Queues until the laptop is online. Give the complete goal incl. exact names.",
       parameters: obj({ title: { type: 'string', description: 'Short title for the task list, 3-6 words (e.g. "Server disk usage")' }, goal: { type: 'string', description: 'COMPLETE, self-contained goal including how it finishes (e.g. "…then if it says to confirm on WhatsApp, open WhatsApp Web, open the newest message from Salex Now and press Confirm booking"): the whole flow in ONE task, with business/site name, service, date, time and every detail from the conversation. Never write "the currently open tab" or assume the laptop is already on the right page; a continuation must repeat all earlier details.' }, mustShow: { type: 'array', items: { type: 'string' }, description: 'Texts the page MUST show before the final submit (e.g. ["Demo Salon"]). Strongly recommended for bookings/orders/forms: blocks submitting on the wrong business.' }, autoSubmit: { type: 'boolean', description: 'Default true: approving this task is the ONE approval for the whole flow, including the final submit/confirm/send (also follow-up confirmations on WhatsApp/email). Set false only if the user wants to review before it is sent. Payments and deletions still ask separately.' } }, ['goal']),
       summarize: (a) => `Control your laptop to: ${clip(a.goal, 1200)}${a.autoSubmit !== false ? ' — including the final submit/confirm (this is the only approval)' : ' — will stop and ask before the final submit'}${a.mustShow?.length ? ` — only if the page shows: ${a.mustShow.join(', ')}` : ''}`,
       run: (a, { conversationId } = {}) => {
@@ -329,6 +329,12 @@ export function buildFridayTools(ctx) {
       description: 'Which Instagram DM chats Friday is currently running, until when, and how many replies she sent.',
       parameters: obj({}),
       run: () => ({ chats: ctx.dmChats.list().map((s) => ({ username: s.username, until: s.until, replies: s.replies, last: s.last_note })) }),
+    },
+    {
+      name: 'dm_chat_reply_now', risk: 'safe',
+      description: 'In an active DM chat (dm_chat_status), answer that person\'s LATEST message right now in Friday\'s friend-chat voice and send it through the verified sender. Use this whenever the user says "reply to him/her", "send the reply", "reply to the latest message". Never write DMs for an active chat yourself.',
+      parameters: obj({ username: { type: 'string' } }, ['username']),
+      run: (a) => ctx.dmChats.replyNow(a.username),
     },
     {
       name: 'dm_chat_stop', risk: 'safe',

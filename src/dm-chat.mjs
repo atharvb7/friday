@@ -20,7 +20,7 @@ Output ONLY JSON: {"reply": "your next DM, or empty if no reply is needed (e.g. 
 const jsonIn = (s) => { try { return JSON.parse(/\{[\s\S]*\}/.exec(String(s ?? ''))?.[0] ?? 'null'); } catch { return null; } };
 
 export class DmChats {
-  #timer = null; #busy = new Set();
+  #timer = null; #busy = new Set(); #fails = new Map(); // message id -> failed send attempts
   constructor({ store, ai, composio, nodes, chat, notifications, bus, settings, now = () => Date.now() }) {
     Object.assign(this, { store, ai, composio, nodes, chat, notifications, bus, settings, now });
     this.db = store.db;
@@ -89,15 +89,27 @@ export class DmChats {
     }
   }
 
+  // Answer the newest unanswered message right now (the owner asked: "reply to his latest message").
+  async replyNow(username) {
+    const u = String(username ?? '').replace(/^@/, '').toLowerCase();
+    const s = this.list('active').find((x) => !u || x.username === u);
+    if (!s) return { error: `not chatting with @${u || '?'} — start a chat with dm_chat_start` };
+    for (let i = 0; i < 40 && this.#busy.has(s.id); i++) await new Promise((r) => setTimeout(r, 500));
+    this.#busy.add(s.id);
+    try { return await this.#step(this.db.prepare('SELECT * FROM dm_chats WHERE id=?').get(s.id)); }
+    finally { this.#busy.delete(s.id); }
+  }
+
   async #step(s) {
     const msgs = await this.#messages(s.thread_id);
-    if (!msgs.length) return;
+    if (!msgs.length) return { nothing: 'no messages' };
     const newest = msgs[0];
-    if (newest.id === s.last_handled) return;
     const fromThem = String(newest.from?.id) === String(s.igsid);
-    if (!fromThem) { this.db.prepare('UPDATE dm_chats SET last_handled=? WHERE id=?').run(newest.id, s.id); return; } // our own / owner's message
+    if (newest.id === s.last_handled) return { nothing: 'their latest message is already answered' };
+    if (!fromThem) { this.db.prepare('UPDATE dm_chats SET last_handled=? WHERE id=?').run(newest.id, s.id); return { nothing: 'the last message in the chat is ours — waiting for them' }; }
     // everything they sent since the last handled message
-    const fresh = []; for (const m of msgs) { if (m.id === s.last_handled) break; if (String(m.from?.id) === String(s.igsid)) fresh.unshift(m.message ?? ''); }
+    // everything they sent after our last message (their latest burst), newest last
+    const fresh = []; for (const m of msgs) { if (String(m.from?.id) !== String(s.igsid)) break; fresh.unshift(m.message ?? ''); }
     const transcript = msgs.slice().reverse().map((m) => `${String(m.from?.id) === String(s.igsid) ? s.username : 'Friday/Atharv'}: ${String(m.message ?? '(attachment)').slice(0, 400)}`).join('\n');
     const owner = this.settings.get('user_name', null) ?? 'the owner';
     let j;
@@ -106,11 +118,20 @@ export class DmChats {
         { role: 'system', content: SYSTEM({ owner, friend: `@${s.username}`, goal: s.goal }) },
         { role: 'user', content: `Recent DM history (oldest first):\n${transcript}\n\nTheir new message(s): ${fresh.join(' / ').slice(0, 1200)}` }] });
       j = jsonIn(out.content);
-    } catch { return; } // model down: try again next tick
+    } catch { return { error: 'model unavailable — will retry' }; } // try again next tick
+    if (!j) return { error: 'no reply generated — will retry' };
+    if (j.reply) {
+      const ok = await this.#send(s, String(j.reply).slice(0, 1000), fresh.join(' / '));
+      if (!ok) { // keep the message unanswered so the next tick retries; give up after 3 tries
+        const n = (this.#fails.get(newest.id) ?? 0) + 1; this.#fails.set(newest.id, n);
+        if (n < 3) return { error: 'send failed — will retry' };
+        this.#tell(s, `⚠️ Gave up replying to @${s.username}'s latest message after 3 failed sends.`);
+      }
+    }
     this.db.prepare('UPDATE dm_chats SET last_handled=? WHERE id=?').run(newest.id, s.id);
-    if (j?.needs_owner) this.notifications.create({ level: 'warning', title: `@${s.username} needs you`, body: String(j.needs_owner).slice(0, 300), conversationId: s.conversation_id });
-    if (j?.reply) await this.#send(s, String(j.reply).slice(0, 1000), fresh.join(' / '));
-    if (j?.end) this.#finish(s, 'the chat wrapped up');
+    if (j.needs_owner) this.notifications.create({ level: 'warning', title: `@${s.username} needs you`, body: String(j.needs_owner).slice(0, 300), conversationId: s.conversation_id });
+    if (j.end) this.#finish(s, 'the chat wrapped up');
+    return { replied_to: fresh.join(' / ').slice(0, 300), reply: j.reply || null };
   }
 
   async #send(s, text, theirText) {
@@ -118,7 +139,7 @@ export class DmChats {
     try { res = await this.nodes.dispatch({ action: 'ig_dm_send', args: { username: s.username, text }, timeoutMs: 90_000 }); }
     catch (e) {
       this.db.prepare('UPDATE dm_chats SET last_note=? WHERE id=?').run(`send failed: ${String(e.message).slice(0, 160)}`, s.id);
-      this.#tell(s, `⚠️ Couldn't send my reply to @${s.username} (${String(e.message).slice(0, 120)}). I'll keep watching.`);
+      this.#tell(s, `⚠️ Couldn't send my reply to @${s.username} (${String(e.message).slice(0, 120)}). I'll retry.`);
       return false;
     }
     this.db.prepare('UPDATE dm_chats SET replies=replies+1, last_note=? WHERE id=?').run(`sent: ${text.slice(0, 120)}`, s.id);

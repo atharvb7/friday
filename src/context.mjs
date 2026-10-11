@@ -252,7 +252,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.brain = new Brain({
     mood: ctx.mood, habits: ctx.habits,
     ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit, skills, policy: ctx.policy, approvals: ctx.approvals,
-    contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory, questions: ctx.questions, profile: ctx.profile }),
+    contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory, questions: ctx.questions, profile: ctx.profile, dmChats: ctx.dmChats }),
   });
   ctx.chatBrain = () => {
     if (ai.hasProvider && !ctx.state.emergencyStopped) return { name: 'friday-brain', adapter: ctx.brain };

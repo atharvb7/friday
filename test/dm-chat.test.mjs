@@ -29,7 +29,7 @@ function rig() {
   const sent = []; let nodeFails = false;
   const nodes = { dispatch: async ({ action, args }) => { if (nodeFails) throw new Error('instagram_login_required'); sent.push({ action, ...args }); return { sent: true }; } };
   const replies = [];
-  const ai = { run: async (_r, { messages }) => { replies.push(messages); return { content: JSON.stringify(replies.length === 2 ? { reply: '', needs_owner: 'Aditya wants to meet tomorrow', end: true } : { reply: 'Haha bc = batch crew? 😄 How is college?', needs_owner: null, end: false }) }; } };
+  const ai = { run: async (_r, { messages }) => { replies.push(messages); return { content: JSON.stringify(/lets meet/.test(messages[1].content.split('Their new message(s):')[1]) ? { reply: '', needs_owner: 'Aditya wants to meet tomorrow', end: true } : { reply: 'Haha bc = batch crew? 😄 How is college?', needs_owner: null, end: false }) }; } };
   let now = Date.parse('2026-10-11T10:30:00Z');
   const dm = new DmChats({ store, ai, composio, nodes, chat, notifications, bus, settings, now: () => now });
   const conv = chat.createConversation('t');
@@ -75,5 +75,23 @@ test('dm chat: time limit, stop, unknown usernames, failed laptop send is report
     assert.match(r.chat.listMessages(r.conv.id).at(-1).content, /time is up/);
     await r.dm.start({ usernames: ['pandeyy.jr'], conversationId: r.conv.id });
     assert.equal(r.dm.stop(), 1);
+  } finally { r.done(); }
+});
+
+test('dm chat: a failed send leaves the message unanswered and is retried; reply-now answers the latest burst, not an old message', async () => {
+  const r = rig();
+  try {
+    await r.dm.start({ usernames: ['pandeyy.jr'], conversationId: r.conv.id });
+    r.setMsgs([{ id: 'm5', from: { id: '258' }, message: 'why tf you adding that' }, { id: 'm4', from: { id: 'me' }, message: 'old reply' }, { id: 'm3', from: { id: '258' }, message: 'tell me about atharv' }]);
+    r.fail(true);
+    await r.dm.tick();
+    assert.equal(r.sent.length, 0);
+    r.fail(false);
+    const out = await r.dm.replyNow('@pandeyy.jr');
+    assert.equal(out.replied_to, 'why tf you adding that', 'only the latest burst after our last message');
+    assert.doesNotMatch(r.replies.at(-1)[1].content.split('Their new message(s):')[1], /tell me about atharv/);
+    assert.equal(r.sent.length, 1);
+    assert.match((await r.dm.replyNow('pandeyy.jr')).nothing ?? '', /already answered|ours/);
+    assert.match((await r.dm.replyNow('nobody')).error, /not chatting/);
   } finally { r.done(); }
 });
