@@ -67,6 +67,7 @@ Rules:
 - EVERY browser action's result already includes the fresh page ("page": URL, headings, numbered elements, visible text). READ it and pick your next action from it; refs change on each update, so only use refs from the latest result. Do not wait, scroll or re-open the URL unless the page is genuinely still loading — re-opening a wizard URL resets it to step 1. NEVER wait for text you guessed. Waits are for a second or two only. Calendar days, time slots and cards appear as "clickable" elements; if one is missing, scroll and snapshot again or use browser_click_text.
 - Work in a tight loop: browser_snapshot -> choose ONE action -> do it -> browser_snapshot. Multi-step flows (booking, checkout) are wizards: read the step title (the h1/heading), do what that step needs, press Continue/Next, and repeat until the final Confirm step. Pre-selected options (marked ✓ or already chosen) need no clicking.
 - PERSONAL DETAILS: you never see the user's private details. When a form needs their name, phone, email or address, type the placeholder {{profile.name}} / {{profile.phone}} / {{profile.email}} / {{profile.address}} — it is filled in for you. If the status below says a field is unknown, call ask_user (with that field) BEFORE filling the form and wait. NEVER invent or use dummy details ("test user", fake numbers, example emails), even if the form accepts them.
+- FINISH THE WHOLE FLOW YOURSELF: if a site says the last step happens elsewhere ("confirm on WhatsApp", a code by email/SMS, a link in a message), go there in the browser yourself (WhatsApp: open https://web.whatsapp.com, wait for chats to load, open the chat of that business, use the NEWEST message — the lowest one) and complete it. Do not stop and hand it back to the user. The user's approval of this task already covers that final confirm.
 - Report success ONLY with evidence on the page after the click (e.g. a "confirmed" message). If the outcome is unclear or the page shows something unexpected (a different button became active, an error, a reply like "choose another time"), say so plainly and do not claim it worked.
 - Before any final submit/confirm/pay click, re-read the page and verify it is for EXACTLY what the goal names (business, service, date, time). If the page shows a different business or details, do not submit: navigate to the right one or stop and report the mismatch. Never continue on a page you did not verify.
 - Be exact: match contact names, file names and recipients exactly. If more than one candidate fits, or anything is ambiguous, stop and report instead of guessing.
@@ -164,7 +165,14 @@ export class ComputerAgent {
     }
     // Hard guard: before the final submit/purchase, the live page must actually show what the user asked for
     // (e.g. the right salon). Never rely on the model's memory of where it is.
-    if (mustShow.length && ['messaging', 'spending'].includes(d.cat) && d.risk !== 'routine') {
+    const declared = ['submit_external', 'purchase'].includes(intent);
+    // A short button label that reads like a final action ("Confirm booking", "Send") must go through the guarded path
+    // (declared intent + expect), so the label and mustShow checks can't be skipped by under-declaring. Long labels are
+    // list rows / chat previews ("Salex Now: Please confirm your appointment…") and are just navigation.
+    if (autoSubmit && !declared && name === 'browser_click' && ['messaging', 'spending'].includes(d.cat) && label.trim().length <= 40) {
+      return { error: `looks_like_final_submit: "${label.trim()}" looks like the final confirm/send button. If you mean to press it, click again with intent "submit_external" and expect set to its label. If not, pick another element.` };
+    }
+    if (mustShow.length && declared) {
       let text = '';
       try { text = compactSnapshot(await this.nodes.dispatch({ action: 'browser_snapshot', args: { settleMs: 300 } }), 6000).toLowerCase(); } catch { /* treated as mismatch below */ }
       const missing = mustShow.filter((s) => !text.includes(String(s).toLowerCase()));
