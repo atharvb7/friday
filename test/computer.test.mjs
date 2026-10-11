@@ -88,10 +88,14 @@ test('computer agent: waits out an active user and retries; node offline fails; 
   const r = rig();
   try {
     r.setActive(2);
-    r.script.push(turn([r.call('browser_click', { ref: 1, intent: 'input' })]), end('done'));
+    r.script.push(turn([r.call('open_target', { target: 'https://example.com' })]), end('done'));
     const out = await r.agent.run({ taskId: 't', instruction: 'x', meta: { grant: true } });
     assert.equal(out.status, 'completed');
     assert.equal(r.sent.length, 1, 'retried after the user went idle, acted once');
+    r.setActive(5); r.sent.length = 0;
+    r.script.push(turn([r.call('browser_click', { ref: 1, intent: 'navigate' })]), end('done'));
+    await r.agent.run({ taskId: 't', instruction: 'x', meta: { grant: true } });
+    assert.equal(r.sent.length, 1, 'browser clicks never wait for the user to stop using the mouse');
 
     const same = r.call('browser_snapshot', {}, 'a');
     r.script.push(turn([same, { ...same, id: 'b' }, { ...same, id: 'c' }, { ...same, id: 'd' }]), end('stopped'));
