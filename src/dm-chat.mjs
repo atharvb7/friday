@@ -32,7 +32,7 @@ export class DmChats {
 
   // Find the API conversation + the person's id from their username.
   async #locate(username) {
-    const r = await this.composio.execute('instagram', 'LIST_ALL_CONVERSATIONS', { limit: 50, fields: 'participants,updated_time' });
+    const r = await this.composio.execute('instagram', 'LIST_ALL_CONVERSATIONS', { limit: 50, fields: 'participants,updated_time' }, { raw: true });
     if (r.error) throw new Error(r.error);
     for (const c of r.data?.data ?? []) for (const p of c.participants?.data ?? []) {
       if (String(p.username ?? '').toLowerCase() === username && (c.participants.data.length === 2)) return { threadId: c.id, igsid: String(p.id) };
@@ -70,7 +70,7 @@ export class DmChats {
   }
 
   async #messages(threadId) {
-    const r = await this.composio.execute('instagram', 'LIST_ALL_MESSAGES', { conversation_id: threadId, limit: 15, fields: 'id,created_time,from,message' });
+    const r = await this.composio.execute('instagram', 'LIST_ALL_MESSAGES', { conversation_id: threadId, limit: 15, fields: 'id,created_time,from,message' }, { raw: true });
     if (r.error) throw new Error(r.error);
     return r.data?.data ?? []; // newest first
   }
