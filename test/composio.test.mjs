@@ -61,5 +61,5 @@ test('composio: Instagram 24h-window error is explained with a fallback instead 
   const f = fake({ 'POST /tools/execute/INSTAGRAM_SEND_TEXT_MESSAGE': () => [200, { successful: false, error: 'Failed to send message (status 403). Response: {"error":{"message":"This message is sent outside of allowed window.","code":10,"error_subcode":2534022}}' }] });
   const c = new Composio({ apiKey: 'k', settings: settingsMem(), fetchImpl: f.fetchImpl });
   const r = await c.execute('instagram', 'SEND_TEXT_MESSAGE', { recipient_id: '1', text: 'hi' });
-  assert.equal(r.error, 'instagram_24h_window'); assert.match(r.explain, /24 hours/); assert.match(r.fallback, /computer_task/);
+  assert.equal(r.error, 'instagram_24h_window'); assert.match(r.explain, /24 hours[\s\S]*Allow access to messages/); assert.match(r.fallback, /computer_task/);
 });
