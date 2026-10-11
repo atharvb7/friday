@@ -21,6 +21,22 @@ const SNAPSHOT_FN = () => {
     e.setAttribute('data-friday-ref', String(n));
     out.push({ ref: n, tag: e.tagName.toLowerCase(), role: e.getAttribute('role') || undefined, type: e.type || undefined, name, value: ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) && e.type !== 'password' ? String(e.value ?? '').slice(0, 80) : undefined, href: e.href ? String(e.href).slice(0, 120) : undefined, disabled: e.disabled || e.getAttribute('aria-disabled') === 'true' || undefined, hidden: isFile && !vis(e) ? true : undefined, checked: e.checked || undefined });
   }
+  // Modern UIs make calendar days, time slots and cards from plain divs with click handlers (invisible to the selector
+  // above). Treat visible elements with cursor:pointer as clickable, skipping ones nested in something already listed.
+  if (n < 120) {
+    const taken = new Set([...document.querySelectorAll('[data-friday-ref]')]);
+    let scanned = 0;
+    for (const e of document.body ? document.body.querySelectorAll('div,span,li,td,label,img,svg,p') : []) {
+      if (++scanned > 6000 || n >= 120) break;
+      if (taken.has(e) || e.closest('[data-friday-ref]') || !vis(e)) continue;
+      if (getComputedStyle(e).cursor !== 'pointer') continue;
+      const kids = [...e.querySelectorAll('*')].some((k) => getComputedStyle(k).cursor === 'pointer' && !k.closest('[data-friday-ref]') && k !== e);
+      if (kids && e.children.length > 3) continue; // a big container whose children are the real targets
+      const name = (e.getAttribute('aria-label') || e.innerText || e.getAttribute('alt') || e.getAttribute('title') || '').trim().replace(/\s+/g, ' ').slice(0, 90);
+      n += 1; e.setAttribute('data-friday-ref', String(n)); taken.add(e);
+      out.push({ ref: n, tag: e.tagName.toLowerCase(), role: 'clickable', name });
+    }
+  }
   const headings = [...document.querySelectorAll('h1,h2,h3')].filter(vis).slice(0, 12).map((h) => ({ level: h.tagName.toLowerCase(), text: h.innerText.trim().replace(/\s+/g, ' ').slice(0, 120) }));
   return { url: location.href, title: document.title, headings, elements: out, text: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 3500) };
 };
@@ -88,15 +104,17 @@ export class BrowserController {
   }
   async snapshot() { return (await this.ensure()).evaluate(SNAPSHOT_FN); }
   #loc(page, ref) { if (!Number.isInteger(ref) || ref < 1) throw new Error('invalid_ref'); return page.locator(`[data-friday-ref="${ref}"]`).first(); }
+  async #present(l) { try { await l.waitFor({ state: 'attached', timeout: 2000 }); } catch { throw new Error('stale_ref: that element is no longer on the page — call browser_snapshot again and use the new refs'); } }
   async click({ ref }) {
     const page = await this.ensure();
-    await this.#loc(page, ref).click({ timeout: 10_000 });
+    const l = this.#loc(page, ref); await this.#present(l);
+    await l.click({ timeout: 8_000 });
     await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
     return { url: page.url(), title: await page.title() };
   }
   async type({ ref, text, clear = true, submit = false }) {
     const page = await this.ensure();
-    const l = this.#loc(page, ref);
+    const l = this.#loc(page, ref); await this.#present(l);
     if (clear) await l.fill(String(text), { timeout: 10_000 }); else await l.pressSequentially(String(text), { timeout: 10_000 });
     if (submit) await l.press('Enter');
     return { typed: String(text).length, submitted: Boolean(submit) };
@@ -110,11 +128,20 @@ export class BrowserController {
   }
   async scroll({ dy = 600 }) { const page = await this.ensure(); await page.mouse.wheel(0, Math.max(-5000, Math.min(5000, Number(dy)))); return { scrolled: dy }; }
   async back() { const page = await this.ensure(); await page.goBack({ timeout: 10_000 }).catch(() => {}); return { url: page.url() }; }
+  // Waits are short on purpose: the agent should LOOK (snapshot) instead of waiting for text it guessed.
   async wait({ ms = 1000, text = null }) {
     const page = await this.ensure();
-    if (text) await page.getByText(String(text)).first().waitFor({ timeout: Math.min(Number(ms) || 10_000, 30_000) });
-    else await page.waitForTimeout(Math.min(Number(ms) || 1000, 15_000));
+    if (text) { try { await page.getByText(String(text)).first().waitFor({ timeout: Math.min(Number(ms) || 5000, 6000) }); } catch { throw new Error(`text_not_found: "${String(text).slice(0, 60)}" did not appear — call browser_snapshot to see what is actually on the page`); } }
+    else await page.waitForTimeout(Math.min(Number(ms) || 1000, 5000));
     return { waited: true };
+  }
+  async click_text({ text, exact = false }) {
+    const page = await this.ensure();
+    const l = page.getByText(String(text), { exact: Boolean(exact) }).first();
+    try { await l.waitFor({ state: 'visible', timeout: 4000 }); } catch { throw new Error(`text_not_found: no visible element with text "${String(text).slice(0, 60)}"`); }
+    await l.click({ timeout: 6000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 4000 }).catch(() => {});
+    return { clicked: String(text).slice(0, 60), url: page.url() };
   }
   async screenshot({ scale = 0.6 } = {}) {
     const page = await this.ensure();
