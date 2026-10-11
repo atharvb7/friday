@@ -55,6 +55,7 @@ import { Composio } from './composio.mjs';
 import { Files } from './files.mjs';
 import { Documents } from './documents.mjs';
 import { DmChats } from './dm-chat.mjs';
+import { GoogleAuth, Gmail } from './google.mjs';
 import { Questions } from './questions.mjs';
 
 function findDshBin() {
@@ -219,6 +220,8 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.profile = new Profile({ settings });
   ctx.composio = new Composio({ apiKey: env.COMPOSIO_API_KEY, settings });
   ctx.files = new Files({ store, dir: resolve(dataDir, 'files'), bus });
+  ctx.google = new GoogleAuth({ clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, publicUrl: env.FRIDAY_PUBLIC_URL, dataDir });
+  ctx.gmail = new Gmail({ google: ctx.google, files: ctx.files });
   ctx.documents = new Documents({ files: ctx.files, appRoot, python: env.FRIDAY_DOCS_PYTHON ?? 'python3' });
   ctx.learner = new Learner({ ai, store, skills, dir: resolve(dataDir, 'skills'), profile: ctx.profile, bus, settings });
   { // successful laptop/Hermes runs become (or improve) playbooks, off the hot path
@@ -232,7 +235,7 @@ export function createContext({ appRoot, env = process.env }) {
   kindRouter.byKind.hermes = ctx.hermes;
   kindRouter.byKind.watch = kindRouter.byKind.computer; // read-only laptop checks for watches
   ctx.dmChats = new DmChats({ store, ai, composio: ctx.composio, nodes: ctx.nodes, chat: ctx.chat, notifications: ctx.notifications, bus, settings });
-  ctx.watches = new Watches({ store, ai, jobs: ctx.jobs, notifications: ctx.notifications, chat: ctx.chat, bus, settings, composio: ctx.composio });
+  ctx.watches = new Watches({ store, ai, jobs: ctx.jobs, notifications: ctx.notifications, chat: ctx.chat, bus, settings, gmail: ctx.gmail });
   { const prev = store.onEvent; store.onEvent = (e) => { prev?.(e); if (['task.completed', 'task.failed'].includes(e.kind)) setTimeout(() => { ctx.watches.onTaskFinished(e.taskId, e.kind).catch(() => {}); }, 500).unref?.(); }; }
   kindRouter.byKind.team = new TeamOrchestrator({ store, router: kindRouter, ai });
   ctx.rules.proactive = ctx.proactive;

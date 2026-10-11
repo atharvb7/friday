@@ -45,3 +45,9 @@ core ~70 MB idle, ~1 GB while voice is loaded (unloads after 5 idle min; `FRIDAY
 - Other apps on this host (Sorch, Supabase, Hermes, cloudflared) and the existing Funnel entries were not touched; Friday uses a new tailnet-only serve port.
 - The tmpfs mounts allow `exec` on purpose: DSH and espeak load native libraries from `/tmp`.
 - Not yet verified here: Web Push to a phone, phone PWA install, GitHub PR flow, sustained heavy concurrent load.
+
+## Gmail (direct Google OAuth, free)
+1. console.cloud.google.com → new project → APIs & Services → Library → enable **Gmail API**.
+2. OAuth consent screen: External, app name "Friday", your email as support + test user, scope `.../auth/gmail.modify`. Then **Publish app** (In production) so the refresh token does not expire after 7 days; Google shows an "unverified app" warning for your own account — Advanced → continue.
+3. Credentials → Create credentials → OAuth client ID → **Web application** → Authorized redirect URI: `https://atharvsserver.tail117666.ts.net:4317/oauth/google/callback`.
+4. Put `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FRIDAY_PUBLIC_URL=https://atharvsserver.tail117666.ts.net:4317` in `~/friday/.env`, recreate the core container, then Settings → Connected apps → Gmail → Connect.

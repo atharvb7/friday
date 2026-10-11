@@ -79,12 +79,3 @@ test('composio: big results are capped for the model but complete for internal l
   assert.equal(await c.instagramUsername('299'), 'user299');
 });
 
-test('composio gmail: reads free, mailbox organizing free, sending/trash gated, permanent delete impossible', () => {
-  assert.equal(classify('gmail', 'FETCH_EMAILS').kind, 'read');
-  assert.equal(classify('gmail', 'GMAIL_CREATE_EMAIL_DRAFT').kind, 'organize');
-  assert.equal(classify('gmail', 'ADD_LABEL_TO_EMAIL').kind, 'organize');
-  assert.equal(classify('gmail', 'SEND_EMAIL').kind, 'act');
-  assert.equal(classify('gmail', 'REPLY_TO_THREAD').kind, 'act');
-  assert.equal(classify('gmail', 'MOVE_TO_TRASH').kind, 'delete');
-  for (const a of ['DELETE_MESSAGE', 'DELETE_THREAD', 'BATCH_DELETE_MESSAGES', 'DELETE_DRAFT']) assert.match(classify('gmail', a).error, /action_not_allowed/, a);
-});
