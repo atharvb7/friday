@@ -1,59 +1,47 @@
-# Deploying Friday to the 6 GB server
+# Friday on the server (Docker) — as deployed 2026-10-11
 
-Measured on the dev laptop (2026-10-10): core idle **81 MiB**, after chats ~100 MiB, core + one running DSH agent **~285 MiB** peak
-(a second concurrent agent adds ~190 MiB). Budget is 5 GB, so the server has a lot of headroom; the cgroup cap below enforces it.
+Host: `atharvsserver` (Ubuntu 26.04, 6.8 GB RAM, NVMe SSD), reachable on the tailnet. No sudo needed: everything runs in Docker as your user.
 
-## 1. Prepare the box (Ubuntu/Debian, as a normal user `friday`)
-```bash
-sudo apt install -y bubblewrap git python3 curl            # bubblewrap = agent sandbox
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs   # Node >= 22.13
-sudo useradd -m -s /bin/bash friday && sudo loginctl enable-linger friday
-# Tailscale for private phone/laptop access (no public ports):
-curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up
+## Architecture
 ```
-Check unprivileged user namespaces work (bubblewrap needs them): `bwrap --ro-bind / / true && echo ok`.
-
-## 2. Install Friday + the agent runtime
-```bash
-sudo -iu friday
-git clone <your repo> ~/friday && cd ~/friday           # or rsync from the laptop
-npm install -g @deepseek-ai/dsh@0.2.0-rc.2                # the agent runtime (published on npm)
-cp .env.example .env && chmod 600 .env                    # then edit:
-#   FRIDAY_NVIDIA_API_KEY=...   SERPAPI_API_KEY=...   (GITHUB_TOKEN=... optional)
-#   FRIDAY_DSH_BIN=$(npm root -g)/@deepseek-ai/dsh/lib/bin.js
-#   FRIDAY_RESOURCE_PROFILE=server6g   FRIDAY_WORKER_CONCURRENCY=2
-node bin/friday.mjs doctor
+tailnet device ──HTTPS──► tailscale serve :4317 (tailnet-only, NOT Funnel) ──► 127.0.0.1:4317
+                                                                            │
+  ┌──────────── docker compose project "friday" ────────────────────────────┼──────────────┐
+  │  friday  (core: API, UI, brain, Whisper/Kokoro voice)  ◄──── internal net ────► agent   │
+  │        └──────────► egress net (internet)                       (DSH, no Friday data)    │
+  │                                         proxy ◄── only way out for the agent ──┘        │
+  └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-## 3. Run as a service with a hard memory cap
-```bash
-MEM_HIGH=4G MEM_MAX=5G scripts/install-systemd.sh --enable      # user unit; whole tree (core + agents) shares the cgroup
-systemctl --user status friday ; node bin/friday.mjs status
-```
-## 4. Private access + auth
-```bash
-sudo tailscale serve --bg --https=443 http://127.0.0.1:4317     # tailnet-only HTTPS. Do NOT use `funnel`.
-node bin/friday.mjs totp                                         # then confirm with your authenticator
-node bin/friday.mjs device add phone read,chat,tasks,approve     # token for the phone (shown once)
-node bin/friday.mjs device add laptop read,node                  # token for the laptop node
-```
-Open `https://<server>.<tailnet>.ts.net`, sign in with the phone token, "Add to Home Screen", Settings → Enable notifications.
-On the laptop: `cd node && npm install && node friday-node.mjs pair --server https://<server>.<tailnet>.ts.net --token fdv_… && node friday-node.mjs run`
-(log into WhatsApp/etc. once in the node's Chrome profile).
+- **friday** — 2 GB limit, read-only rootfs, caps dropped. Data in `~/friday-data` (DB, token, voice models, backups) on the SSD.
+- **agent** — 1.5 GB limit, internal network only, no Friday data/keys beyond the model key, runs as uid 10001. The container *is* the sandbox (the host has no bubblewrap and AppArmor blocks user namespaces).
+- **proxy** — the agent's only route to the internet. It refuses private/LAN/tailnet/docker/metadata addresses (verified: `example.com` 200, your tailnet service 403, metadata 403).
+- Restarts automatically (`unless-stopped`, docker enabled at boot). Nightly backup at 03:00 (user crontab, keeps 7) → `~/friday-data/backups`.
+- URL: **https://atharvsserver.tail117666.ts.net:4317** (the laptop node, phone and desk companion all use this).
 
-## 5. Migrating the existing laptop data
+## Day-to-day (run on your laptop; or on the server inside `~/friday`)
 ```bash
-# laptop:  node bin/friday.mjs stop && node bin/friday.mjs backup ~/friday-backup        # secrets excluded by default
-# server:  node bin/friday.mjs restore ~/friday-backup/friday-backup-*.tgz              # then start
+scripts/deploy-server.sh atharvb7@100.120.200.64          # update: git pull + rebuild + restart (idempotent)
+ssh atharvb7@100.120.200.64 'cd ~/friday && docker compose ps'
+ssh atharvb7@100.120.200.64 'cd ~/friday && docker compose logs -f friday'
+ssh atharvb7@100.120.200.64 'cd ~/friday && docker compose exec -T friday node bin/friday.mjs doctor'
+ssh atharvb7@100.120.200.64 'cd ~/friday && docker compose exec -T friday node bin/friday.mjs device add phone read,chat,tasks,approve'
+ssh atharvb7@100.120.200.64 'cd ~/friday && docker compose exec -T friday node bin/friday.mjs totp'
+ssh atharvb7@100.120.200.64 'cd ~/friday && docker compose restart friday'   # or: docker compose down / up -d
 ```
-Device tokens are stored hashed in the DB, so existing devices keep working after a restore; the owner token (`data/access-token`) is new on
-the server unless you use `backup --with-secrets` (protect that file).
+Voice engine (done once, models live in `~/friday-data/voice`): `docker compose exec -T friday node bin/friday.mjs voice setup`.
+Keys live in `~/friday/.env` (mode 600); after editing run `docker compose up -d`.
 
-## 6. Operations
-`friday doctor` (pre-flight), `friday status`, `friday logs -f`, `/v1/health` (Settings → System health), `friday backup` on a cron
-(keeps the last 7), emergency stop from any device (■ Stop). Update: `git pull && node bin/friday.mjs restart`.
-Voice (browser mic + speaker and the ESP32): `node bin/friday.mjs voice setup` (needs `python3-venv`; ~600 MB download), then restart. The worker uses ~1 GB while a conversation is active and exits after 5 idle minutes; set `FRIDAY_STT_MODEL=base` to halve that.
+## Laptop node
+`node/` on the laptop is paired to the server URL and runs as a user service (`systemctl --user status friday-node`). Log into WhatsApp etc. once in its Chrome profile.
 
-## Things that are NOT verified yet (need the real server)
-bubblewrap under the server's kernel/container, Tailscale Serve + phone PWA install + Web Push end to end, memory under sustained
-concurrent load. (Verified on the laptop: DSH 0.2.0-rc.2 from npm runs Friday's headless `--json` contract and the NVIDIA route; on its
-first run in a fresh home it imports `settings.yaml`, so Friday retries that one failure once.)
+## First-time setup of a new server
+`scripts/deploy-server.sh user@host` (needs Docker + git on the host; creates `.env` from your local keys, generates the agent secret, builds, starts), then
+`tailscale serve --bg --https=4317 http://127.0.0.1:4317`, restore data if migrating (`friday backup --with-secrets` → copy → `friday restore <file> --force` via `docker compose run --rm --no-deps friday …`), then voice setup.
+
+## Resource notes (measured)
+core ~70 MB idle, ~1 GB while voice is loaded (unloads after 5 idle min; `FRIDAY_STT_MODEL=base` halves it); agent ~15 MB idle, ~190 MB per running task; STT ≈ 2.7 s per sentence, TTS ≈ 0.3–0.5 s on this server.
+
+## Notes
+- Other apps on this host (Sorch, Supabase, Hermes, cloudflared) and the existing Funnel entries were not touched; Friday uses a new tailnet-only serve port.
+- The tmpfs mounts allow `exec` on purpose: DSH and espeak load native libraries from `/tmp`.
+- Not yet verified here: Web Push to a phone, phone PWA install, GitHub PR flow, sustained heavy concurrent load.

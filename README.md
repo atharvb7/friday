@@ -12,7 +12,7 @@ desk companion, and your laptop's browser. One identity, one memory, one task sy
   scoped revocable device tokens, resource governor with a hard memory budget. Personality never grants privileges.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for exactly what is done/verified and what is not, and
-[docs/DEPLOY-SERVER.md](docs/DEPLOY-SERVER.md) to put it on the 6 GB server.
+[docs/DEPLOY-SERVER.md](docs/DEPLOY-SERVER.md) for the Docker deployment (core + isolated agent container + egress proxy) that runs on the server.
 
 ## Run it (laptop or server)
 Requires Node ≥ 22.13 (no npm install for the server), `bubblewrap` for agents, and Google Chrome only on the laptop node.

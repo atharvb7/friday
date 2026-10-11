@@ -79,7 +79,8 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - [x] Event-driven rules engine (bounded, loop-safe, approval-gated creation)
 - [x] Legacy scaffolds removed (~2k lines); README + server deployment guide; memory measured (core 81 MiB idle, +~190 MiB per running agent)
 - [x] Independent security audit run (see docs/security-audit-2026-10-10.md)
-- [ ] Deploy to the 6 GB server and re-measure under load; DSH 0.2.0-rc.2 verification there
+- [x] Deployed to the 6 GB server (2026-10-11) in Docker: core, isolated agent container (DSH 0.2.0-rc.2), filtering egress proxy; tailnet-only HTTPS; data migrated; voice installed; nightly backup; laptop node paired over the tailnet; cross-machine computer-use task verified
+- [ ] Re-measure under sustained load; Web Push + phone PWA on the real phone
 - [ ] Not started (spec'd as future): CRM, email, calendar (add as MCP servers + approval policy), smart-device control, AR/VR/projection, mobile robot
 
 ## Known gaps (honest list)
