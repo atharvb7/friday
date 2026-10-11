@@ -153,7 +153,7 @@ test('dsh passEnv: only the embedding service\'s plumbing reaches the agent; pro
   try {
     process.env.SOME_SECRET_FROM_PARENT = 'leak';
     const bin = fakeBin(dir, "out({type:'status',phase:'turn_end',turn:1,reason:{kind:'completed'}}); out({type:'final',text:JSON.stringify({proxy:process.env.HTTPS_PROXY??null,opts:process.env.NODE_OPTIONS??null,leak:process.env.SOME_SECRET_FROM_PARENT??null})});");
-    const r = await adapter(dir, bin, { passEnv: { HTTPS_PROXY: 'http://proxy:3128', NODE_OPTIONS: '--require /x.cjs' } }).run({ taskId: 'pe', instruction: 'x' });
-    assert.deepEqual(JSON.parse(r.output), { proxy: 'http://proxy:3128', opts: '--require /x.cjs', leak: null });
+    const r = await adapter(dir, bin, { passEnv: { HTTPS_PROXY: 'http://proxy:3128', NODE_OPTIONS: '--no-warnings' } }).run({ taskId: 'pe', instruction: 'x' });
+    assert.deepEqual(JSON.parse(r.output), { proxy: 'http://proxy:3128', opts: '--no-warnings', leak: null });
   } finally { delete process.env.SOME_SECRET_FROM_PARENT; rmSync(dir, { recursive: true, force: true }); }
 });
