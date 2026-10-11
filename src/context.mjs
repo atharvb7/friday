@@ -51,6 +51,7 @@ import { HermesAdapter } from './hermes.mjs';
 import { TeamOrchestrator } from './agent/team.mjs';
 import { Learner } from './agent/learning.mjs';
 import { Watches } from './watches.mjs';
+import { Composio } from './composio.mjs';
 import { Questions } from './questions.mjs';
 
 function findDshBin() {
@@ -200,6 +201,7 @@ export function createContext({ appRoot, env = process.env }) {
     agentReady: () => ctx.dshAdapter.status().ready,
   });
   ctx.profile = new Profile({ settings });
+  ctx.composio = new Composio({ apiKey: env.COMPOSIO_API_KEY, settings });
   ctx.learner = new Learner({ ai, store, skills, dir: resolve(dataDir, 'skills'), profile: ctx.profile, bus, settings });
   { // successful laptop/Hermes runs become (or improve) playbooks, off the hot path
     const prev = store.onEvent;
