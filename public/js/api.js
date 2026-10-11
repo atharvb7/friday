@@ -65,8 +65,8 @@ export function startEvents(onEvent, onState) {
 }
 
 // Streaming chat. Calls handlers for meta/delta/thinking/tool/done/error.
-export async function streamChat({ message, conversationId }, h, signal) {
-  const res = await fetch('/v1/chat', { method: 'POST', signal, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ message, conversationId, stream: true }) });
+export async function streamChat({ message, conversationId, channel = 'chat', attachments = [] }, h, signal) {
+  const res = await fetch('/v1/chat', { method: 'POST', signal, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ message, conversationId, channel, attachments, stream: true }) });
   if (!res.ok || !res.headers.get('content-type')?.includes('event-stream')) {
     let e = {}; try { e = await res.json(); } catch { /* ignore */ }
     throw new ApiError(res.status, e.error || `chat failed (${res.status})`);

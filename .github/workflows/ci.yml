@@ -16,8 +16,12 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: node/package-lock.json
+      # Document engine libs (the docs tests use the real Python engine).
+      - run: python3 -m venv /tmp/docs-venv && /tmp/docs-venv/bin/pip install -q python-docx openpyxl python-pptx reportlab pypdf
       # Server tests: zero dependencies, hermetic (fake model/agent engines).
       - run: npm test
+        env:
+          FRIDAY_DOCS_PYTHON: /tmp/docs-venv/bin/python
       - run: npm run check
       # Laptop-node + real-browser UI tests: need playwright-core and the runner's Google Chrome.
       - run: npm ci
