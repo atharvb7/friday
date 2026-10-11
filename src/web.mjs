@@ -122,12 +122,24 @@ export function safeFetch(urlStr, { allowPrivate = false, maxBytes = MAX_BYTES, 
 const ENGINES = new Set(['google', 'bing', 'youtube', 'google_news', 'google_scholar', 'duckduckgo']);
 
 // SerpApi REST (key stays server-side). Returns compact organic results.
-export async function serpSearch({ apiKey, query, engine = 'google', num = 8, fetchImpl = globalThis.fetch }) {
+// Country for localized results (gl) from the user's timezone; unknown -> global results.
+const TZ_COUNTRY = { 'Asia/Kolkata': 'in', 'Asia/Calcutta': 'in', 'Europe/London': 'uk', 'America/New_York': 'us', 'America/Los_Angeles': 'us', 'America/Chicago': 'us', 'Asia/Singapore': 'sg', 'Asia/Dubai': 'ae', 'Australia/Sydney': 'au', 'Europe/Berlin': 'de', 'Asia/Tokyo': 'jp' };
+export const countryForTimezone = (tz) => TZ_COUNTRY[tz] ?? null;
+const clipText = (t, n) => String(t ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+function flattenOverview(o) {
+  const out = [];
+  const walk = (blocks) => { for (const b of blocks ?? []) { if (b.snippet) out.push(b.snippet); if (Array.isArray(b.list)) for (const li of b.list) { if (li.title || li.snippet) out.push(`- ${[li.title, li.snippet].filter(Boolean).join(': ')}`); if (li.list) walk(li.list); } if (b.text_blocks) walk(b.text_blocks); } };
+  walk(o?.text_blocks);
+  return clipText(out.join('\n'), 2000) || null;
+}
+
+export async function serpSearch({ apiKey, query, engine = 'google', num = 8, country = null, fetchImpl = globalThis.fetch }) {
   if (!apiKey) throw new Error('serpapi_not_configured');
   if (!ENGINES.has(engine)) throw new TypeError(`engine must be one of ${[...ENGINES].join(', ')}`);
   const q = String(query ?? '').trim();
   if (!q || q.length > 300) throw new TypeError('query must be 1-300 chars');
   const params = new URLSearchParams({ engine, api_key: apiKey, num: String(Math.min(Math.max(num, 1), 10)) });
+  if (country && ['google', 'google_news'].includes(engine)) { params.set('gl', country); params.set('hl', 'en'); }
   params.set(engine === 'youtube' ? 'search_query' : engine === 'bing' ? 'q' : 'q', q);
   const res = await fetchImpl(`https://serpapi.com/search.json?${params}`, { signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`serpapi_http_${res.status}`);
@@ -135,5 +147,18 @@ export async function serpSearch({ apiKey, query, engine = 'google', num = 8, fe
   if (j.error) throw new Error(`serpapi_error: ${String(j.error).replaceAll(apiKey, '[redacted]').slice(0, 200)}`);
   const pick = (r) => ({ title: r.title, link: r.link, snippet: r.snippet ?? r.description, date: r.date ?? r.published_date ?? null, source: r.source ?? r.displayed_link ?? null });
   const results = (j.organic_results ?? j.news_results ?? j.video_results ?? []).slice(0, 10).map(pick);
-  return { engine, query: q, answer: j.answer_box?.answer ?? j.answer_box?.snippet ?? null, results };
+  // Google's AI overview often states the answer directly (it reads LinkedIn/X posts too); it may need a second call.
+  let overview = flattenOverview(j.ai_overview);
+  if (!overview && j.ai_overview?.page_token) {
+    try {
+      const r2 = await fetchImpl(`https://serpapi.com/search.json?${new URLSearchParams({ engine: 'google_ai_overview', page_token: j.ai_overview.page_token, api_key: apiKey })}`, { signal: AbortSignal.timeout(20_000) });
+      if (r2.ok) overview = flattenOverview((await r2.json()).ai_overview);
+    } catch { /* optional */ }
+  }
+  const out = { engine, query: q, country, answer: clipText(j.answer_box?.answer ?? j.answer_box?.snippet ?? '', 600) || null, ai_overview: overview, results };
+  if (j.knowledge_graph) out.knowledge_graph = clipText([j.knowledge_graph.title, j.knowledge_graph.type, j.knowledge_graph.description].filter(Boolean).join(' — '), 500);
+  if (Array.isArray(j.related_questions)) out.people_also_ask = j.related_questions.slice(0, 4).map((r) => ({ q: r.question, a: clipText(r.snippet, 240) || null }));
+  if (Array.isArray(j.top_stories)) out.top_stories = j.top_stories.slice(0, 4).map((s) => ({ title: s.title, link: s.link, date: s.date ?? null }));
+  if (Array.isArray(j.events_results)) out.events = j.events_results.slice(0, 4).map((e) => ({ title: e.title, when: e.date?.when ?? null, where: Array.isArray(e.address) ? e.address.join(', ') : null, link: e.link }));
+  return out;
 }

@@ -3,8 +3,8 @@
 import { buildSystemPrompt, buildGuestPrompt, normalizePersonality } from '../personality.mjs';
 import { pickRegister } from '../mood.mjs';
 
-const MAX_STEPS = 6;
-const MAX_TOOL_CALLS = 12;
+const MAX_STEPS = 10; // room for a few search -> read -> re-search rounds
+const MAX_TOOL_CALLS = 16;
 const RESULT_CHARS = 4000;
 
 // Text chat has no stage directions: drop *actions* like "*gasps*" (keeps **bold**).
@@ -24,6 +24,15 @@ const CLAIM_RE = /\b(i['’]?ve|i have|i just|i['’]?ll go ahead and|i went ahe
 export function claimsActionWithoutTool(text, toolsUsed) {
   return CLAIM_RE.test(String(text ?? '')) && !toolsUsed.some((t) => !READ_ONLY_TOOLS.has(t.name));
 }
+// Describing a search/lookup that never ran ("*searches web*", "top results are...") is the same lie as claiming an action.
+const LOOKUP_RE = /(\*\s*(searches|searching|googles|looks it up|checks)\b[^*]{0,40}\*|\b(top|search) results (are|show|still)|\blet['’]?s see what\b|\bthe search (isn['’]?t|is not|shows|returned)|\b(i|i['’]ve|i have|i just) (searched|googled|looked (it )?up|checked online)\b)/i;
+const LOOKUP_TOOLS = new Set(['web_search', 'web_fetch', 'research_start', 'research_search']);
+const ASK_SEARCH_RE = /\b(search|google|look (it |this )?up|find (out|info|details)|get (me )?(the )?details|check (online|the internet|the web)|latest (news|info))\b/i;
+export function claimsLookupWithoutTool(reply, toolsUsed, userText = '') {
+  if (toolsUsed.some((t) => LOOKUP_TOOLS.has(t.name))) return false;
+  return LOOKUP_RE.test(String(reply ?? '')) || (!toolsUsed.length && ASK_SEARCH_RE.test(String(userText ?? ''))); // a request handled by another tool (e.g. a laptop task) is fine
+}
+const LOOKUP_NOTE = '[system check] The user asked you to look something up (or your message described searching), but you called NO search tool this turn — any "results" you wrote are made up. Call web_search now (several differently worded queries if needed, then web_fetch the best pages) and answer only from what the tools return.';
 const GUARD_NOTE = '[system check] Your last message claimed that something was queued, sent, created or scheduled, but you called NO tool this turn, so nothing actually happened. If the user wants that done, call the correct tool now (computer_task for anything on their laptop/browser, research_start, code_task, task_create, reminder_create, schedule_task, rule_create). Otherwise correct your message. Never claim an action without a tool result.';
 
 export class Brain {
@@ -45,6 +54,7 @@ export class Brain {
     const toolsUsed = [];
     let calls = 0;
     let guardTries = 0;
+    let lookupTries = 0;
     let last = null;
 
     for (let step = 0; step < MAX_STEPS; step++) {
@@ -54,6 +64,12 @@ export class Brain {
           guardTries += 1;
           messages.push({ role: 'assistant', content: last.content }, { role: 'user', content: GUARD_NOTE });
           this.bus?.publish('brain.claim_guard', { conversationId });
+          continue;
+        }
+        if (lookupTries < 1 && claimsLookupWithoutTool(last.content, toolsUsed, text)) {
+          lookupTries += 1;
+          messages.push({ role: 'assistant', content: last.content }, { role: 'user', content: LOOKUP_NOTE });
+          this.bus?.publish('brain.lookup_guard', { conversationId });
           continue;
         }
         break;

@@ -96,3 +96,19 @@ test('mcp defaults: serpapi + github auto-enabled from env creds via headers-fro
   const custom = withDefaults({ servers: { serpapi: { transport: 'stdio', command: 'mine' } } }, { SERPAPI_API_KEY: 'k' });
   assert.equal(custom.servers.serpapi.command, 'mine', 'user config wins');
 });
+
+test('serpSearch: localizes to the user country, fetches the AI overview via page_token, keeps people-also-ask/events', async () => {
+  const { serpSearch, countryForTimezone } = await import('../src/web.mjs');
+  const urls = [];
+  const fetchImpl = async (u) => { urls.push(String(u)); const url = new URL(u);
+    if (url.searchParams.get('engine') === 'google_ai_overview') return { ok: true, json: async () => ({ ai_overview: { text_blocks: [{ type: 'paragraph', snippet: 'The 4th Annual SemiX Summit runs Oct 14–17, 2026 at IIT Bombay.' }] } }) };
+    return { ok: true, json: async () => ({ organic_results: [{ title: 'Day 1 of the 4th Annual SemiX Summit', link: 'https://linkedin.com/x', snippet: 'October 14th to 17th, 2026' }], ai_overview: { page_token: 'tok' }, related_questions: [{ question: 'Where is SemiX?', snippet: 'IIT Bombay' }], events_results: [{ title: 'SemiX Summit', date: { when: 'Oct 14 – 17' }, address: ['IIT Bombay', 'Mumbai'], link: 'https://e' }] }) };
+  };
+  assert.equal(countryForTimezone('Asia/Kolkata'), 'in');
+  const r = await serpSearch({ apiKey: 'k', query: 'semix summit 2026', country: 'in', fetchImpl });
+  assert.equal(new URL(urls[0]).searchParams.get('gl'), 'in');
+  assert.match(r.ai_overview, /Oct 14–17, 2026/);
+  assert.equal(r.people_also_ask[0].a, 'IIT Bombay');
+  assert.equal(r.events[0].where, 'IIT Bombay, Mumbai');
+  assert.equal(r.results[0].link, 'https://linkedin.com/x');
+});
