@@ -162,10 +162,11 @@ export function createContext({ appRoot, env = process.env }) {
     const t = store.getTask(e.taskId);
     if (!t || String(t.kind).startsWith('sub:') || t.kind === 'watch') return; // team subtasks report through their parent
     const ok = e.kind === 'task.completed';
-    const body = ok ? String(t.result ?? '').slice(0, 1500) : String(t.error ?? e.kind).slice(0, 500);
+    const full = ok ? String(t.result ?? '') : String(t.error ?? e.kind);
+    const body = full.slice(0, ok ? 1500 : 500);
     ctx.notifications.create({ level: ok ? 'success' : e.kind === 'task.failed' ? 'error' : 'warning', title: `${ok ? 'Done' : e.kind === 'task.failed' ? 'Failed' : 'Blocked'}: ${t.title}`, body, taskId: t.id, conversationId: t.conversation_id });
     if (t.conversation_id && ctx.chat.getConversation(t.conversation_id)) {
-      ctx.chat.addMessage(t.conversation_id, 'assistant', ok ? `✅ Finished “${t.title}”:\n\n${body || '(no output)'}` : `⚠️ “${t.title}” ${e.kind === 'task.failed' ? 'failed' : 'was blocked'}: ${body}`);
+      ctx.chat.addMessage(t.conversation_id, 'assistant', ok ? `**✅ Done — ${t.title}**\n\n${full.slice(0, 8000) || '(no output)'}` : `**⚠️ ${e.kind === 'task.failed' ? 'Failed' : 'Blocked'} — ${t.title}**\n\n${full.slice(0, 1500)}`);
     }
   };
   ctx.nodes = new NodeHub({ bus });

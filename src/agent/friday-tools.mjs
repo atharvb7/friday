@@ -114,10 +114,10 @@ export function buildFridayTools(ctx) {
     {
       name: 'computer_task', risk: 'gated', category: 'computer', riskClass: 'consequential',
       description: "Operate the user's laptop to achieve a goal (browse sites, find files in Downloads/Documents, use their logged-in browser profile, fill forms, attach files). Runs in the background, stepwise, verifying results; sending/posting/buying inside it needs separate approval. Queues until the laptop is online. Give the complete goal incl. exact names.",
-      parameters: obj({ goal: { type: 'string', description: 'COMPLETE, self-contained goal including how it finishes (e.g. "…then if it says to confirm on WhatsApp, open WhatsApp Web, open the newest message from Salex Now and press Confirm booking"): the whole flow in ONE task, with business/site name, service, date, time and every detail from the conversation. Never write "the currently open tab" or assume the laptop is already on the right page; a continuation must repeat all earlier details.' }, mustShow: { type: 'array', items: { type: 'string' }, description: 'Texts the page MUST show before the final submit (e.g. ["Demo Salon"]). Strongly recommended for bookings/orders/forms: blocks submitting on the wrong business.' }, autoSubmit: { type: 'boolean', description: 'Default true: approving this task is the ONE approval for the whole flow, including the final submit/confirm/send (also follow-up confirmations on WhatsApp/email). Set false only if the user wants to review before it is sent. Payments and deletions still ask separately.' } }, ['goal']),
+      parameters: obj({ title: { type: 'string', description: 'Short title for the task list, 3-6 words (e.g. "Server disk usage")' }, goal: { type: 'string', description: 'COMPLETE, self-contained goal including how it finishes (e.g. "…then if it says to confirm on WhatsApp, open WhatsApp Web, open the newest message from Salex Now and press Confirm booking"): the whole flow in ONE task, with business/site name, service, date, time and every detail from the conversation. Never write "the currently open tab" or assume the laptop is already on the right page; a continuation must repeat all earlier details.' }, mustShow: { type: 'array', items: { type: 'string' }, description: 'Texts the page MUST show before the final submit (e.g. ["Demo Salon"]). Strongly recommended for bookings/orders/forms: blocks submitting on the wrong business.' }, autoSubmit: { type: 'boolean', description: 'Default true: approving this task is the ONE approval for the whole flow, including the final submit/confirm/send (also follow-up confirmations on WhatsApp/email). Set false only if the user wants to review before it is sent. Payments and deletions still ask separately.' } }, ['goal']),
       summarize: (a) => `Control your laptop to: ${clip(a.goal, 1200)}${a.autoSubmit !== false ? ' — including the final submit/confirm (this is the only approval)' : ' — will stop and ask before the final submit'}${a.mustShow?.length ? ` — only if the page shows: ${a.mustShow.join(', ')}` : ''}`,
       run: (a, { conversationId } = {}) => {
-        const t = store.createTask({ title: `Laptop: ${clip(a.goal, 80)}`, kind: 'computer', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: a.autoSubmit !== false, mustShow: Array.isArray(a.mustShow) ? a.mustShow.slice(0, 6).map((x) => String(x).slice(0, 80)) : [] } });
+        const t = store.createTask({ title: `Laptop: ${a.title ? clip(a.title, 60) : clip(a.goal, 60)}`, kind: 'computer', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: a.autoSubmit !== false, mustShow: Array.isArray(a.mustShow) ? a.mustShow.slice(0, 6).map((x) => String(x).slice(0, 80)) : [] } });
         return { queued: true, id: t.id.slice(0, 8), laptop_online: nodes.online };
       },
     },
@@ -178,10 +178,10 @@ export function buildFridayTools(ctx) {
     {
       name: 'hermes_task', risk: 'gated', category: 'coding', riskClass: 'consequential',
       description: 'Delegate a self-contained job to Hermes Agent (a separate autonomous agent on the server with its own skills, terminal, web tools and a different model). Good for: server-side scripting/ops, long multi-tool jobs, a second opinion, anything Hermes has a skill for. Runs in the background; result arrives in this chat. Give the complete job with all details.',
-      parameters: obj({ job: { type: 'string', description: 'Complete, self-contained job description incl. expected output' } }, ['job']),
+      parameters: obj({ title: { type: 'string', description: 'Short title for the task list, 3-6 words (e.g. "Server disk usage")' }, job: { type: 'string', description: 'Complete, self-contained job description incl. expected output' } }, ['job']),
       summarize: (a) => `Hand to Hermes Agent: ${clip(a.job, 1200)}`,
       run: (a, { conversationId } = {}) => {
-        const t = store.createTask({ title: `Hermes: ${clip(a.job, 80)}`, kind: 'hermes', instruction: str(a.job, 'job', 8000), conversationId: conversationId ?? null, meta: { grant: true } });
+        const t = store.createTask({ title: `Hermes: ${a.title ? clip(a.title, 60) : clip(a.job, 60)}`, kind: 'hermes', instruction: str(a.job, 'job', 8000), conversationId: conversationId ?? null, meta: { grant: true } });
         return { queued: true, id: t.id.slice(0, 8), hermes_online: ctx.hermes?.status().ready ?? false };
       },
     },
@@ -189,6 +189,7 @@ export function buildFridayTools(ctx) {
       name: 'team_task', risk: 'gated', category: 'computer', riskClass: 'consequential',
       description: 'Split a BIG goal into 2-8 subtasks run by different agents in parallel, then merge the results. runtime per subtask: research (deep web research with sources), coding (repo work in a workspace), agent (general background agent), hermes (Hermes Agent), computer (the user\'s laptop/browser — one at a time). Use dependsOn when a step needs another step\'s result (it receives that result automatically). One approval covers the whole team. Use only when parts are genuinely separable; otherwise use a single task.',
       parameters: obj({
+        title: { type: 'string', description: 'Short title for the task list, 3-6 words (e.g. "Server disk usage")' }, 
         goal: { type: 'string', description: 'The overall goal in the user\'s words, with all details' },
         subtasks: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, runtime: { type: 'string', enum: ['research', 'coding', 'agent', 'hermes', 'computer'] }, instruction: { type: 'string', description: 'Complete, self-contained instruction for this agent' }, dependsOn: { type: 'array', items: { type: 'string' } }, mustShow: { type: 'array', items: { type: 'string' } }, workspace: { type: 'string' } }, required: ['id', 'runtime', 'instruction'] } },
         autoSubmit: { type: 'boolean' },
@@ -196,7 +197,7 @@ export function buildFridayTools(ctx) {
       summarize: (a) => `Team job: ${clip(a.goal, 400)}\n${(a.subtasks ?? []).map((s) => `• ${s.id} [${s.runtime}]${s.dependsOn?.length ? ` after ${s.dependsOn.join(', ')}` : ''}: ${clip(s.instruction, 200)}`).join('\n')}`,
       run: (a, { conversationId } = {}) => {
         const plan = validatePlan(a.subtasks);
-        const t = store.createTask({ title: `Team: ${clip(a.goal, 80)}`, kind: 'team', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: a.autoSubmit !== false, plan } });
+        const t = store.createTask({ title: `Team: ${a.title ? clip(a.title, 60) : clip(a.goal, 60)}`, kind: 'team', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: a.autoSubmit !== false, plan } });
         return { queued: true, id: t.id.slice(0, 8), steps: plan.length };
       },
     },

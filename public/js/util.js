@@ -81,13 +81,21 @@ export function md(src) {
       while (i < lines.length && /^\s*([-*•]|\d+[.)])\s+/.test(lines[i])) ul.append(h('li', {}, inline(lines[i++].replace(/^\s*([-*•]|\d+[.)])\s+/, ''))));
       root.append(ul); continue;
     }
-    if (/^\|.*\|$/.test(line) && /^\|[\s:|-]+\|$/.test(lines[i + 1] ?? '')) {
-      const cells = (l) => l.slice(1, -1).split('|').map((c) => c.trim());
+    // GFM tables, with or without the outer pipes ("a | b" + "---|---").
+    if (line.includes('|') && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(lines[i + 1] ?? '')) {
+      const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
       const table = h('table'); const head = cells(line); i += 2;
       table.append(h('thead', {}, h('tr', {}, head.map((c) => h('th', {}, inline(c))))));
       const tb = h('tbody');
-      while (i < lines.length && /^\|.*\|$/.test(lines[i])) tb.append(h('tr', {}, cells(lines[i++]).map((c) => h('td', {}, inline(c)))));
-      table.append(tb); root.append(table); continue;
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) tb.append(h('tr', {}, cells(lines[i++]).map((c) => h('td', {}, inline(c)))));
+      table.append(tb); root.append(h('div', { class: 'table-wrap' }, table)); continue;
+    }
+    // Column-aligned plain text (command output like df/ls/ps): keep the alignment in a monospace block.
+    const aligned = (l) => /\S {2,}\S/.test(l ?? '') && !/^\s*([-*•]|\d+[.)])\s+/.test(l);
+    if (aligned(line) && aligned(lines[i + 1])) {
+      const buf = [];
+      while (i < lines.length && lines[i].trim() && (aligned(lines[i]) || buf.length && /^\S+(\s+\S+){0,2}$/.test(lines[i]) && aligned(lines[i + 1]))) buf.push(lines[i++]);
+      root.append(h('pre', {}, h('code', {}, buf.join('\n')))); continue;
     }
     if (!line.trim()) { i++; continue; }
     const buf = [];
