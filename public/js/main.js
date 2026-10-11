@@ -136,5 +136,7 @@ async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
+// Pairing link from a QR code (Settings → Devices): take the token from the fragment, then wipe it from the address bar/history.
+{ const m = /^#pair=([^&]+)/.exec(location.hash); if (m) { try { auth.set(decodeURIComponent(m[1]), true); } catch { /* ignore */ } history.replaceState(null, '', location.pathname + location.search); } }
 if (auth.token) boot().catch((e) => { if (e?.status === 401) auth.clear(); showLogin(e?.status === 401 ? '' : `Something went wrong loading Friday (${e?.message ?? e}). Your token was kept — reload to retry.`); console.error(e); }); else showLogin();
 addEventListener('hashchange', () => { if (app.me) go(location.hash.slice(1)); });
