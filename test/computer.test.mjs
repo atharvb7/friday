@@ -179,11 +179,11 @@ test('computer agent: every state-changing browser action returns the fresh page
     };
     const msgs = [];
     r.agent.ai.execute = undefined;
-    r.agent.ai.run = async (role, opts) => { msgs.push(opts.messages.at(-1)); return r.script.shift(); };
+    r.agent.ai.run = async (role, opts) => { msgs.push({ ...opts.messages.at(-1) }); return r.script.shift(); };
     r.script.push(turn([r.call('browser_click', { ref: 3, intent: 'navigate' })]), turn([r.call('browser_snapshot', {})]), end('ok'));
     await r.agent.run({ taskId: 't', instruction: 'book', meta: { grant: true } });
     assert.deepEqual(seen.map((x) => x[0]), ['browser_click', 'browser_snapshot', 'browser_snapshot'], 'click -> automatic settle snapshot; explicit snapshot passes through');
-    assert.equal(seen[1][1], 700, 'the automatic snapshot waits for the SPA to settle');
+    assert.equal(seen[1][1], 1500, 'the automatic snapshot waits (at most) for the SPA to settle');
     const toolMsg = msgs.find((m) => m.role === 'tool' && /Elements:/.test(m.content));
     const parsed = JSON.parse(msgs.find((m) => m.role === 'tool').content);
     assert.match(parsed.page, /Headings: h1:Select date and time/);

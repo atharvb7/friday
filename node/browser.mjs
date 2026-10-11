@@ -94,6 +94,23 @@ export function checkFile(path, allowedDirs) {
   return real;
 }
 
+// Apps that are slow to load and should stay open in their own tab (never navigated away from).
+const STICKY_HOSTS = new Set(['web.whatsapp.com']);
+// Resolves once the DOM has been quiet for quietMs (and, if minInteractive, the page has that many interactive
+// elements), or after maxMs. Replaces fixed sleeps: fast pages return in ~quietMs, slow apps get the full budget.
+const SETTLE_FN = ({ quietMs, maxMs, minInteractive }) => new Promise((resolve) => {
+  const start = Date.now(); let last = Date.now();
+  const obs = new MutationObserver(() => { last = Date.now(); });
+  obs.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  const count = () => document.querySelectorAll('a[href],button,input,select,textarea,[role=button],[role=link],[role=listitem],[role=row],[tabindex]').length;
+  const tick = () => {
+    const now = Date.now();
+    if (now - start >= maxMs || (now - last >= quietMs && (!minInteractive || count() >= minInteractive))) { obs.disconnect(); resolve(now - start); return; }
+    setTimeout(tick, 100);
+  };
+  setTimeout(tick, 100);
+});
+
 export class BrowserController {
   constructor({ chromium, profileDir, executablePath = '/usr/bin/google-chrome', headless = false, allowedDirs = [], allowPrivate = false }) {
     Object.assign(this, { chromium, profileDir, executablePath, headless, allowedDirs, allowPrivate }); // allowPrivate is for tests only
@@ -105,6 +122,8 @@ export class BrowserController {
     if (!this.ctx) {
       this.ctx = await this.chromium.launchPersistentContext(this.profileDir, { executablePath: this.executablePath, headless: this.headless, viewport: { width: 1280, height: 800 }, args: ['--no-first-run', '--no-default-browser-check'] });
       this.ctx.on('close', () => { this.ctx = null; this.page = null; });
+      // A site opening a popup / new tab (target=_blank, "continue in app"): follow it, like a person would.
+      this.ctx.on('page', (p) => { this.page = p; p.on('close', () => { if (this.page === p) this.page = this.ctx?.pages().at(-1) ?? null; }); });
       // Every request (incl. redirects and sub-resources) is checked: private/loopback/LAN targets and non-web schemes are blocked.
       if (!this.allowPrivate) await this.ctx.route('**/*', async (route) => {
         const u = new URL(route.request().url());
@@ -117,14 +136,31 @@ export class BrowserController {
     return this.page;
   }
 
+  async settle(page, { quietMs = 300, maxMs = 1500, minInteractive = 0 } = {}) {
+    try { return await page.evaluate(SETTLE_FN, { quietMs, maxMs, minInteractive }); } catch { return 0; } // navigation mid-wait: fine
+  }
   async open({ url }) {
-    const page = await this.ensure();
-    await page.goto(checkUrl(url), { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    let page = await this.ensure();
+    const target = new URL(checkUrl(url));
+    // Reuse an already-open tab of the same site (WhatsApp stays loaded instead of re-syncing for 20s every time).
+    const existing = this.ctx.pages().find((p) => { try { return new URL(p.url()).host === target.host; } catch { return false; } });
+    const sticky = STICKY_HOSTS.has(target.host);
+    if (existing && (sticky || existing === page)) {
+      page = this.page = existing; await page.bringToFront().catch(() => {});
+      const cur = new URL(page.url());
+      if (!(sticky && target.pathname === '/') && cur.href !== target.href) await page.goto(target.href, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    } else {
+      let curHost = ''; try { curHost = new URL(page.url()).host; } catch {}
+      if (STICKY_HOSTS.has(curHost) || sticky) { page = this.page = await this.ctx.newPage(); } // never navigate a sticky app away; give a sticky app its own tab
+      await page.goto(target.href, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    }
+    if (this.ctx.pages().length > 5) for (const p of this.ctx.pages().slice(0, -5)) { let h = ''; try { h = new URL(p.url()).host; } catch {} if (p !== page && !STICKY_HOSTS.has(h)) await p.close().catch(() => {}); }
+    await this.settle(page, sticky ? { quietMs: 600, maxMs: 25_000, minInteractive: 15 } : { quietMs: 300, maxMs: 3000 });
     return { url: page.url(), title: await page.title() };
   }
   // settleMs lets SPA transitions finish before reading the page (used for the automatic post-action snapshot).
   async snapshot({ settleMs = 0 } = {}) {
-    const page = await this.ensure(); if (settleMs) await page.waitForTimeout(Math.min(Number(settleMs) || 0, 3000));
+    const page = await this.ensure(); if (settleMs) await this.settle(page, { quietMs: 250, maxMs: Math.min(Number(settleMs) || 0, 3000) });
     const snap = await page.evaluate(SNAPSHOT_FN);
     this.sigs = new Map(snap.elements.map((e) => [e.ref, { tag: e.tag, role: e.role, name: String(e.name ?? '').split(' — ')[0].trim(), full: e.name }]));
     return snap;
@@ -175,7 +211,7 @@ export class BrowserController {
   async wait({ ms = 1000, text = null }) {
     const page = await this.ensure();
     if (text) { try { await page.getByText(String(text)).first().waitFor({ timeout: Math.min(Number(ms) || 5000, 6000) }); } catch { throw new Error(`text_not_found: "${String(text).slice(0, 60)}" did not appear — call browser_snapshot to see what is actually on the page`); } }
-    else await page.waitForTimeout(Math.min(Number(ms) || 1000, 5000));
+    else return { waited: true, ms: await this.settle(page, { quietMs: 500, maxMs: Math.min(Number(ms) || 1000, 15_000), minInteractive: 5 }) }; // returns as soon as the page is loaded and still
     return { waited: true };
   }
   async click_text({ text, exact = false }) {

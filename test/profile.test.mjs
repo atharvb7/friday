@@ -136,3 +136,18 @@ test('one approval: an approved task confirms on its own; under-declared final b
     assert.equal(r.agent.decision('browser_click', { intent: 'purchase' }, true, '', true).decision, 'ask');
   } finally { r.done(); }
 });
+
+test('older page listings are shrunk so each step does not resend stale pages', async () => {
+  const r = rig();
+  const seenLens = [];
+  r.agent.ai.run = async (_role, { messages }) => { seenLens.push(messages.filter((m) => m.role === 'tool').map((m) => m.content.length)); return r.script.shift(); };
+  r.agent.nodes.dispatch = async ({ action }) => (action === 'browser_snapshot' ? { url: 'https://x', title: 't', elements: Array.from({ length: 40 }, (_, i) => ({ ref: i + 1, name: `item ${i} ${'x'.repeat(40)}` })) } : { ok: true });
+  try {
+    r.script.push(turn([r.call('browser_click', { ref: 1, intent: 'navigate' })]), turn([r.call('browser_click', { ref: 2, intent: 'navigate' })]), turn([r.call('browser_click', { ref: 3, intent: 'navigate' })]), end('done'));
+    await r.agent.run({ taskId: 't', instruction: 'x', meta: { grant: true } });
+    const last = seenLens.at(-1);
+    assert.equal(last.length, 3);
+    assert.ok(last[0] < 300 && last[1] < 300, `older pages shrunk: ${last}`);
+    assert.ok(last[2] > 1500, 'newest page kept in full');
+  } finally { r.done(); }
+});
