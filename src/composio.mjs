@@ -79,7 +79,8 @@ export class Composio {
     return { action: c.action, kind: c.kind, description: String(r.description ?? '').slice(0, 800), input_parameters: r.input_parameters ?? {} };
   }
 
-  async execute(toolkit, action, args = {}) {
+  // raw: internal callers get the full data (the 12k cap only protects the model's context).
+  async execute(toolkit, action, args = {}, { raw = false } = {}) {
     const c = classify(toolkit, action); if (c.error) return c;
     const r = await this.#req('POST', `/tools/execute/${c.slug}`, { user_id: this.userId, arguments: args ?? {} });
     if (!r.successful) {
@@ -91,12 +92,12 @@ export class Composio {
       return { error: err.slice(0, 500) };
     }
     const text = JSON.stringify(r.data ?? {});
-    return text.length > 12_000 ? { data_truncated: text.slice(0, 12_000) } : { data: r.data };
+    return !raw && text.length > 12_000 ? { data_truncated: text.slice(0, 12_000) } : { data: r.data };
   }
 
   // Username for an Instagram-scoped id, from the DM conversation list (for the laptop fallback).
   async instagramUsername(igsid) {
-    const r = await this.execute('instagram', 'LIST_ALL_CONVERSATIONS', { limit: 50, fields: 'participants' }).catch(() => ({}));
+    const r = await this.execute('instagram', 'LIST_ALL_CONVERSATIONS', { limit: 50, fields: 'participants' }, { raw: true }).catch(() => ({}));
     for (const c of r.data?.data ?? []) for (const p of c.participants?.data ?? []) if (String(p.id) === String(igsid)) return p.username ?? null;
     return null;
   }

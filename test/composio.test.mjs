@@ -70,3 +70,11 @@ test('composio: username lookup for the laptop DM fallback', async () => {
   assert.equal(await c.instagramUsername('209'), 'kanak');
   assert.equal(await c.instagramUsername('999'), null);
 });
+
+test('composio: big results are capped for the model but complete for internal lookups', async () => {
+  const big = { data: Array.from({ length: 300 }, (_, i) => ({ id: `c${i}`, participants: { data: [{ id: 'me', username: 'me' }, { id: `${i}`, username: `user${i}` }] } })) };
+  const f = fake({ 'POST /tools/execute/INSTAGRAM_LIST_ALL_CONVERSATIONS': () => [200, { successful: true, data: big }] });
+  const c = new Composio({ apiKey: 'k', settings: settingsMem(), fetchImpl: f.fetchImpl });
+  assert.ok((await c.execute('instagram', 'LIST_ALL_CONVERSATIONS', {})).data_truncated);
+  assert.equal(await c.instagramUsername('299'), 'user299');
+});
