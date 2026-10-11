@@ -29,7 +29,7 @@ const t = (name, description, properties = {}, required = []) => ({ type: 'funct
 export const COMPUTER_TOOLS = [
   t('browser_open', 'Open an http(s) URL in the Friday browser.', { url: { type: 'string' } }, ['url']),
   t('browser_snapshot', 'List the interactive elements of the current page with numeric refs, plus visible text. Call this before clicking/typing and after each action to verify.'),
-  t('browser_click', 'Click an element by ref from the latest snapshot.', { ref: { type: 'integer' } }, ['ref']),
+  t('browser_click', 'Click an element by ref from the latest snapshot. When intent is submit_external or purchase you MUST also give expect: the exact visible label of the button you intend to press (e.g. "Confirm booking"); the click is refused if the element does not carry that label.', { ref: { type: 'integer' }, expect: { type: 'string' } }, ['ref']),
   t('browser_click_text', 'Click the visible element containing this text (use when refs are stale or the element is not in the snapshot).', { text: { type: 'string' }, exact: { type: 'boolean' } }, ['text']),
   t('browser_type', 'Type into an input by ref (replaces content unless clear=false). submit=true presses Enter.', { ref: { type: 'integer' }, text: { type: 'string' }, clear: { type: 'boolean' }, submit: { type: 'boolean' } }, ['ref', 'text']),
   t('browser_press', 'Press a key, e.g. Enter, Escape, Control+a.', { key: { type: 'string' } }, ['key']),
@@ -67,6 +67,7 @@ Rules:
 - EVERY browser action's result already includes the fresh page ("page": URL, headings, numbered elements, visible text). READ it and pick your next action from it; refs change on each update, so only use refs from the latest result. Do not wait, scroll or re-open the URL unless the page is genuinely still loading — re-opening a wizard URL resets it to step 1. NEVER wait for text you guessed. Waits are for a second or two only. Calendar days, time slots and cards appear as "clickable" elements; if one is missing, scroll and snapshot again or use browser_click_text.
 - Work in a tight loop: browser_snapshot -> choose ONE action -> do it -> browser_snapshot. Multi-step flows (booking, checkout) are wizards: read the step title (the h1/heading), do what that step needs, press Continue/Next, and repeat until the final Confirm step. Pre-selected options (marked ✓ or already chosen) need no clicking.
 - PERSONAL DETAILS: you never see the user's private details. When a form needs their name, phone, email or address, type the placeholder {{profile.name}} / {{profile.phone}} / {{profile.email}} / {{profile.address}} — it is filled in for you. If the status below says a field is unknown, call ask_user (with that field) BEFORE filling the form and wait. NEVER invent or use dummy details ("test user", fake numbers, example emails), even if the form accepts them.
+- Report success ONLY with evidence on the page after the click (e.g. a "confirmed" message). If the outcome is unclear or the page shows something unexpected (a different button became active, an error, a reply like "choose another time"), say so plainly and do not claim it worked.
 - Before any final submit/confirm/pay click, re-read the page and verify it is for EXACTLY what the goal names (business, service, date, time). If the page shows a different business or details, do not submit: navigate to the right one or stop and report the mismatch. Never continue on a page you did not verify.
 - Be exact: match contact names, file names and recipients exactly. If more than one candidate fits, or anything is ambiguous, stop and report instead of guessing.
 - Set intent honestly. Anything that sends, posts, shares or submits to another person/service is submit_external; spending money is purchase. The user will be asked to approve those; wait for the result.
@@ -138,7 +139,7 @@ export class ComputerAgent {
     if (name === 'describe_screen') return this.#describe(args, signal);
     if (name === 'ask_user') return this.#askUser(args, { signal, taskId, onTrace });
     if (!ACTIONS[name]) return { error: 'unknown_action' };
-    const { intent, ...nodeArgs } = args ?? {};
+    const { intent, expect, ...nodeArgs } = args ?? {};
     if (this.profile && typeof nodeArgs.text === 'string' && ['browser_type', 'ui_set_text'].includes(name)) {
       const sub = this.profile.substitute(nodeArgs.text);
       if (sub.missing.length) return { error: `profile_unknown: ${sub.missing.join(', ')} — call ask_user first (field=${sub.missing[0]})` };
@@ -147,6 +148,20 @@ export class ComputerAgent {
     const label = this.labels.get(`${name.startsWith('ui_') ? 'u' : 'b'}${args?.ref}`) ?? '';
     if (name === 'browser_type') this.lastTyped = label;
     const d = this.decision(name, args, grant, label, autoSubmit);
+    // Hard guard: a final-submit click must name the button it means, and the live element at that ref must carry that label
+    // (refs shift and neighbouring buttons look alike: "Confirm booking" vs "Change time").
+    if (name === 'browser_click' && ['submit_external', 'purchase'].includes(intent)) {
+      if (!expect || !String(expect).trim()) return { error: 'expect_required: give expect = the exact visible label of the button you intend to press, then click again.' };
+      let snap = null;
+      try { snap = await this.nodes.dispatch({ action: 'browser_snapshot', args: { settleMs: 300 } }); } catch { /* handled below */ }
+      const want = String(expect).trim().toLowerCase();
+      const els = Array.isArray(snap?.elements) ? snap.elements : [];
+      const at = els.find((e) => e.ref === args.ref);
+      if (!at || !String(at.name ?? '').toLowerCase().includes(want)) {
+        const cands = els.filter((e) => String(e.name ?? '').toLowerCase().includes(want)).slice(0, 5).map((e) => `[${e.ref}] ${String(e.name).slice(0, 60)}`);
+        return { error: `label_mismatch: ref ${args.ref} is "${String(at?.name ?? 'not on the page').slice(0, 60)}", not "${expect}". ${cands.length ? `Elements matching: ${cands.join('; ')} — if several match, take the newest/lowest on the page.` : 'No element on the page has that label; scroll or re-read the page.'} Nothing was clicked.` };
+      }
+    }
     // Hard guard: before the final submit/purchase, the live page must actually show what the user asked for
     // (e.g. the right salon). Never rely on the model's memory of where it is.
     if (mustShow.length && ['messaging', 'spending'].includes(d.cat) && d.risk !== 'routine') {

@@ -25,6 +25,7 @@ function rig() {
   const nodes = { get online() { return online; }, setOnline: (v) => { online = v; }, dispatch: async ({ action, args, interactive }) => {
     if (interactive && userActiveFor > 0) { userActiveFor--; throw Object.assign(new Error('user_active'), { code: 'user_active', retryAfterMs: 10 }); }
     if (!(action === 'browser_snapshot' && args?.settleMs)) sent.push({ action, args }); // the loop's automatic post-action snapshot is not a model action
+    if (action === 'browser_snapshot') return { ok: true, action, elements: [1, 5, 9].map((ref) => ({ ref, name: 'Send' })) };
     return { ok: true, action };
   } };
   const script = []; const ai = { hasProvider: true, execute: async () => script.shift(), run: async (role) => (role === 'computer' ? script.shift() : { content: 'a login form' }) };
@@ -51,7 +52,7 @@ test('computer agent: approved-goal grant allows browsing/clicking, final report
 test('computer agent: submit_external ALWAYS escalates to approval even with a grant; waits; approve then act', async () => {
   const r = rig();
   try {
-    r.script.push(turn([r.call('browser_click', { ref: 9, intent: 'submit_external' })]), end('Sent.'));
+    r.script.push(turn([r.call('browser_click', { ref: 9, intent: 'submit_external', expect: 'Send' })]), end('Sent.'));
     const p = r.agent.run({ taskId: 't', instruction: 'send it', meta: { grant: true } });
     await new Promise((res) => setTimeout(res, 30));
     assert.equal(r.sent.length, 0, 'nothing sent before approval');
@@ -67,7 +68,7 @@ test('computer agent: submit_external ALWAYS escalates to approval even with a g
 test('computer agent: denial blocks the action; purchases need critical -> high; no grant means ask for desktop input', async () => {
   const r = rig();
   try {
-    r.script.push(turn([r.call('browser_click', { ref: 1, intent: 'submit_external' })]), end('Could not send; user declined.'));
+    r.script.push(turn([r.call('browser_click', { ref: 1, intent: 'submit_external', expect: 'Send' })]), end('Could not send; user declined.'));
     const p = r.agent.run({ taskId: 't', instruction: 'x', meta: { grant: true } });
     await new Promise((res) => setTimeout(res, 30));
     await r.approvals.decide(r.approvals.list()[0].id, false);
