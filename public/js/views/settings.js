@@ -46,6 +46,12 @@ export function render({ app, api, toast, go }) {
     const wList = h('div', { class: 'stack' }, ws.watches.length ? ws.watches.map((w) => h('div', { class: 'row wrap' },
       h('span', { class: 'grow' }, `👀 ${w.title} `, h('span', { class: 'chip' }, `${w.kind} · every ${w.every_min}m`), w.last_note ? h('span', { class: 'faint small' }, ` ${w.last_note}`) : null),
       h('button', { class: 'btn', onclick: async () => { await api(`/v1/watches/${w.id}`, { method: 'DELETE' }); toast('Stopped watching.'); build(); } }, 'Stop'))) : h('p', { class: 'muted' }, 'Not watching anything. Ask me e.g. “keep an eye on WhatsApp for Salex Now and confirm the booking when it comes”.'));
+    const apps = await api('/v1/apps').catch(() => ({ configured: false, apps: [] }));
+    section('Connected apps', !apps.configured ? h('p', { class: 'muted' }, 'Composio is not set up on the server yet (COMPOSIO_API_KEY).') : apps.error ? h('p', { class: 'muted' }, apps.error) :
+      h('div', { class: 'stack' }, ...apps.apps.map((a) => h('div', { class: 'row wrap' },
+        h('strong', { class: 'grow' }, a.label, ' ', h('span', { class: `chip ${a.connected ? 'good' : 'warn'}` }, a.connected ? 'connected' : a.pending ? 'waiting for login' : 'not connected')),
+        a.connected ? null : h('button', { class: 'btn primary', onclick: async () => { try { const l = await api(`/v1/apps/${a.slug}/connect`, { method: 'POST' }); window.open(l.url, '_blank', 'noopener'); toast('Finish the login in the new tab, then come back.'); } catch (e) { toast(e.message); } } }, 'Connect'),
+        a.note ? h('p', { class: 'faint small', style: 'flex-basis:100%' }, a.note) : null))));
     section('Agents & learning',
       h('p', {}, 'Hermes Agent: ', h('span', { class: `chip ${hs.hermes.ready ? 'good' : 'warn'}` }, hs.hermes.ready ? 'connected' : hs.hermes.configured ? `not reachable (${hs.hermes.reason})` : 'not set up')),
       h('label', { class: 'row' }, learnBox, ' Learn playbooks from successful tasks (makes repeat jobs faster)'),
