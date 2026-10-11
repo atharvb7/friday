@@ -35,6 +35,22 @@ export function render({ app, api, toast, go }) {
         try { for (const [f, i] of Object.entries(pin)) if (i.value.trim() && i.value.trim() !== (prof[f] ?? '')) await api('/v1/profile', { method: 'POST', body: { field: f, value: i.value.trim() } }); toast('Saved.'); } catch (e) { toast(e.message); }
       } }, 'Save details'));
 
+    // Agents: Hermes, learned playbooks, watches
+    const [hs, ls, ws] = await Promise.all([api('/v1/hermes'), api('/v1/learned'), api('/v1/watches')]);
+    const learnBox = h('input', { type: 'checkbox', checked: ls.enabled });
+    learnBox.addEventListener('change', async () => { await api('/v1/learned/settings', { method: 'POST', body: { enabled: learnBox.checked } }); toast(learnBox.checked ? 'I’ll learn from tasks that work.' : 'Learning paused.'); });
+    const pbList = h('div', { class: 'stack' }, ls.playbooks.length ? ls.playbooks.map((p) => h('details', { class: 'card' },
+      h('summary', {}, h('strong', {}, p.name), ' — ', h('span', { class: 'muted' }, p.description), p.hosts.length ? h('span', { class: 'chip' }, p.hosts.join(', ')) : null),
+      h('pre', { class: 'mono bubble' }, p.body.slice(0, 3000)),
+      h('button', { class: 'btn bad', onclick: async () => { if (!confirm(`Forget playbook “${p.name}”?`)) return; await api(`/v1/learned/${p.name}`, { method: 'DELETE' }); toast('Forgotten.'); build(); } }, 'Forget'))) : h('p', { class: 'muted' }, 'Nothing learned yet — I write a playbook after a laptop or Hermes task succeeds.'));
+    const wList = h('div', { class: 'stack' }, ws.watches.length ? ws.watches.map((w) => h('div', { class: 'row wrap' },
+      h('span', { class: 'grow' }, `👀 ${w.title} `, h('span', { class: 'chip' }, `${w.kind} · every ${w.every_min}m`), w.last_note ? h('span', { class: 'faint small' }, ` ${w.last_note}`) : null),
+      h('button', { class: 'btn', onclick: async () => { await api(`/v1/watches/${w.id}`, { method: 'DELETE' }); toast('Stopped watching.'); build(); } }, 'Stop'))) : h('p', { class: 'muted' }, 'Not watching anything. Ask me e.g. “keep an eye on WhatsApp for Salex Now and confirm the booking when it comes”.'));
+    section('Agents & learning',
+      h('p', {}, 'Hermes Agent: ', h('span', { class: `chip ${hs.hermes.ready ? 'good' : 'warn'}` }, hs.hermes.ready ? 'connected' : hs.hermes.configured ? `not reachable (${hs.hermes.reason})` : 'not set up')),
+      h('label', { class: 'row' }, learnBox, ' Learn playbooks from successful tasks (makes repeat jobs faster)'),
+      h('h4', {}, 'Learned playbooks'), pbList, h('h4', {}, 'Watching'), wList);
+
     const am = await api('/v1/settings/automemory');
     const amBox = h('input', { type: 'checkbox', checked: am.enabled });
     amBox.addEventListener('change', async () => { await api('/v1/settings/automemory', { method: 'POST', body: { enabled: amBox.checked } }); toast(amBox.checked ? 'I’ll decide what to remember.' : 'I’ll only remember what you tell me to.'); });

@@ -71,7 +71,7 @@ export class Store {
   }
 
   createTask({ title, instruction, idempotencyKey = null, conversationId = null, kind = 'agent', workspace = null, meta = null }) {
-    if (!['agent', 'research', 'coding', 'computer'].includes(kind)) throw new TypeError('invalid task kind');
+    if (!['agent', 'research', 'coding', 'computer', 'hermes', 'team', 'watch'].includes(kind) && !/^sub:(agent|research|coding|computer|hermes)$/.test(kind)) throw new TypeError('invalid task kind');
     if (workspace !== null && !/^[a-z0-9][a-z0-9-]{0,39}$/.test(workspace)) throw new TypeError('invalid workspace name');
     if (idempotencyKey) {
       const existing = this.db.prepare('SELECT * FROM tasks WHERE idempotency_key=?').get(idempotencyKey);
