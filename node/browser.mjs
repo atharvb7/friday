@@ -30,7 +30,7 @@ const SNAPSHOT_FN = () => {
     if (++n > 120) break;
     const name = (e.getAttribute('aria-label') || e.innerText || e.getAttribute('placeholder') || e.getAttribute('title') || e.getAttribute('alt') || e.value || '').trim().replace(/\s+/g, ' ').slice(0, 90);
     e.setAttribute('data-friday-ref', String(n));
-    const label = !isFile && GENERIC.test(name) ? `${name} — ${context(e)}`.replace(/ — $/, '') : name;
+    const label = name; // disambiguated below, once we know which labels repeat
     out.push({ ref: n, tag: e.tagName.toLowerCase(), role: e.getAttribute('role') || undefined, type: e.type || undefined, name: label, value: ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) && e.type !== 'password' ? String(e.value ?? '').slice(0, 80) : undefined, href: e.href ? String(e.href).slice(0, 120) : undefined, disabled: e.disabled || e.getAttribute('aria-disabled') === 'true' || undefined, hidden: isFile && !vis(e) ? true : undefined, checked: e.checked || undefined });
   }
   // Modern UIs make calendar days, time slots and cards from plain divs with click handlers (invisible to the selector
@@ -48,6 +48,14 @@ const SNAPSHOT_FN = () => {
       n += 1; e.setAttribute('data-friday-ref', String(n)); taken.add(e);
       out.push({ ref: n, tag: e.tagName.toLowerCase(), role: 'clickable', name });
     }
+  }
+  const counts = {};
+  for (const o of out) if (GENERIC.test(o.name)) counts[o.name.toLowerCase()] = (counts[o.name.toLowerCase()] ?? 0) + 1;
+  for (const o of out) {
+    if (!GENERIC.test(o.name) || counts[o.name.toLowerCase()] < 2) continue; // only labels that REPEAT need a title
+    const el = document.querySelector(`[data-friday-ref="${o.ref}"]`);
+    const c = el ? context(el) : '';
+    if (c) o.name = `${o.name} — ${c}`;
   }
   const headings = [...document.querySelectorAll('h1,h2,h3')].filter(vis).slice(0, 12).map((h) => ({ level: h.tagName.toLowerCase(), text: h.innerText.trim().replace(/\s+/g, ' ').slice(0, 120) }));
   return { url: location.href, title: document.title, headings, elements: out, text: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 3500) };
