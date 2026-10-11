@@ -37,6 +37,7 @@ export class Composio {
     if (!this.configured) throw new Error('composio_not_configured: add COMPOSIO_API_KEY to the server .env');
     const r = await this.fetchImpl(`${BASE}${path}`, { method, headers: { 'x-api-key': this.apiKey, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(60_000) });
     const j = await r.json().catch(() => ({}));
+    if (r.status === 401) throw new Error('composio_401: Composio rejected the API key. Use a PROJECT API key (Composio dashboard → Settings → Project Settings → API Keys, usually starts with ak_) in COMPOSIO_API_KEY.');
     if (!r.ok) throw new Error(`composio_${r.status}: ${String(j?.error?.message ?? j?.message ?? '').replaceAll(this.apiKey, '[redacted]').slice(0, 240)}`);
     return j;
   }
