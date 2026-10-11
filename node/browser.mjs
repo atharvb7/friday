@@ -12,6 +12,17 @@ const SNAPSHOT_FN = () => {
   const sel = 'a[href],button,input,textarea,select,summary,[role=button],[role=link],[role=textbox],[role=menuitem],[role=checkbox],[role=tab],[role=option],[contenteditable=""],[contenteditable=true],[tabindex]:not([tabindex="-1"])';
   const out = [];
   let n = 0;
+  // Generic labels ("Select", "Book", "View") are ambiguous when a page repeats them per card: add the card's title.
+  const GENERIC = /^(select|book|add|view|choose|details|more|buy|open|go|continue|edit|remove|see all|learn more|read more|next|reserve|pick|apply|book now|select slot)$/i;
+  const context = (e) => {
+    let a = e.parentElement;
+    for (let i = 0; a && i < 5; i++, a = a.parentElement) {
+      const lines = (a.innerText || '').split('\n').map((x) => x.trim()).filter(Boolean);
+      const title = lines.find((x) => x.length > 2 && !GENERIC.test(x) && !/^[₹$€£]?\s?\d[\d.,]*\s?(min|mins|hr|hrs)?$/i.test(x));
+      if (lines.length >= 2 && title) return title.slice(0, 40);
+    }
+    return '';
+  };
   const vis = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 1 && r.height > 1 && s.visibility !== 'hidden' && s.display !== 'none' && r.bottom > 0 && r.right > 0 && r.top < innerHeight * 3; };
   for (const e of document.querySelectorAll(sel)) {
     const isFile = e.tagName === 'INPUT' && e.type === 'file';
@@ -19,7 +30,8 @@ const SNAPSHOT_FN = () => {
     if (++n > 120) break;
     const name = (e.getAttribute('aria-label') || e.innerText || e.getAttribute('placeholder') || e.getAttribute('title') || e.getAttribute('alt') || e.value || '').trim().replace(/\s+/g, ' ').slice(0, 90);
     e.setAttribute('data-friday-ref', String(n));
-    out.push({ ref: n, tag: e.tagName.toLowerCase(), role: e.getAttribute('role') || undefined, type: e.type || undefined, name, value: ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) && e.type !== 'password' ? String(e.value ?? '').slice(0, 80) : undefined, href: e.href ? String(e.href).slice(0, 120) : undefined, disabled: e.disabled || e.getAttribute('aria-disabled') === 'true' || undefined, hidden: isFile && !vis(e) ? true : undefined, checked: e.checked || undefined });
+    const label = !isFile && GENERIC.test(name) ? `${name} — ${context(e)}`.replace(/ — $/, '') : name;
+    out.push({ ref: n, tag: e.tagName.toLowerCase(), role: e.getAttribute('role') || undefined, type: e.type || undefined, name: label, value: ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) && e.type !== 'password' ? String(e.value ?? '').slice(0, 80) : undefined, href: e.href ? String(e.href).slice(0, 120) : undefined, disabled: e.disabled || e.getAttribute('aria-disabled') === 'true' || undefined, hidden: isFile && !vis(e) ? true : undefined, checked: e.checked || undefined });
   }
   // Modern UIs make calendar days, time slots and cards from plain divs with click handlers (invisible to the selector
   // above). Treat visible elements with cursor:pointer as clickable, skipping ones nested in something already listed.

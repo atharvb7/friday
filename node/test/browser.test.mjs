@@ -111,3 +111,21 @@ test('real Chrome: div-based clickables (cursor:pointer) are listed and clickabl
     await assert.rejects(() => b.click_text({ text: 'Nonexistent button' }), /text_not_found/);
   } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('real Chrome: repeated generic labels ("Select") carry their card title so the agent can tell them apart', { skip: !existsSync(CHROME) }, async () => {
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`<html><body><h1>Services</h1>
+      <div class=card><h3>Beard Trim</h3><p>15 min · ₹100</p><a href="#a">Select</a></div>
+      <div class=card><h3>Hair Color</h3><p>90 min · ₹1500</p><a href="#b">Select</a></div>
+      <button>Save settings</button></body></html>`);
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const dir = mkdtempSync(join(tmpdir(), 'fn-br4-'));
+  const b = new BrowserController({ chromium, profileDir: join(dir, 'profile'), headless: true, allowedDirs: [], allowPrivate: true });
+  try {
+    const page = await b.ensure(); await page.goto(`http://127.0.0.1:${srv.address().port}/`);
+    const names = (await b.snapshot()).elements.map((e) => e.name);
+    assert.deepEqual(names, ['Select — Beard Trim', 'Select — Hair Color', 'Save settings']);
+  } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
+});
