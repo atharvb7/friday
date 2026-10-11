@@ -129,3 +129,28 @@ test('real Chrome: repeated generic labels ("Select") carry their card title so 
     assert.deepEqual(names, ['Select — Beard Trim', 'Select — Hair Color', 'Save settings']);
   } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('real Chrome: a ref that vanished after a re-render is healed by name; truly gone elements fail with a stale_ref error', { skip: !existsSync(CHROME) }, async () => {
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    // clicking "Mon 12 Oct" re-renders the whole list with NEW nodes (SPA-style), so the old data-friday-ref attributes disappear
+    res.end(`<html><body><div id=root></div><script>
+      const render = (picked) => { document.getElementById('root').innerHTML = '<button id=d>Mon 12 Oct</button><button>2:00 pm</button><div id=o>' + (picked ? 'picked ' + picked : '') + '</div>';
+        document.querySelectorAll('button')[0].onclick = () => render('date'); document.querySelectorAll('button')[1].onclick = () => { document.getElementById('o').textContent = 'slot chosen'; }; };
+      render('');</script></body></html>`);
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const dir = mkdtempSync(join(tmpdir(), 'fn-br5-'));
+  const b = new BrowserController({ chromium, profileDir: join(dir, 'profile'), headless: true, allowedDirs: [], allowPrivate: true });
+  try {
+    const page = await b.ensure(); await page.goto(`http://127.0.0.1:${srv.address().port}/`);
+    const snap = await b.snapshot();
+    const date = snap.elements.find((e) => e.name === 'Mon 12 Oct'); const slot = snap.elements.find((e) => e.name === '2:00 pm');
+    await b.click({ ref: date.ref });                    // re-renders everything: the slot's old ref no longer exists in the DOM
+    assert.equal(await page.locator(`[data-friday-ref="${slot.ref}"]`).count(), 0, 'precondition: the old ref is gone');
+    await b.click({ ref: slot.ref });                    // healed by name
+    assert.match(await page.locator('#o').innerText(), /slot chosen/);
+    assert.ok(b.healed >= 1);
+    await assert.rejects(() => b.click({ ref: 777 }), /stale_ref/);
+  } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
+});
