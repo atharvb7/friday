@@ -11,8 +11,8 @@ cd ~/friday; TOK=$(grep "^GITHUB_TOKEN=" .env | tail -1 | cut -d= -f2-)
 api() { curl -s -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.github+json" "$@"; }
 R=https://api.github.com/repos/atharvb7/friday
 PAYLOAD=$(python3 -c "import json,sys; print(json.dumps({'title':sys.argv[1],'head':sys.argv[2],'base':'develop','body':sys.argv[3]}))" "$TITLE" "$BR" "$BODY")
-PR=$(api -X POST $R/pulls -d "$PAYLOAD" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('number') or d)")
-echo "PR #$PR opened"; sleep 8
+PR=$(api "$R/pulls?state=open&head=atharvb7:$BR" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['number'] if d else '')")
+if [ -z "$PR" ]; then PR=$(api -X POST $R/pulls -d "$PAYLOAD" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('number') or d)"); echo "PR #$PR opened"; else echo "reusing open PR #$PR"; fi; sleep 8
 SHA=$(api $R/pulls/$PR | python3 -c "import sys,json; print(json.load(sys.stdin)['head']['sha'])")
 for i in $(seq 1 60); do
   S=$(api "$R/commits/$SHA/check-runs" | python3 -c "import sys,json; c=json.load(sys.stdin).get('check_runs',[]); print((c[0]['status']+' '+str(c[0]['conclusion'])) if c else 'none')")
