@@ -1,17 +1,74 @@
-# docker compose up -d   — published on host loopback only; put Tailscale Serve in front.
+# Friday on a server. Three containers:
+#   friday  - core (API/UI/brain/voice). Published ONLY on 127.0.0.1:4317; put `tailscale serve` (HTTPS, tailnet-only) in front.
+#   agent   - DeepSeek Harness runner. Internal network only (no inbound, no direct internet); no Friday data inside.
+#   proxy   - the only way out for the agent: blocks private/LAN/tailnet/docker/metadata addresses.
+# Data (DB, token, voice models) lives in ${FRIDAY_DATA} on the host SSD.  Start: docker compose up -d --build
+name: friday
+x-hardening: &hardening
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
 services:
   friday:
-    build: .
-    restart: unless-stopped
+    <<: *hardening
+    build: { context: ., dockerfile: deploy/Dockerfile.core }
+    image: friday-core:local
+    env_file: [.env]
+    environment:
+      FRIDAY_RESOURCE_PROFILE: server6g
+      FRIDAY_WORKER_CONCURRENCY: "2"
+      FRIDAY_AGENT_URL: http://agent:4320
+      FRIDAY_AGENT_SECRET: ${FRIDAY_AGENT_SECRET:?set FRIDAY_AGENT_SECRET in .env}
+      TZ: ${TZ:-Asia/Kolkata}
+    volumes: ["${FRIDAY_DATA:-./data}:/data"]
+    tmpfs: ["/tmp:size=512m"]
     ports: ["127.0.0.1:4317:4317"]
-    volumes: ["friday-data:/data"]
-    env_file: [{ path: .env, required: false }]
-    mem_limit: 5g
-    memswap_limit: 5g
+    networks: [agentnet, egress]
+    mem_limit: 2g
+    memswap_limit: 2g
+    pids_limit: 256
+    cpus: 4
+
+  agent:
+    <<: *hardening
+    build: { context: ., dockerfile: deploy/Dockerfile.agent }
+    image: friday-agent:local
+    environment:
+      FRIDAY_AGENT_SECRET: ${FRIDAY_AGENT_SECRET:?set FRIDAY_AGENT_SECRET in .env}
+      FRIDAY_NVIDIA_API_KEY: ${FRIDAY_NVIDIA_API_KEY:-}
+      SERPAPI_API_KEY: ${SERPAPI_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      AGENT_MAX_CONCURRENT: "2"
+      HTTP_PROXY: http://proxy:3128
+      HTTPS_PROXY: http://proxy:3128
+      NO_PROXY: localhost,127.0.0.1
+      NODE_USE_ENV_PROXY: "1"
+      TZ: ${TZ:-Asia/Kolkata}
+    volumes: ["agent-home:/agent/home", "agent-work:/agent/work", "agent-state:/agent/state"]
+    tmpfs: ["/tmp:size=1g"]
+    networks: [agentnet]
+    depends_on: [proxy]
+    mem_limit: 1536m
+    memswap_limit: 1536m
     pids_limit: 512
-    read_only: true
-    tmpfs: ["/tmp:size=256m"]
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
+    cpus: 4
+
+  proxy:
+    <<: *hardening
+    build: { context: ., dockerfile: deploy/Dockerfile.proxy }
+    image: friday-proxy:local
+    networks: [agentnet, egress]
+    mem_limit: 128m
+    pids_limit: 128
+
+networks:
+  agentnet: { internal: true }   # agent <-> core <-> proxy; nothing here can reach the internet or the host directly
+  egress: {}
+
 volumes:
-  friday-data:
+  agent-home:
+  agent-work:
+  agent-state:

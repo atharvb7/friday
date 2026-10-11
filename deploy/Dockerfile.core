@@ -1,0 +1,19 @@
+# Friday core: API + UI + brain + voice engine (Whisper/Kokoro in a Python venv). No agents, no browser.
+FROM node:22-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates tini libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+RUN python3 -m venv /opt/voice-venv && /opt/voice-venv/bin/pip install --no-cache-dir faster-whisper kokoro-onnx soundfile numpy
+WORKDIR /app
+COPY package.json ./
+COPY src ./src
+COPY bin ./bin
+COPY public ./public
+COPY voice ./voice
+COPY skills ./skills
+ENV NODE_ENV=production FRIDAY_DATA_DIR=/data FRIDAY_HOST=0.0.0.0 FRIDAY_ALLOW_NONLOOPBACK=1 FRIDAY_PORT=4317 \
+    FRIDAY_VOICE_PYTHON=/opt/voice-venv/bin/python FRIDAY_VOICE_HOME=/data/voice HF_HOME=/tmp/hf XDG_CACHE_HOME=/tmp/cache
+USER node
+EXPOSE 4317
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://127.0.0.1:4317/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["tini","--"]
+CMD ["node","--disable-warning=ExperimentalWarning","src/server.mjs"]

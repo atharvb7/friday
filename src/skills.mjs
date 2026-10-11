@@ -46,6 +46,10 @@ export class Skills {
     return { name, description: s.description, instructions: parsed.body, references: refs };
   }
 
+  // Transport helpers (used to ship skills to the isolated agent container). Never follow symlinks.
+  readDir(dir) { return readdirSync(dir, { withFileTypes: true }).filter((e) => !e.isSymbolicLink() && !e.name.startsWith('.')).map((e) => ({ name: e.name, path: join(dir, e.name), isDirectory: e.isDirectory(), size: e.isFile() ? statSync(join(dir, e.name)).size : 0 })); }
+  readFile(p) { return readFileSync(p); }
+
   // One compact line per skill for the system prompt.
   index(maxChars = 1400) {
     let out = ''; 

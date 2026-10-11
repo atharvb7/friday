@@ -1,6 +1,9 @@
-data/
+data
 .env
 .git
-node_modules
-test
+node
+desktop-pet
+physical
 docs
+test
+**/node_modules

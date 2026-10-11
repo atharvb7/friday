@@ -11,6 +11,7 @@ import { Effects } from './effects.mjs';
 import { ResourceGovernor, PROFILES } from './resource-governor.mjs';
 import { WorkerLoop } from './worker.mjs';
 import { DshAdapter } from './dsh.mjs';
+import { RemoteDshAdapter, packSkills } from './dsh-remote.mjs';
 import { NemotronProvider } from './nemotron.mjs';
 import { ResilientAdapter } from './provider.mjs';
 import { ToolRegistry } from './tools.mjs';
@@ -86,18 +87,30 @@ export function createContext({ appRoot, env = process.env }) {
     for (const name of envToForward(cfg)) if (env[name]) extraEnv[name] = env[name];
     return { overlayPath, extraEnv };
   };
-  const dshInner = new DshAdapter({
-    prepare: dshPrepare,
-    homeDir: resolve(dataDir, 'dsh-home'),
-    workRoot: resolve(dataDir, 'dsh-workspaces'),
-    bin: dshBin,
-    model: env.FRIDAY_DSH_MODEL ?? 'nvidia/nemotron-3-super-120b-a12b',
-    apiKey: env.FRIDAY_NVIDIA_API_KEY ?? null,
-    enabled: env.FRIDAY_DSH_ENABLED !== '0',
-    sandbox: env.FRIDAY_DSH_SANDBOX === 'off' ? 'off' : 'bwrap',
-    appRoot, dataDir,
-    timeoutMs: env.FRIDAY_DSH_TIMEOUT_MS ? Number(env.FRIDAY_DSH_TIMEOUT_MS) : undefined,
-  });
+  let dshInner;
+  if (env.FRIDAY_AGENT_URL) {
+    // Containerised deployment: agents run in a separate, isolated container (no Friday data, filtered egress).
+    dshInner = new RemoteDshAdapter({
+      url: env.FRIDAY_AGENT_URL, secret: env.FRIDAY_AGENT_SECRET ?? '',
+      prepare: () => {
+        const cfg = withDefaults(loadMcpConfig(mcpPath), env);
+        return { overlay: renderOverlay(cfg), skills: packSkills(skills) };
+      },
+    });
+  } else {
+    dshInner = new DshAdapter({
+      prepare: dshPrepare,
+      homeDir: resolve(dataDir, 'dsh-home'),
+      workRoot: resolve(dataDir, 'dsh-workspaces'),
+      bin: dshBin,
+      model: env.FRIDAY_DSH_MODEL ?? 'nvidia/nemotron-3-super-120b-a12b',
+      apiKey: env.FRIDAY_NVIDIA_API_KEY ?? null,
+      enabled: env.FRIDAY_DSH_ENABLED !== '0',
+      sandbox: env.FRIDAY_DSH_SANDBOX === 'off' ? 'off' : 'bwrap',
+      appRoot, dataDir,
+      timeoutMs: env.FRIDAY_DSH_TIMEOUT_MS ? Number(env.FRIDAY_DSH_TIMEOUT_MS) : undefined,
+    });
+  }
   const dshAdapter = new ResilientAdapter({ inner: dshInner, maxAttempts: 1 }) // never auto-retry an agent run: tool calls may have had side effects;
   const nemotron = new NemotronProvider({});
   const nemotronResilient = new ResilientAdapter({ inner: nemotron });
@@ -159,7 +172,10 @@ export function createContext({ appRoot, env = process.env }) {
       const t = store.getTask(e.taskId);
       if (t?.kind !== 'research') return;
       try {
-        const r = ctx.researchMemory.ingestFromDir({ taskId: t.id, dir: dshInner.pathFor(t.id, t.workspace) });
+        const files = dshInner.takeFiles?.(t.id);
+        const r = files
+          ? ctx.researchMemory.ingest({ taskId: t.id, findings: JSON.parse(files['findings.json'] ?? 'null'), reportMd: files['report.md'] ?? null })
+          : ctx.researchMemory.ingestFromDir({ taskId: t.id, dir: dshInner.pathFor(t.id, t.workspace) });
         ctx.notifications.create({ level: 'success', title: `Research saved: ${r.topic}`, body: `${r.sources} sources, ${r.claims} claims, ${r.contradictions} contradiction(s) stored.`, taskId: t.id, conversationId: t.conversation_id });
       } catch (error) {
         ctx.notifications.create({ level: 'warning', title: `Research finished but not saved: ${t.title}`, body: `The agent did not leave a valid findings.json (${String(error.message).slice(0, 120)}). The report text is still in the task result.`, taskId: t.id });
@@ -213,6 +229,7 @@ export function createContext({ appRoot, env = process.env }) {
     }, 2000);
     governorTimer.unref();
     try { skills.syncTo(agentsSkillsDir); } catch {}
+    dshInner.start?.();
     worker.start();
     if (ai.hasProvider) indexer.start();
     ctx.jobs.start();
@@ -225,7 +242,7 @@ export function createContext({ appRoot, env = process.env }) {
     worker.stop();
     ctx.nodes?.stopAll();
     ctx.voiceServer?.stop();
-    clearInterval(governorTimer); clearInterval(pruneTimer);
+    clearInterval(governorTimer); clearInterval(pruneTimer); dshInner.stop?.();
     indexer.stop();
     ctx.jobs.stop();
     ctx.rules.stop();
