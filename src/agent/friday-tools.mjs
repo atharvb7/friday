@@ -254,7 +254,7 @@ export function buildFridayTools(ctx) {
       name: 'instagram_action', risk: 'gated',
       category: (a) => (classify('instagram', a?.action).kind === 'delete' ? 'deletion' : 'messaging'),
       riskClass: () => 'consequential',
-      description: `Do something on the user's Instagram that others will see: reply to a DM (SEND_TEXT_MESSAGE needs recipient_id + text; only within 24h of their last message), send an image, reply to / post comments, reply to mentions, mark seen, turn comments on/off, delete own comment. action is one of: ${[...TOOLKITS.instagram.act, ...TOOLKITS.instagram.delete].join(', ')}. Needs approval. For publishing a post use instagram_post.`,
+      description: `Do something on the user's Instagram that others will see: reply to a DM (SEND_TEXT_MESSAGE needs recipient_id + text; ONLY works if that person messaged the account within the last 24h — check the newest incoming message time with instagram_read LIST_ALL_MESSAGES first; otherwise tell the user and offer computer_task via instagram.com instead), send an image, reply to / post comments, reply to mentions, mark seen, turn comments on/off, delete own comment. action is one of: ${[...TOOLKITS.instagram.act, ...TOOLKITS.instagram.delete].join(', ')}. Needs approval. For publishing a post use instagram_post.`,
       parameters: obj({ action: { type: 'string' }, args: { type: 'object' } }, ['action', 'args']),
       summarize: (a) => `Instagram ${String(a.action).toUpperCase()}: ${clip(JSON.stringify(a.args ?? {}), 600)}`,
       run: (a) => { const c = classify('instagram', a.action); if (c.error) return c; if (c.kind === 'read') return { error: 'use instagram_read for reads' }; return ctx.composio.execute('instagram', c.action, a.args ?? {}); },

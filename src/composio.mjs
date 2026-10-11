@@ -82,7 +82,14 @@ export class Composio {
   async execute(toolkit, action, args = {}) {
     const c = classify(toolkit, action); if (c.error) return c;
     const r = await this.#req('POST', `/tools/execute/${c.slug}`, { user_id: this.userId, arguments: args ?? {} });
-    if (!r.successful) return { error: String(r.error ?? 'failed').slice(0, 500) };
+    if (!r.successful) {
+      const err = String(r.error ?? 'failed');
+      // Meta only lets a business account message someone who messaged IT within the last 24 hours.
+      if (toolkit === 'instagram' && /2534022|outside of allowed window/i.test(err)) {
+        return { error: 'instagram_24h_window', explain: "Instagram's API only allows replying to people who messaged this account in the last 24 hours, and it cannot start new conversations. This person hasn't messaged within 24h, so nothing was sent.", fallback: 'Offer to send it from the laptop instead (computer_task: open instagram.com/direct in the browser and send it like a person would — the user must be logged in to Instagram in Friday\'s browser), or wait until they message first.' };
+      }
+      return { error: err.slice(0, 500) };
+    }
     const text = JSON.stringify(r.data ?? {});
     return text.length > 12_000 ? { data_truncated: text.slice(0, 12_000) } : { data: r.data };
   }
