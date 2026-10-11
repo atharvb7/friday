@@ -24,7 +24,8 @@ function rig() {
   let online = true; let userActiveFor = 0;
   const nodes = { get online() { return online; }, setOnline: (v) => { online = v; }, dispatch: async ({ action, args, interactive }) => {
     if (interactive && userActiveFor > 0) { userActiveFor--; throw Object.assign(new Error('user_active'), { code: 'user_active', retryAfterMs: 10 }); }
-    sent.push({ action, args }); return { ok: true, action };
+    if (!(action === 'browser_snapshot' && args?.settleMs)) sent.push({ action, args }); // the loop's automatic post-action snapshot is not a model action
+    return { ok: true, action };
   } };
   const script = []; const ai = { hasProvider: true, execute: async () => script.shift(), run: async (role) => (role === 'computer' ? script.shift() : { content: 'a login form' }) };
   const call = (name, args, id = `c${Math.random()}`) => ({ id, name, args, argumentsText: JSON.stringify(args) });
@@ -161,5 +162,34 @@ test('computer agent: repeated waits are cut off and the model is told to snapsh
     assert.equal(r.agent.decision('browser_click_text', { text: 'Confirm booking' }, true).cat, 'messaging');
     assert.equal(r.agent.decision('browser_click_text', { text: 'Buy now' }, true).cat, 'spending');
     assert.equal(r.agent.decision('browser_click_text', { text: '2:00 PM' }, true).decision, 'allow');
+  } finally { r.done(); }
+});
+
+import { compactSnapshot } from '../src/agent/computer-agent.mjs';
+
+test('computer agent: every state-changing browser action returns the fresh page automatically (compact, with current refs)', async () => {
+  const r = rig();
+  try {
+    const seen = [];
+    r.nodes.dispatch = async ({ action, args }) => {
+      seen.push([action, args?.settleMs ?? null]);
+      if (action === 'browser_snapshot') return { url: 'https://x.test/book', title: 'Book', headings: [{ level: 'h1', text: 'Select date and time' }], elements: [{ ref: 6, tag: 'button', name: 'Mon 12 Oct' }, { ref: 19, tag: 'button', name: '2:00 pm' }, { ref: 33, tag: 'button', name: 'Continue →' }], text: 'Select date and time Mon 12 Oct' };
+      return { clicked: true };
+    };
+    const msgs = [];
+    r.agent.ai.execute = undefined;
+    r.agent.ai.run = async (role, opts) => { msgs.push(opts.messages.at(-1)); return r.script.shift(); };
+    r.script.push(turn([r.call('browser_click', { ref: 3, intent: 'navigate' })]), turn([r.call('browser_snapshot', {})]), end('ok'));
+    await r.agent.run({ taskId: 't', instruction: 'book', meta: { grant: true } });
+    assert.deepEqual(seen.map((x) => x[0]), ['browser_click', 'browser_snapshot', 'browser_snapshot'], 'click -> automatic settle snapshot; explicit snapshot passes through');
+    assert.equal(seen[1][1], 700, 'the automatic snapshot waits for the SPA to settle');
+    const toolMsg = msgs.find((m) => m.role === 'tool' && /Elements:/.test(m.content));
+    const parsed = JSON.parse(msgs.find((m) => m.role === 'tool').content);
+    assert.match(parsed.page, /Headings: h1:Select date and time/);
+    assert.match(parsed.page, /\[19\] button: 2:00 pm/);
+    assert.ok(toolMsg);
+    assert.equal(compactSnapshot(null), '');
+    const big = { url: 'u', title: 't', elements: Array.from({ length: 400 }, (_, i) => ({ ref: i + 1, tag: 'a', name: 'x'.repeat(60) })) };
+    const out = compactSnapshot(big, 1500); assert.ok(out.length < 1800 && /more elements/.test(out), 'huge pages are summarised, never cut mid-structure');
   } finally { r.done(); }
 });

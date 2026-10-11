@@ -4,7 +4,7 @@
 // the user's approval, and the loop waits for the answer.
 const MAX_STEPS = 60;
 const APPROVAL_WAIT_MS = 15 * 60_000;
-const RESULT_CHARS = 5000;
+const RESULT_CHARS = 6000;
 
 // action -> [category, riskClass]. The model may only RAISE risk via `intent`.
 const ACTIONS = {
@@ -46,9 +46,24 @@ export const COMPUTER_TOOLS = [
   t('describe_screen', 'Take a browser screenshot and have a vision model answer a question about it. Slow and approximate: prefer snapshots; never use it for coordinates.', { question: { type: 'string' } }, ['question']),
 ];
 
+// Compact, token-cheap text form of a page snapshot (JSON got truncated mid-structure for big pages).
+export function compactSnapshot(snap, max = 4200) {
+  if (!snap || typeof snap !== 'object') return '';
+  const head = [`URL: ${snap.url ?? ''}`, `Title: ${snap.title ?? ''}`, snap.headings?.length ? `Headings: ${snap.headings.map((h) => `${h.level}:${h.text}`).join(' | ')}` : ''].filter(Boolean).join('\n');
+  const els = (snap.elements ?? []).map((e) => `[${e.ref}] ${e.role ?? e.tag}${e.type && e.type !== 'button' && e.type !== 'submit' ? `(${e.type})` : ''}: ${String(e.name ?? '').slice(0, 70)}${e.value ? ` ={${e.value}}` : ''}${e.disabled ? ' (disabled)' : ''}${e.checked ? ' (checked)' : ''}${e.hidden ? ' (hidden file input)' : ''}`);
+  let out = `${head}\nElements:\n`; let used = out.length; const kept = [];
+  for (const l of els) { if (used + l.length + 1 > max) break; kept.push(l); used += l.length + 1; }
+  out += kept.join('\n');
+  if (kept.length < els.length) out += `\n… ${els.length - kept.length} more elements (scroll and read again)`;
+  if (snap.text) out += `\nVisible text: ${String(snap.text).slice(0, 600)}`;
+  return out;
+}
+// Actions after which the page may have changed: the agent loop re-reads the page itself, so the model always sees fresh refs.
+const STATE_CHANGING = new Set(['browser_open', 'browser_click', 'browser_click_text', 'browser_type', 'browser_press', 'browser_back', 'browser_scroll', 'browser_upload', 'browser_wait']);
+
 export const COMPUTER_PROMPT = `You are Friday's computer agent, operating the user's laptop through a controlled node. Achieve the goal step by step.
 Rules:
-- ALWAYS LOOK before you act: call browser_snapshot and work from the elements it lists (refs change after every navigation or page update, so snapshot again after each action). NEVER wait for text you guessed — if a wait times out, snapshot. Waits are for a second or two only. Calendar days, time slots and cards appear as "clickable" elements; if one is missing, scroll and snapshot again or use browser_click_text.
+- EVERY browser action's result already includes the fresh page ("page": URL, headings, numbered elements, visible text). READ it and pick your next action from it; refs change on each update, so only use refs from the latest result. Do not wait, scroll or re-open the URL unless the page is genuinely still loading — re-opening a wizard URL resets it to step 1. NEVER wait for text you guessed. Waits are for a second or two only. Calendar days, time slots and cards appear as "clickable" elements; if one is missing, scroll and snapshot again or use browser_click_text.
 - Work in a tight loop: browser_snapshot -> choose ONE action -> do it -> browser_snapshot. Multi-step flows (booking, checkout) are wizards: read the step title (the h1/heading), do what that step needs, press Continue/Next, and repeat until the final Confirm step. Pre-selected options (marked ✓ or already chosen) need no clicking.
 - Be exact: match contact names, file names and recipients exactly. If more than one candidate fits, or anything is ambiguous, stop and report instead of guessing.
 - Set intent honestly. Anything that sends, posts, shares or submits to another person/service is submit_external; spending money is purchase. The user will be asked to approve those; wait for the result.
@@ -118,7 +133,15 @@ export class ComputerAgent {
       if (!(await this.#waitApproval(a.id, signal))) return { error: 'not_approved' };
     }
     for (let attempt = 0; attempt < 6; attempt++) {
-      try { const res = await this.nodes.dispatch({ action: name, args: nodeArgs, interactive: INTERACTIVE.has(name) }); this.#remember(name, args, res); return res; }
+      try {
+        let res = await this.nodes.dispatch({ action: name, args: nodeArgs, interactive: INTERACTIVE.has(name) });
+        this.#remember(name, args, res);
+        if (name === 'browser_snapshot' && Array.isArray(res?.elements)) return { page: compactSnapshot(res) };
+        if (STATE_CHANGING.has(name)) {
+          try { const snap = await this.nodes.dispatch({ action: 'browser_snapshot', args: { settleMs: 700 } }); this.#remember('browser_snapshot', {}, snap); res = { ...res, page: compactSnapshot(snap) }; } catch { /* the action succeeded; the model can still ask for a snapshot */ }
+        }
+        return res;
+      }
       catch (e) {
         if (e.code === 'user_active') { onTrace?.('waiting_for_user_idle', { ms: e.retryAfterMs }); await this.sleep(Math.min(e.retryAfterMs ?? 5000, 30_000) + 500, signal); continue; }
         return { error: e.message };
