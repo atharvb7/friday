@@ -173,3 +173,24 @@ test('watches: web change + condition fires notify or a follow-up task; laptop c
     assert.deepEqual(await w.followUp(b.store.getTask(done.id)), { skipped: true }, 'once per task');
   } finally { b.done(); }
 });
+
+test('watches: email watch baselines, then fires only on new matching mail', async () => {
+  const b = base();
+  try {
+    let mails = [{ messageId: 'a1', sender: 'hr@co.com', subject: 'Old', preview: { body: 'x' } }];
+    const composio = { configured: true, execute: async (tk, action, args) => { assert.equal(tk, 'gmail'); assert.equal(action, 'FETCH_EMAILS'); assert.equal(args.query, 'from:hr@co.com'); return { data: { messages: mails } }; } };
+    const ai = { hasProvider: true, run: async () => ({ content: JSON.stringify({ met: true, summary: 'HR replied about the offer' }) }) };
+    let now = Date.parse('2026-10-11T08:00:00Z');
+    const jobs = new Jobs({ store: b.store, notifications: b.notifications, chat: b.chat, bus: b.bus, settings: b.settings, now: () => new Date(now) });
+    const w = new Watches({ store: b.store, ai, jobs, notifications: b.notifications, chat: b.chat, bus: b.bus, settings: b.settings, composio, now: () => now });
+    const ew = w.create({ title: 'HR reply', kind: 'email', target: 'from:hr@co.com', condition: 'a reply about my offer' });
+    await w.tick();
+    assert.equal(w.get(ew.id).status, 'active'); assert.match(w.get(ew.id).last_note, /baseline/);
+    now += 6 * 60_000; await w.tick();
+    assert.equal(w.get(ew.id).fired, 0, 'nothing new');
+    mails = [{ messageId: 'a2', sender: 'hr@co.com', subject: 'Your offer', preview: { body: 'Congrats' } }, ...mails];
+    now += 6 * 60_000; await w.tick();
+    assert.equal(w.get(ew.id).status, 'done');
+    assert.ok(b.notifications.list().some((n) => /HR reply/.test(n.title) && /Your offer/.test(n.body)));
+  } finally { b.done(); }
+});

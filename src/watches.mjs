@@ -16,8 +16,8 @@ const jsonIn = (s) => { try { return JSON.parse(/\{[\s\S]*\}/.exec(String(s ?? '
 
 export class Watches {
   #timer = null;
-  constructor({ store, ai, jobs, notifications, chat, bus, settings, fetchText = async (u) => (await safeFetch(u)).text, now = () => Date.now() }) {
-    Object.assign(this, { store, ai, jobs, notifications, chat, bus, settings, fetchText, now });
+  constructor({ store, ai, jobs, notifications, chat, bus, settings, composio = null, fetchText = async (u) => (await safeFetch(u)).text, now = () => Date.now() }) {
+    Object.assign(this, { store, ai, jobs, notifications, chat, bus, settings, composio, fetchText, now });
     this.db = store.db;
     this.db.exec(`CREATE TABLE IF NOT EXISTS watches (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, condition TEXT,
@@ -27,14 +27,14 @@ export class Watches {
   }
 
   create({ title, kind, target, condition = null, everyMin, action = { kind: 'notify' }, repeat = false, hours = 72, conversationId = null }) {
-    if (!['web', 'laptop'].includes(kind)) throw new TypeError('kind must be web or laptop');
+    if (!['web', 'laptop', 'email'].includes(kind)) throw new TypeError('kind must be web, laptop or email');
     if (typeof title !== 'string' || !title.trim()) throw new TypeError('title required');
     if (kind === 'web') { const u = new URL(String(target)); if (!['http:', 'https:'].includes(u.protocol)) throw new TypeError('web watch needs an http(s) url'); }
     if (!String(target).trim() || String(target).length > 2000) throw new TypeError('target required');
     if (!['notify', 'task'].includes(action?.kind)) throw new TypeError('action.kind must be notify or task');
     if (action.kind === 'task' && (!action.instruction || !['agent', 'computer', 'hermes', 'research'].includes(action.runtime ?? 'agent'))) throw new TypeError('task action needs instruction and runtime agent|computer|hermes|research');
     if (this.db.prepare("SELECT COUNT(*) n FROM watches WHERE status='active'").get().n >= MAX_ACTIVE) throw new TypeError('too many active watches');
-    const min = kind === 'web' ? MIN_WEB_EVERY : MIN_LAPTOP_EVERY;
+    const min = kind === 'laptop' ? MIN_LAPTOP_EVERY : MIN_WEB_EVERY;
     const every = Math.max(min, Math.min(24 * 60, Math.round(Number(everyMin) || min * 2)));
     const id = randomUUID(); const now = this.now();
     this.db.prepare('INSERT INTO watches (id,title,kind,target,condition,every_min,action,repeat,conversation_id,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
@@ -57,6 +57,7 @@ export class Watches {
       if (w.last_check && this.now() - Date.parse(w.last_check) < w.every_min * 60_000) continue;
       this.db.prepare('UPDATE watches SET last_check=? WHERE id=?').run(nowIso, w.id);
       if (w.kind === 'web') await this.#checkWeb(w).catch((e) => this.db.prepare('UPDATE watches SET last_note=? WHERE id=?').run(`error: ${String(e.message).slice(0, 120)}`, w.id));
+      else if (w.kind === 'email') await this.#checkEmail(w).catch((e) => this.db.prepare('UPDATE watches SET last_note=? WHERE id=?').run(`error: ${String(e.message).slice(0, 120)}`, w.id));
       else this.#queueLaptopCheck(w);
     }
   }
@@ -80,6 +81,24 @@ export class Watches {
     const j = await this.#judge(w, text);
     this.db.prepare('UPDATE watches SET last_note=? WHERE id=?').run(j.summary, w.id);
     if (j.met) this.#fire(w, j.summary);
+  }
+
+  // Email: run the Gmail search (target = Gmail query); any message not seen before is judged against the condition.
+  async #checkEmail(w) {
+    if (!this.composio?.configured) throw new Error('gmail not connected');
+    const r = await this.composio.execute('gmail', 'FETCH_EMAILS', { query: w.target, max_results: 10 }, { raw: true });
+    if (r.error) throw new Error(r.error);
+    const list = r.data?.messages ?? r.data?.data?.messages ?? [];
+    const ids = list.map((m) => m.messageId ?? m.id).filter(Boolean);
+    const seen = new Set(String(w.last_hash ?? '').split(',').filter(Boolean));
+    this.db.prepare('UPDATE watches SET last_hash=? WHERE id=?').run(ids.slice(0, 30).join(','), w.id);
+    if (!w.last_hash) { this.db.prepare('UPDATE watches SET last_note=? WHERE id=?').run(`baseline: ${ids.length} matching emails`, w.id); return; }
+    const fresh = list.filter((m) => !seen.has(m.messageId ?? m.id));
+    if (!fresh.length) return;
+    const text = fresh.map((m) => `From: ${m.sender ?? m.from ?? '?'}\nSubject: ${m.subject ?? '?'}\n${String(m.preview?.body ?? m.snippet ?? m.messageText ?? '').slice(0, 600)}`).join('\n---\n');
+    const j = await this.#judge(w, text);
+    this.db.prepare('UPDATE watches SET last_note=? WHERE id=?').run(j.summary, w.id);
+    if (j.met) this.#fire(w, `${j.summary}${fresh[0]?.subject ? ` (“${String(fresh[0].subject).slice(0, 100)}”)` : ''}`);
   }
 
   #queueLaptopCheck(w) {
