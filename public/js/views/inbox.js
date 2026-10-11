@@ -19,9 +19,9 @@ export function render({ app, api, toast, refresh }) {
   async function markAll() { await api('/v1/notifications/read-all', { method: 'POST' }); load(); refresh(); }
 
   async function load() {
-    const [a, n] = await Promise.all([api('/v1/approvals'), api('/v1/notifications')]);
+    const [a, n, qs] = await Promise.all([api('/v1/approvals'), api('/v1/notifications'), api('/v1/questions')]);
     clear(tabs);
-    for (const [k, label, count] of [['approvals', 'Approvals', a.approvals.length], ['notifications', 'Notifications', n.unread]]) {
+    for (const [k, label, count] of [['approvals', 'Approvals', a.approvals.length], ['questions', 'Questions', qs.questions.length], ['notifications', 'Notifications', n.unread]]) {
       tabs.append(h('button', { class: `tab${tab === k ? ' active' : ''}`, onclick: () => { tab = k; load(); } }, label, count ? ` (${count})` : ''));
     }
     clear(body);
@@ -34,6 +34,14 @@ export function render({ app, api, toast, refresh }) {
           h('div', { class: 'row' }, h('button', { class: 'btn good', onclick: () => decide(x, true) }, 'Approve'), h('button', { class: 'btn bad', onclick: () => decide(x, false) }, 'Deny'),
             h('span', { class: 'faint small' }, 'Approving runs exactly what is shown above.'))));
       }
+    } else if (tab === 'questions') {
+      if (!qs.questions.length) body.append(h('div', { class: 'empty' }, h('div', { class: 'big' }, '💬'), 'No task is waiting on an answer.'));
+      for (const q of qs.questions) {
+        const inp = h('input', { type: 'text', placeholder: q.field ? `Your ${q.field} (saved for next time)` : 'Your answer', 'aria-label': 'Answer' });
+        const send = async () => { try { await api(`/v1/questions/${q.id}/answer`, { method: 'POST', body: { answer: inp.value } }); toast('Sent — carrying on.'); load(); } catch (e) { toast(e.message); } };
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+        body.append(h('div', { class: 'card stack' }, h('strong', {}, q.question), h('div', { class: 'row' }, inp, h('button', { class: 'btn primary', onclick: send }, 'Send')), h('span', { class: 'faint' }, timeAgo(q.created_at))));
+      }
     } else {
       if (!n.notifications.length) body.append(h('div', { class: 'empty' }, h('div', { class: 'big' }, '🔔'), 'No notifications yet.'));
       for (const x of n.notifications) {
@@ -44,7 +52,7 @@ export function render({ app, api, toast, refresh }) {
       }
     }
   }
-  const onEvent = (e) => { if (e.type === 'notification.created' || e.type.startsWith('approval.')) load(); };
+  const onEvent = (e) => { if (e.type === 'notification.created' || e.type.startsWith('approval.') || e.type.startsWith('question.')) load(); };
   app.listeners.add(onEvent); load();
   return { el, destroy() { app.listeners.delete(onEvent); } };
 }
