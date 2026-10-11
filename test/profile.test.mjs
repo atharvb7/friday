@@ -120,3 +120,19 @@ test('final-submit click must name its button and the live element must match (C
     assert.deepEqual(r.sent.map((s) => s.args.ref), [52], 'right button goes through');
   } finally { r.done(); }
 });
+
+test('one approval: an approved task confirms on its own; under-declared final buttons are redirected to the guarded path; payments still ask', async () => {
+  const r = rig();
+  r.agent.nodes.dispatch = async ({ action, args }) => { if (action === 'browser_snapshot') return { url: 'u', title: 't', elements: [{ ref: 3, name: 'Salex Now Please confirm your appointment at Demo Salon. Service: Beard Trim' }, { ref: 52, name: 'Confirm booking' }] }; r.sent.push({ action, args }); return { ok: true }; };
+  try {
+    r.script.push(turn([r.call('browser_snapshot', {})]),
+      turn([r.call('browser_click', { ref: 3, intent: 'navigate' })]),
+      turn([r.call('browser_click', { ref: 52, intent: 'navigate' })]),
+      turn([r.call('browser_click', { ref: 52, intent: 'submit_external', expect: 'Confirm booking' })]), end('Booking confirmed.'));
+    const out = await r.agent.run({ taskId: 't', instruction: 'confirm on whatsapp', meta: { grant: true, autoSubmit: true, mustShow: ['Demo Salon'] } });
+    assert.equal(out.status, 'completed');
+    assert.deepEqual(r.sent.map((s) => s.args.ref), [3, 52], 'chat row opened, then only the declared confirm went through');
+    assert.equal(r.approvals.list().length, 0, 'no extra approvals');
+    assert.equal(r.agent.decision('browser_click', { intent: 'purchase' }, true, '', true).decision, 'ask');
+  } finally { r.done(); }
+});
