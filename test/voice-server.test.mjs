@@ -75,3 +75,17 @@ test('python voice worker: serialised requests, on-demand start, idle shutdown, 
     vs.stop();
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('voice server: overlapping speak requests (prefetched next sentence) queue instead of failing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'friday-voiceq-'));
+  try {
+    const piper = join(dir, 'piper'); writeFileSync(piper, '#!/bin/sh\nsleep 0.3\nwhile [ "$1" != "--output_file" ]; do shift; done\ncat > "$2.txt"; printf RIFFxxxxWAVE > "$2"\n'); chmodSync(piper, 0o755);
+    const model = join(dir, 'model.bin'); writeFileSync(model, 'x');
+    let active = 0, peak = 0;
+    const governor = { acquire: () => { if (active >= 1) return { allowed: false, reason: 'class_full' }; active++; peak = Math.max(peak, active); return { allowed: true, release() { active--; } }; } };
+    const vs = new VoiceServer({ env: { FRIDAY_PIPER_BIN: piper, FRIDAY_PIPER_MODEL: model }, governor });
+    const outs = await Promise.all(['First sentence.', 'Second sentence.', 'Third sentence.'].map((t) => vs.speak(t)));
+    assert.equal(outs.length, 3); assert.ok(outs.every((o) => o.toString('ascii', 0, 4) === 'RIFF'));
+    assert.equal(peak, 1, 'still one voice job at a time');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
