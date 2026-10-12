@@ -38,17 +38,23 @@ export class VoiceServer {
     };
   }
 
-  #admit() {
+  // One voice job at a time: later requests (the next sentence of a long reply, prefetched while the first plays)
+  // wait their turn instead of being rejected.
+  async #admit(maxWaitMs = 60_000) {
     if (!this.governor) return { release() {} };
-    const lease = this.governor.acquire('voice');
-    if (!lease.allowed) throw Object.assign(new Error(`voice_unavailable:${lease.reason}`), { code: 'busy' });
-    return lease;
+    const start = Date.now();
+    for (;;) {
+      const lease = this.governor.acquire('voice');
+      if (lease.allowed) return lease;
+      if (Date.now() - start > maxWaitMs) throw Object.assign(new Error(`voice_unavailable:${lease.reason}`), { code: 'busy' });
+      await new Promise((r) => setTimeout(r, 200));
+    }
   }
 
   async transcribe(wav, { prompt = '', language = 'en' } = {}) {
     if (this.status().stt !== 'ready') throw Object.assign(new Error('stt_not_installed'), { code: 'unavailable' });
     if (!Buffer.isBuffer(wav) || wav.length < 44 || wav.length > MAX_AUDIO || wav.toString('ascii', 0, 4) !== 'RIFF') throw new TypeError('expected a WAV file (<=8 MB)');
-    const lease = this.#admit(); const dir = mkdtempSync(join(tmpdir(), 'friday-stt-'));
+    const lease = await this.#admit(); const dir = mkdtempSync(join(tmpdir(), 'friday-stt-'));
     try {
       const f = join(dir, 'in.wav'); writeFileSync(f, wav, { mode: 0o600 });
       if (this.#pyStt()) {
@@ -67,7 +73,7 @@ export class VoiceServer {
     if (!t) throw new TypeError('text required');
     if (!/^[a-z]{2}_[a-z]+(:\d{1,3})?(,[a-z]{2}_[a-z]+(:\d{1,3})?){0,3}$/.test(voice)) throw new TypeError('invalid voice');
     const sp = Math.min(1.3, Math.max(0.7, Number(speed) || 1));
-    const lease = this.#admit(); const dir = mkdtempSync(join(tmpdir(), 'friday-tts-'));
+    const lease = await this.#admit(); const dir = mkdtempSync(join(tmpdir(), 'friday-tts-'));
     try {
       const out = join(dir, 'out.wav');
       if (this.#pyTts()) {

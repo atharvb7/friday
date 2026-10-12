@@ -57,7 +57,9 @@ export function speakServer(text, fetchWav) {
     let next = parts.length ? fetchWav(parts[0]) : null;
     for (let i = 0; i < parts.length && !cancelled; i++) {
       const blobP = next; next = i + 1 < parts.length ? fetchWav(parts[i + 1]) : null;
-      const blob = await blobP; if (cancelled || !blob) return;
+      let blob = await blobP; if (cancelled) return;
+      if (!blob) { await new Promise((r) => setTimeout(r, 600)); if (cancelled) return; blob = await fetchWav(parts[i]); } // one retry
+      if (!blob) continue; // skip a part that still failed instead of going silent for the rest
       const url = URL.createObjectURL(blob);
       await new Promise((resolve) => { current = new Audio(url); current.onended = current.onerror = () => { URL.revokeObjectURL(url); resolve(); }; current.play().catch(resolve); });
     }
