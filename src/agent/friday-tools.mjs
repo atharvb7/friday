@@ -171,7 +171,7 @@ export function buildFridayTools(ctx) {
     },
     {
       name: 'code_task', risk: 'safe',
-      description: 'Hand a coding job to the background agent inside a named, persistent project workspace (it can clone repos, edit, run tests, commit on a branch). Returns immediately.',
+      description: 'YOUR OWN coding agent (prefer this over Hermes for all software work): hand a coding job to the background agent inside a named, persistent project workspace — it has full-stack skills (frontend design, React/Next.js, APIs, Postgres, TDD, debugging, security review) and can clone repos, install packages, build, test and commit. For apps the user wants hosted, tell it to follow the friday-deploy skill so app_deploy can host the result. Returns immediately; the result arrives in this chat.',
       parameters: obj({ project: { type: 'string', description: 'lowercase-hyphen workspace name, e.g. my-api' }, instruction: { type: 'string', description: 'What to do, repo URL if any, how to verify' } }, ['project', 'instruction']),
       run: (a, { conversationId } = {}) => {
         const project = str(a.project, 'project', 40).toLowerCase();
@@ -318,6 +318,38 @@ export function buildFridayTools(ctx) {
         return `Email ${a.op}${a.to ? ` to ${clip(a.to, 160)}` : a.message_id ? ` (reply in thread of ${a.message_id})` : ''}${a.cc ? ` cc ${clip(a.cc, 100)}` : ''}${a.subject ? ` — “${clip(a.subject, 160)}”` : ''}${files ? ` 📎 ${clip(files, 200)}` : ''}\n${clip(a.body ?? a.note ?? '', 1500)}`;
       },
       run: (a) => ({ send: () => ctx.gmail.send(a), reply: () => ctx.gmail.reply(a), forward: () => ctx.gmail.forward(a), send_draft: () => ctx.gmail.sendDraft(a), trash: () => ctx.gmail.trash(a) }[a.op] ?? (() => ({ error: 'unknown op' })))(),
+    },
+    {
+      name: 'app_deploy', risk: 'gated', category: 'system', riskClass: 'consequential',
+      description: 'Host one of your coding projects on the user\'s server, reachable on his Tailscale at https://<server>.ts.net:<port> (tailnet only, not the public internet). project = the code_task workspace name that holds the finished app (Dockerfile, or package.json with a start script, or a static index.html). Re-deploying the same name updates it in place and keeps its address. Needs approval. Build first with code_task, then deploy.',
+      parameters: obj({ name: { type: 'string', description: 'app name: lowercase-dashes, e.g. portfolio' }, project: { type: 'string', description: 'code_task workspace name' }, memoryMb: { type: 'integer', description: 'RAM limit, default 256 (max 1024)' } }, ['name', 'project']),
+      summarize: (a) => `Deploy app “${clip(a.name, 40)}” from project “${clip(a.project, 40)}” on your server (Tailscale only, ${Math.min(1024, a.memoryMb ?? 256)} MB RAM)`,
+      run: (a) => ctx.deployer.deploy({ name: a.name, project: a.project, memoryMb: a.memoryMb }),
+    },
+    {
+      name: 'app_list', risk: 'safe',
+      description: 'List the apps you host on the user\'s server, with status and Tailscale URL.',
+      parameters: obj({}),
+      run: () => ctx.deployer.list(),
+    },
+    {
+      name: 'app_logs', risk: 'safe',
+      description: 'Read the recent logs of one of your hosted apps (for debugging).',
+      parameters: obj({ name: { type: 'string' }, tail: { type: 'integer' } }, ['name']),
+      run: (a) => ctx.deployer.logs(a.name, a.tail),
+    },
+    {
+      name: 'app_control', risk: 'safe',
+      description: 'Restart, stop or start one of your hosted apps.',
+      parameters: obj({ name: { type: 'string' }, action: { type: 'string', enum: ['restart', 'stop', 'start'] } }, ['name', 'action']),
+      run: (a) => ctx.deployer.act(a.name, a.action),
+    },
+    {
+      name: 'app_remove', risk: 'gated', category: 'deletion', riskClass: 'consequential',
+      description: 'Take one of your hosted apps down completely (container, image and its Tailscale address). Its source project stays. Needs approval.',
+      parameters: obj({ name: { type: 'string' } }, ['name']),
+      summarize: (a) => `Remove hosted app “${clip(a.name, 40)}” from your server`,
+      run: (a) => ctx.deployer.remove(a.name),
     },
     {
       name: 'dm_chat_start', risk: 'gated', category: 'messaging', riskClass: 'consequential',

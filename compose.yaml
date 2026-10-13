@@ -23,11 +23,13 @@ services:
       FRIDAY_AGENT_URL: http://agent:4320
       FRIDAY_AGENT_SECRET: ${FRIDAY_AGENT_SECRET:?set FRIDAY_AGENT_SECRET in .env}
       FRIDAY_PUBLIC_PORT: "4318"   # internet listener: NOT published on the host; only the tunnel container reaches it
+      FRIDAY_DEPLOYER_URL: http://deployer:4330
+      FRIDAY_DEPLOYER_SECRET: ${FRIDAY_DEPLOYER_SECRET:-}
       TZ: ${TZ:-Asia/Kolkata}
     volumes: ["${FRIDAY_DATA:-./data}:/data"]
     tmpfs: ["/tmp:size=512m,exec"]   # espeak (Kokoro) is extracted to /tmp and dlopen()ed
     ports: ["127.0.0.1:4317:4317"]
-    networks: [agentnet, egress]
+    networks: [agentnet, egress, deploynet]
     mem_limit: 2g
     memswap_limit: 2g
     pids_limit: 256
@@ -68,6 +70,25 @@ services:
     mem_limit: 128m
     pids_limit: 128
 
+  # Hosts Friday's own apps on the tailnet. Has the Docker + tailscaled sockets, so its API is tiny and fixed
+  # (deployer/server.mjs): only containers labelled friday.app, unprivileged apps, 127.0.0.1 ports, tailnet-only.
+  deployer:
+    <<: *hardening
+    build: { context: ., dockerfile: deploy/Dockerfile.deployer }
+    image: friday-deployer:local
+    profiles: ["apps"]
+    environment:
+      DEPLOYER_SECRET: ${FRIDAY_DEPLOYER_SECRET:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
+      - agent-work:/work:ro          # the coding agent's project folders (read-only)
+    cap_add: [DAC_READ_SEARCH]       # read the agent's 0700 project folders; nothing else
+    networks: [deploynet, apps]
+    mem_limit: 192m
+    pids_limit: 128
+
   # Public domain via Cloudflare Tunnel (outbound only; no open ports). Starts only with COMPOSE_PROFILES=public
   # and CLOUDFLARE_TUNNEL_TOKEN in .env. Public hostname in Cloudflare: https://fridayy.site -> http://friday:4318
   tunnel:
@@ -83,6 +104,8 @@ services:
     pids_limit: 64
 
 networks:
+  deploynet: { internal: true }  # core <-> deployer only
+  apps: { name: friday_apps }    # Friday's hosted apps (+ the deployer for health checks)
   agentnet: { internal: true }   # agent <-> core <-> proxy; nothing here can reach the internet or the host directly
   egress: {}
 
