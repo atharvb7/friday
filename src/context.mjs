@@ -57,6 +57,7 @@ import { Documents } from './documents.mjs';
 import { DmChats } from './dm-chat.mjs';
 import { GoogleAuth, Gmail } from './google.mjs';
 import { OwnerLogin } from './login.mjs';
+import { Users } from './users.mjs';
 import { Questions } from './questions.mjs';
 
 function findDshBin() {
@@ -214,6 +215,8 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.jobs = new Jobs({ store, notifications: ctx.notifications, chat: ctx.chat, bus, settings });
   ctx.policy = new Policy({ settings, bus });
   ctx.approvals = new Approvals({ store, notifications: ctx.notifications, chat: ctx.chat, bus, audit: ctx.audit });
+  ctx.users = new Users({ store, approvals: ctx.approvals, bus });
+  ctx.auth.memberActive = (id) => ctx.users.get(id)?.status === 'approved';
   ctx.proactive = new Proactive({
     store, notifications: ctx.notifications, jobs: ctx.jobs, ai, memory, settings, bus, dataDir,
     agentReady: () => ctx.dshAdapter.status().ready,

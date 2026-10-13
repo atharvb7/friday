@@ -87,6 +87,13 @@ function bodyReader(req) {
   };
 }
 
+// What an approved member (someone else's account) may call: their own chats, files and voice. Nothing else.
+const MEMBER_ROUTES = [
+  ['GET', /^\/v1\/auth\/whoami$/], ['GET', /^\/v1\/chats$/], ['GET', /^\/v1\/chat\/[a-f0-9-]+$/], ['DELETE', /^\/v1\/chat\/[a-f0-9-]+$/], ['PATCH', /^\/v1\/chat\/[a-f0-9-]+$/],
+  ['POST', /^\/v1\/chat$/], ['POST', /^\/v1\/files$/], ['GET', /^\/v1\/files\/[a-f0-9-]{36}$/], ['GET', /^\/v1\/voice\/status$/], ['POST', /^\/v1\/voice\/(transcribe|speak)$/], ['GET', /^\/v1\/events$/],
+];
+const memberAllowed = (method, path) => MEMBER_ROUTES.some(([m, re]) => m === method && re.test(path));
+
 // Public-internet abuse control: wrong logins per real client IP -> 1 hour block.
 const PUBLIC_FAIL_MAX = 10, PUBLIC_FAIL_WINDOW = 15 * 60_000, PUBLIC_BLOCK_MS = 60 * 60_000;
 const publicFails = new Map(); // ip -> { n, start, blockedUntil }
@@ -111,16 +118,35 @@ const handler = async (req, res) => {
   }
   if (serveStatic(req, res, url.pathname)) return;
   if (req.method === 'GET' && url.pathname === '/v1/auth/mode') { const ls = ctx.login.status(); return send(res, 200, { public: isPublic, totpActive: ctx.auth.totpActive(), password: isPublic && ls.password, google: isPublic && ls.google && Boolean(ls.googleEmail) }); }
-  // ---- owner sign-in on the public site: email + password, or Google; both end in a browser session ----
+  // ---- sign-in on the public site: owner (email + password OR authenticator code; Google), and approved members ----
   const OWNER = { kind: 'owner', id: 'owner', name: 'owner', scopes: ['read', 'chat', 'tasks', 'approve', 'node', 'guest', 'admin'] };
-  const startSession = (b) => { const s = ctx.auth.createSession(OWNER, { ip: clientIp, userAgent: req.headers['user-agent'], days: b.remember === false ? 1 : 30 }); return send(res, 201, { token: s.token, expires_at: s.expires_at }); };
+  const memberPrincipal = (u) => ({ kind: 'member', id: u.id, name: u.name, scopes: ['member'] });
+  const startSession = (b, who = OWNER) => { const s = ctx.auth.createSession(who, { ip: clientIp, userAgent: req.headers['user-agent'], days: b.remember === false ? 1 : 30 }); if (who.kind === 'member') ctx.users.touchLogin(who.id); return send(res, 201, { token: s.token, expires_at: s.expires_at }); };
+  const memberGate = (u) => (u.status === 'approved' ? null : u.status === 'pending' ? 'Your account is waiting for approval — you\'ll be able to sign in once it\'s approved.' : 'This account can\'t sign in.');
   if (isPublic && req.method === 'POST' && url.pathname === '/v1/auth/login') {
     let b = {}; try { b = await bodyReader(req)(); } catch { return send(res, 400, { error: 'bad_request' }); }
-    if (!ctx.login.checkPassword(b.email, b.password)) { publicFail(clientIp); return send(res, 401, { error: 'bad_credentials' }); }
-    if (!ctx.auth.totpActive()) return send(res, 403, { error: 'totp_not_set_up', message: 'Set up the authenticator from your private (Tailscale) Friday first.' });
-    if (!ctx.auth.checkTotp(String(b.code ?? ''))) { publicFail(clientIp); return send(res, 401, { error: 'bad_code' }); }
-    try { ctx.audit.append('auth', 'session.created', { method: 'password', ip: clientIp }); } catch { /* best effort */ }
-    return startSession(b);
+    const email = String(b.email ?? '').trim().toLowerCase();
+    const ownerEmail = ctx.login.ownerEmail();
+    if (ownerEmail && email === ownerEmail) { // owner: password OR a fresh authenticator code
+      // exactly one method per attempt: the password if one was typed, otherwise the authenticator code
+      const viaPassword = b.password ? ctx.login.checkPassword(email, b.password) : false;
+      const viaCode = !b.password && b.code && ctx.auth.totpActive() ? ctx.auth.checkTotp(String(b.code)) : false;
+      if (!viaPassword && !viaCode) { publicFail(clientIp); return send(res, 401, { error: 'bad_credentials' }); }
+      try { ctx.audit.append('auth', 'session.created', { method: viaPassword ? 'password' : 'email+code', ip: clientIp }); } catch { /* best effort */ }
+      return startSession(b);
+    }
+    const u = b.password ? ctx.users.checkPassword(email, b.password) : (ctx.users.checkPassword('', ''), null);
+    if (!u) { publicFail(clientIp); return send(res, 401, { error: 'bad_credentials' }); }
+    const gate = memberGate(u); if (gate) return send(res, 403, { error: 'not_approved', message: gate });
+    return startSession(b, memberPrincipal(u));
+  }
+  // Ask for an account (email + password). The owner gets an approval card; nothing works until it is approved.
+  if (isPublic && req.method === 'POST' && url.pathname === '/v1/auth/signup') {
+    if (limited(`signup:${clientIp}`, 3)) return send(res, 429, { error: 'rate_limited', message: 'Too many sign-up attempts — try again later.' });
+    let b = {}; try { b = await bodyReader(req)(); } catch { return send(res, 400, { error: 'bad_request' }); }
+    if (String(b.email ?? '').trim().toLowerCase() === ctx.login.ownerEmail()) return send(res, 409, { error: 'exists', message: 'An account with this email already exists.' });
+    try { ctx.users.signupPassword(b); return send(res, 202, { pending: true, message: 'Request sent! You can sign in as soon as it\'s approved.' }); }
+    catch (e) { return send(res, 400, { error: 'invalid', message: e.message }); }
   }
   if (isPublic && req.method === 'GET' && url.pathname === '/oauth/google/login') {
     try { res.writeHead(302, { Location: ctx.login.googleStart(), 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); return res.end(); }
@@ -128,8 +154,17 @@ const handler = async (req, res) => {
   }
   if (isPublic && req.method === 'GET' && url.pathname === '/oauth/google/login/callback') {
     const back = (frag) => { res.writeHead(302, { Location: `/#${frag}`, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); res.end(); };
-    try { const h = await ctx.login.googleFinish({ code: url.searchParams.get('code'), state: url.searchParams.get('state'), error: url.searchParams.get('error') }); return back(`login=${h.handoff}${h.needsTotp ? '&totp=1' : ''}`); }
-    catch (e) { publicFail(clientIp); return back(`login_error=${encodeURIComponent(String(e.message).slice(0, 120))}`); }
+    try {
+      const r = await ctx.login.googleFinish({ code: url.searchParams.get('code'), state: url.searchParams.get('state'), error: url.searchParams.get('error') });
+      if (r.member) { // not the owner: sign in an approved member, or file an account request
+        const u = ctx.users.fromGoogle(r.member);
+        const gate = memberGate(u);
+        if (gate) return back(`login_error=${encodeURIComponent(gate)}`);
+        const h = ctx.login.handoff({ method: 'google', email: u.email, needsTotp: false, kind: 'member', userId: u.id, name: u.name });
+        return back(`login=${h.handoff}`);
+      }
+      return back(`login=${r.handoff}${r.needsTotp ? '&totp=1' : ''}`);
+    } catch (e) { publicFail(clientIp); return back(`login_error=${encodeURIComponent(String(e.message).slice(0, 140))}`); }
   }
   if (isPublic && req.method === 'POST' && url.pathname === '/v1/auth/login/handoff') {
     let b = {}; try { b = await bodyReader(req)(); } catch { return send(res, 400, { error: 'bad_request' }); }
@@ -140,7 +175,8 @@ const handler = async (req, res) => {
       if (!ctx.auth.checkTotp(String(b.code ?? ''))) { publicFail(clientIp); return send(res, 401, { error: 'bad_code' }); }
     }
     ctx.login.takeHandoff(b.handoff);
-    try { ctx.audit.append('auth', 'session.created', { method: h.method, ip: clientIp }); } catch { /* best effort */ }
+    try { ctx.audit.append('auth', 'session.created', { method: h.method, kind: h.kind, ip: clientIp }); } catch { /* best effort */ }
+    if (h.kind === 'member') { const u = ctx.users.get(h.userId); if (!u || memberGate(u)) return send(res, 403, { error: 'not_approved' }); return startSession(b, memberPrincipal(u)); }
     return startSession(b);
   }
   // Internet sign-in: owner/device token + a fresh authenticator code -> a 30-day, revocable browser session.
@@ -173,9 +209,18 @@ const handler = async (req, res) => {
   // On the internet only browser sessions (token + authenticator) are accepted; raw tokens are for the private address.
   if (isPublic && principal.kind !== 'session') return send(res, 401, { error: 'session_required' });
   if (limited(`p:${principal.id}`, 240)) return send(res, 429, { error: 'rate_limited' }, { 'Retry-After': '60' });
+  const isMember = principal.scopes.includes('member');
+  if (isMember) {
+    if (!memberAllowed(req.method, url.pathname)) return send(res, 403, { error: 'not_available_for_your_account' });
+    if (limited(`m:${principal.id}`, 60)) return send(res, 429, { error: 'rate_limited' }, { 'Retry-After': '60' });
+    if (req.method === 'GET' && url.pathname === '/v1/events') // only their own chat updates
+      return openEventStream(req, res, ctx.bus, { principal: principal.id, filter: (e) => ['chat.message', 'chat.deleted'].includes(e.type) && ctx.chat.owns(e.data?.conversationId, principal.userId) });
+    if (req.method === 'GET' && url.pathname.startsWith('/v1/files/')) { const f = ctx.files.get(url.pathname.split('/').pop()); if (!f?.conversation_id || !ctx.chat.owns(f.conversation_id, principal.userId)) return send(res, 404, { error: 'not_found' }); }
+    if (req.method === 'POST' && url.pathname === '/v1/files') { const c = url.searchParams.get('conversation'); if (c && !ctx.chat.owns(c, principal.userId)) return send(res, 404, { error: 'conversation_not_found' }); }
+  }
   const scope = requiredScope(req.method, url.pathname);
   const guestChat = principal.scopes.includes('guest') && req.method === 'POST' && url.pathname === '/v1/chat'; // guests may ONLY chat (as guests)
-  if (!principal.scopes.includes(scope) && !guestChat) return send(res, 403, { error: 'forbidden', needs: scope, ...(isPublic && ['admin', 'node'].includes(scope) ? { hint: 'owner and laptop-node functions only work on the private Tailscale address' } : {}) });
+  if (!isMember && !principal.scopes.includes(scope) && !guestChat) return send(res, 403, { error: 'forbidden', needs: scope, ...(isPublic && ['admin', 'node'].includes(scope) ? { hint: 'owner and laptop-node functions only work on the private Tailscale address' } : {}) });
   // Everyone except the owner on the private address backs consequential actions with a fresh TOTP code.
   if (principal.kind !== 'owner' && req.method !== 'GET' && needsTotp(url.pathname) && ctx.auth.totpActive()
       && !ctx.auth.checkTotp(String(req.headers['x-friday-totp'] ?? ''))) {

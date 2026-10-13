@@ -8,6 +8,13 @@ export function authRoutes(router, ctx) {
   router.get('/v1/devices', () => [200, { devices: auth.listDevices() }]);
   router.get('/v1/sessions', () => [200, { sessions: auth.listSessions() }]);
   router.get('/v1/auth/login-settings', () => [200, ctx.login.status()]);
+  router.get('/v1/users', () => [200, { users: ctx.users.list() }]);
+  router.post('/v1/users/:id([a-f0-9-]+)/status', async ({ params, body }) => {
+    const b = await body();
+    if (!['approved', 'disabled'].includes(b.status)) return [400, { error: 'status must be approved or disabled' }];
+    const ok = ctx.users.setStatus(params.id, b.status); if (ok && b.status === 'disabled') ctx.auth.revokeMemberSessions(params.id);
+    return [ok ? 200 : 404, { ok }];
+  });
   router.post('/v1/auth/password', async ({ body }) => { const b = await body(); try { return [200, ctx.login.setPassword(b.email, b.password)]; } catch (e) { return [400, { error: e.message }]; } });
   router.delete('/v1/auth/password', () => [200, ctx.login.clearPassword()]);
   router.post('/v1/auth/google-login', async ({ body }) => { const b = await body(); try { return [200, ctx.login.setGoogle({ email: b.email, skipTotp: b.skipTotp })]; } catch (e) { return [400, { error: e.message }]; } });

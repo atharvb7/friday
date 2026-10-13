@@ -8,30 +8,34 @@ const QUEUE_AS_TASK = new Set(['coding', 'research', 'browser', 'desktop', 'voic
 export function chatRoutes(router, ctx) {
   const { chat, store, memory, tools, jev, audit, env, bus } = ctx;
 
-  router.get('/v1/chats', () => [200, { conversations: chat.listConversations() }]);
+  const uid = (principal) => principal?.userId ?? null; // members see only their own chats; the owner only theirs
+  router.get('/v1/chats', ({ principal }) => [200, { conversations: chat.listConversations(uid(principal)) }]);
 
-  router.get('/v1/chat/:id([a-f0-9-]+)', ({ params }) => {
+  router.get('/v1/chat/:id([a-f0-9-]+)', ({ params, principal }) => {
+    if (!chat.owns(params.id, uid(principal))) return [404, { error: 'conversation_not_found' }];
     try { return [200, { conversation: chat.getConversation(params.id), messages: chat.listMessages(params.id) }]; }
     catch (error) { return [404, { error: error.message }]; }
   });
 
-  router.delete('/v1/chat/:id([a-f0-9-]+)', ({ params }) => {
+  router.delete('/v1/chat/:id([a-f0-9-]+)', ({ params, principal }) => {
+    if (!chat.owns(params.id, uid(principal))) return [404, { deleted: false }];
     const ok = chat.deleteConversation(params.id);
     if (ok) bus.publish('chat.deleted', { conversationId: params.id });
     return [ok ? 200 : 404, { deleted: ok }];
   });
-  router.add('PATCH', '/v1/chat/:id([a-f0-9-]+)', async ({ params, body }) => {
+  router.add('PATCH', '/v1/chat/:id([a-f0-9-]+)', async ({ params, body, principal }) => {
+    if (!chat.owns(params.id, uid(principal))) return [404, { renamed: false }];
     const b = await body();
     try { const ok = chat.renameConversation(params.id, b.title); return [ok ? 200 : 404, { renamed: ok }]; } catch (e) { return [400, { error: e.message }]; }
   });
 
   // Shared turn logic. `hooks` carries streaming callbacks when the caller wants them.
   async function turn(args) {
-    if (args.speaker === 'guest') return turnInner(args);
+    if (args.speaker === 'guest' || args.speaker === 'member') return turnInner(args);
     ctx.companion.chatStart();
     try { return await turnInner(args); } finally { ctx.companion.chatEnd(); }
   }
-  async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner', channel = 'chat', attachments = [] }) {
+  async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner', channel = 'chat', attachments = [], member = null }) {
     if (attachments.length) ctx.files?.claim(attachments, convo.id);
     chat.addMessage(convo.id, 'user', text, { attachments });
     let replyFiles = [];
@@ -42,10 +46,10 @@ export function chatRoutes(router, ctx) {
     let model = null;
     let toolsUsed = [];
     try {
-      if (speaker === 'guest' && brain.name !== 'friday-brain') {
+      if ((speaker === 'guest' || speaker === 'member') && brain.name !== 'friday-brain') { // never fall back to the owner's local memory/files
         reply = 'I’m offline right now — try me again in a bit.';
       } else if (brain.name === 'friday-brain') {
-        const out = await brain.adapter.respond({ conversationId: convo.id, text, signal, speaker, channel, ...hooks });
+        const out = await brain.adapter.respond({ conversationId: convo.id, text, signal, speaker, channel, memberName: member?.name ?? null, userId: member?.userId ?? null, ...hooks });
         reply = out.reply; model = out.model; toolsUsed = out.toolsUsed; replyFiles = out.attachments ?? [];
       } else if (route.riskScore >= 3) {
         reply = (await answerLocal({ ...route, needsApproval: true }, text, { memory, tools })).text;
@@ -63,7 +67,7 @@ export function chatRoutes(router, ctx) {
       }
     } catch (error) {
       if (signal?.aborted) throw error;
-      if (brain.name === 'friday-brain' && DETERMINISTIC_LOCAL.has(route.intent) && route.riskScore < 3) {
+      if (speaker === 'owner' && brain.name === 'friday-brain' && DETERMINISTIC_LOCAL.has(route.intent) && route.riskScore < 3) {
         reply = `(My cloud brain is unreachable, so this is the offline answer.)\n${(await answerLocal(route, text, { memory, tools })).text}`;
       } else {
         reply = `My brain providers aren’t answering right now (${String(error.message).slice(0, 160)}). Your message is saved. Memory, files and tasks still work — try again in a moment.`;
@@ -87,14 +91,16 @@ export function chatRoutes(router, ctx) {
       return { convo: existing ?? chat.createConversation(title), text: b.message.trim(), speaker: 'guest' };
     }
     // Files the user attached (uploaded first via POST /v1/files); only known file ids are accepted.
-    const attachments = Array.isArray(b.attachments) ? b.attachments.filter((id) => ctx.files?.get(id)).slice(0, 10) : [];
+    const me = uid(principal);
+    const attachments = Array.isArray(b.attachments) ? b.attachments.filter((id) => { const f = ctx.files?.get(id); return f && (!f.conversation_id || chat.owns(f.conversation_id, me)); }).slice(0, 10) : [];
+    const speaker = me ? 'member' : 'owner';
     if (typeof b.message !== 'string' || b.message.length > 20000 || (!b.message.trim() && !attachments.length)) return { error: [400, { error: 'invalid_message' }] };
     const text = b.message.trim() || (attachments.length ? '(sent you a file)' : '');
     if (b.conversationId !== undefined && b.conversationId !== null) {
-      const convo = chat.getConversation(b.conversationId);
-      return convo ? { convo, text, attachments, channel: b.channel === 'voice' ? 'voice' : 'chat' } : { error: [404, { error: 'conversation_not_found' }] };
+      const convo = chat.owns(b.conversationId, me) ? chat.getConversation(b.conversationId) : null;
+      return convo ? { convo, text, attachments, speaker, member: principal, channel: b.channel === 'voice' ? 'voice' : 'chat' } : { error: [404, { error: 'conversation_not_found' }] };
     }
-    return { convo: chat.createConversation(text.slice(0, 60)), text, attachments, channel: b.channel === 'voice' ? 'voice' : 'chat' };
+    return { convo: chat.createConversation(text.slice(0, 60), me), text, attachments, speaker, member: principal, channel: b.channel === 'voice' ? 'voice' : 'chat' };
   }
 
   // One-shot text turn for non-browser clients (voice devices): returns just the reply.
@@ -107,6 +113,7 @@ export function chatRoutes(router, ctx) {
     const b = await body();
     const opened = openConversation(b, principal);
     if (opened.error) return opened.error;
+    if (opened.speaker === 'member' && !ctx.users.takeMessage(principal.userId)) return [429, { error: 'daily_limit', message: 'You’ve reached today’s message limit. Come back tomorrow!' }];
     if (b.stream !== true) return [200, await turn(opened)];
 
     // Streaming: SSE frames {meta|delta|thinking|tool|done|error}.

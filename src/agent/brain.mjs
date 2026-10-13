@@ -1,6 +1,8 @@
 // Conversational brain: persona + retrieved context + tool-calling loop.
 // Heavy/long work is handed to the background agent via task_create.
-import { buildSystemPrompt, buildGuestPrompt, normalizePersonality } from '../personality.mjs';
+import { buildSystemPrompt, buildGuestPrompt, buildMemberPrompt, normalizePersonality } from '../personality.mjs';
+// Approved members (other people) only get general-purpose tools — nothing that touches the owner's world.
+export const MEMBER_TOOLS = new Set(['web_search', 'web_fetch', 'time_now', 'document_create', 'document_read', 'document_edit', 'files_list', 'file_share']);
 import { pickRegister } from '../mood.mjs';
 
 const MAX_STEPS = 10; // room for a few search -> read -> re-search rounds
@@ -42,15 +44,16 @@ export class Brain {
 
   personality() { return normalizePersonality(this.settings.get('personality', {})); }
 
-  async respond({ conversationId, text, onDelta = null, onThinking = null, onTool = null, signal = null, speaker = 'owner', channel = 'chat' }) {
+  async respond({ conversationId, text, onDelta = null, onThinking = null, onTool = null, signal = null, speaker = 'owner', channel = 'chat', memberName = null, userId = null }) {
     if (speaker === 'guest') return this.#respondGuest({ conversationId, onDelta, signal });
+    const member = speaker === 'member';
     const personality = this.personality();
-    this.mood?.touch?.();
+    if (!member) this.mood?.touch?.();
     const moodNow = this.mood?.current({ moodiness: personality.moodiness }) ?? null;
-    const ctxInfo = await this.contextBuilder.build({ text });
-    const system = `${buildSystemPrompt({ personality, mood: moodNow, channel, habitsNote: this.habits?.cooldownNote() ?? '', register: pickRegister({ personality, mood: moodNow?.mood }), autoMemory: this.settings.get('auto_memory', true) !== false, userName: this.settings.get('user_name', null), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}${this.skills?.index() ? `\n\nSkills you can load with skill_load when a request matches (do not load unless needed):\n${this.skills.index()}` : ''}${ctxInfo.text ? `\n\n${ctxInfo.text}` : ''}`;
+    const ctxInfo = member ? { text: '', memoryIds: [], usedVector: false } : await this.contextBuilder.build({ text }); // members never see the owner's memories/tasks
+    const system = member ? buildMemberPrompt({ ownerName: this.settings.get('user_name', null), memberName, channel, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : `${buildSystemPrompt({ personality, mood: moodNow, channel, habitsNote: this.habits?.cooldownNote() ?? '', register: pickRegister({ personality, mood: moodNow?.mood }), autoMemory: this.settings.get('auto_memory', true) !== false, userName: this.settings.get('user_name', null), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}${this.skills?.index() ? `\n\nSkills you can load with skill_load when a request matches (do not load unless needed):\n${this.skills.index()}` : ''}${ctxInfo.text ? `\n\n${ctxInfo.text}` : ''}`;
     const messages = [{ role: 'system', content: system }, ...this.chat.historyForProvider(conversationId, 20)];
-    const schemas = this.fridayTools.schemas();
+    const schemas = member ? this.fridayTools.schemas().filter((s) => MEMBER_TOOLS.has(s.function?.name ?? s.name)) : this.fridayTools.schemas();
     const toolsUsed = [];
     const attachments = []; // files tools produced this turn (documents) — attached to the reply
     let calls = 0;
@@ -78,7 +81,7 @@ export class Brain {
       messages.push({ role: 'assistant', content: last.content || null, tool_calls: last.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.argumentsText || '{}' } })) });
       for (const call of last.toolCalls) {
         calls += 1;
-        const result = calls > MAX_TOOL_CALLS ? { error: 'tool_call_limit_reached' } : await this.#runTool(call, conversationId);
+        const result = calls > MAX_TOOL_CALLS ? { error: 'tool_call_limit_reached' } : member && !MEMBER_TOOLS.has(call.name) ? { error: 'not_available' } : await this.#runTool(call, conversationId, member ? { member: true, userId } : {});
         if (Array.isArray(result?._attach)) { attachments.push(...result._attach); delete result._attach; result.attached_to_your_reply = true; }
         toolsUsed.push({ name: call.name, ok: !result.error });
         onTool?.({ name: call.name, ok: !result.error });
@@ -93,7 +96,7 @@ export class Brain {
       last = { ...last, content: 'Hold on — I said I’d do that, but I didn’t actually run anything, so nothing is queued and no approval was sent. Tell me again and I’ll do it properly, or say what you want changed.' };
     }
     const reply = channel === 'voice' ? last.content.trim() : stripStageDirections(last.content);
-    this.habits?.record(reply);
+    if (!member) this.habits?.record(reply);
     return { reply, model: last.model, provider: last.provider, toolsUsed, attachments: [...new Set(attachments)], usage: last.usage, usedVector: ctxInfo.usedVector, memoryIds: ctxInfo.memoryIds };
   }
 
@@ -105,7 +108,7 @@ export class Brain {
     return { reply: out.content.trim(), model: out.model, provider: out.provider, toolsUsed: [], usage: out.usage, usedVector: false, memoryIds: [] };
   }
 
-  async #runTool(call, conversationId) {
+  async #runTool(call, conversationId, who = {}) {
     const tool = this.fridayTools.get(call.name);
     this.bus?.publish('tool.called', { name: call.name, conversationId });
     if (!tool) return { error: 'unknown_tool' };
@@ -124,7 +127,7 @@ export class Brain {
       }
     }
     try {
-      const out = await tool.run(call.args, { conversationId });
+      const out = await tool.run(call.args, { conversationId, ...who });
       try { this.audit?.append(conversationId, 'tool.run', { tool: call.name }); } catch {}
       return out ?? { ok: true };
     } catch (error) {

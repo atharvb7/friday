@@ -20,7 +20,7 @@ test('owner login: password rules, scrypt check, email must match, nothing store
   l.clearPassword(); assert.equal(l.checkPassword('me@x.com', 'a-good-password-1'), false);
 });
 
-test('owner login: Google allows only the allow-listed verified email; handoff is single-use and short-lived', async () => {
+test('owner login: Google — the allow-listed owner gets a handoff (no code by default), other verified people become member sign-ins', async () => {
   let userinfo = { email: 'bhosaleatharv2@gmail.com', email_verified: true };
   const fetchImpl = async (url) => ({ ok: true, json: async () => (String(url).includes('/token') ? { access_token: 'at' } : userinfo) });
   let now = 1_000_000;
@@ -32,16 +32,16 @@ test('owner login: Google allows only the allow-listed verified email; handoff i
   assert.equal(u.searchParams.get('scope'), 'openid email profile');
   await assert.rejects(() => l.googleFinish({ code: 'c', state: 'forged' }), /expired/);
   const h = await l.googleFinish({ code: 'c', state: u.searchParams.get('state') });
-  assert.equal(h.needsTotp, true, 'authenticator still required by default');
+  assert.equal(h.needsTotp, false, 'owner Google sign-in skips the code by default (owner asked for it)');
   assert.equal(l.takeHandoff(h.handoff).email, 'bhosaleatharv2@gmail.com');
   assert.equal(l.takeHandoff(h.handoff), null, 'single use');
-  userinfo = { email: 'someone@gmail.com', email_verified: true };
-  await assert.rejects(() => l.googleFinish({ code: 'c', state: new URL(l.googleStart()).searchParams.get('state') }), /not allowed/);
+  userinfo = { email: 'someone@gmail.com', email_verified: true, name: 'Someone' };
+  assert.deepEqual(await l.googleFinish({ code: 'c', state: new URL(l.googleStart()).searchParams.get('state') }), { member: { email: 'someone@gmail.com', name: 'Someone' } });
   userinfo = { email: 'bhosaleatharv2@gmail.com', email_verified: false };
-  await assert.rejects(() => l.googleFinish({ code: 'c', state: new URL(l.googleStart()).searchParams.get('state') }), /not allowed/);
+  await assert.rejects(() => l.googleFinish({ code: 'c', state: new URL(l.googleStart()).searchParams.get('state') }), /did not confirm/);
   userinfo = { email: 'bhosaleatharv2@gmail.com', email_verified: true };
-  l.setGoogle({ skipTotp: true });
+  l.setGoogle({ skipTotp: false });
+  assert.equal((await l.googleFinish({ code: 'c', state: new URL(l.googleStart()).searchParams.get('state') })).needsTotp, true, 'owner can turn the code back on');
   const h2 = await l.googleFinish({ code: 'c', state: new URL(l.googleStart()).searchParams.get('state') });
-  assert.equal(h2.needsTotp, false);
   now += 4 * 60_000; assert.equal(l.peekHandoff(h2.handoff), null, 'expires after 3 minutes');
 });

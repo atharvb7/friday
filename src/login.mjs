@@ -1,6 +1,6 @@
 // Owner sign-in for the public site: email + password (scrypt) and "Sign in with Google" (OpenID, allow-listed
-// address only). Both end in the same revocable browser session as token sign-in, and both still ask for the
-// authenticator code unless the owner explicitly trusts Google's own 2-step verification.
+// address only). Both end in the same revocable browser session as token sign-in. Owner email sign-in takes the
+// password OR the authenticator code; Google sign-in skips Friday's code when the owner trusts Google's 2-step.
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 
 const KEY = 'owner_login';
@@ -20,8 +20,9 @@ export class OwnerLogin {
 
   status() {
     const c = this.#cfg();
-    return { email: c.email ?? null, password: Boolean(c.hash), googleEmail: c.googleEmail ?? c.email ?? null, googleSkipTotp: c.googleSkipTotp === true, google: this.googleReady() };
+    return { email: c.email ?? null, password: Boolean(c.hash), googleEmail: c.googleEmail ?? c.email ?? null, googleSkipTotp: c.googleSkipTotp !== false, google: this.googleReady() };
   }
+  ownerEmail() { const c = this.#cfg(); return c.email ?? c.googleEmail ?? null; }
   googleReady() { return Boolean(this.google?.clientId && this.google?.clientSecret && this.redirectUri); }
 
   setPassword(email, password) {
@@ -73,16 +74,18 @@ export class OwnerLogin {
     if (!r.ok || !tok.access_token) throw new Error('Google did not complete the sign-in');
     const u = await this.fetchImpl('https://openidconnect.googleapis.com/v1/userinfo', { headers: { Authorization: `Bearer ${tok.access_token}` }, signal: AbortSignal.timeout(20_000) }).then((x) => x.json()).catch(() => ({}));
     const email = normEmail(u.email);
+    if (!email || u.email_verified !== true) throw new Error('Google did not confirm this email address');
     const allowed = this.status().googleEmail;
-    if (!email || u.email_verified !== true || !allowed || email !== allowed) throw new Error('This Google account is not allowed to sign in to Friday');
-    return this.#handoff('google', email, !this.status().googleSkipTotp);
+    if (allowed && email === allowed) return this.handoff({ method: 'google', email, needsTotp: !this.status().googleSkipTotp, kind: 'owner' });
+    return { member: { email, name: String(u.name ?? '').slice(0, 60) || email.split('@')[0] } }; // someone else: account request / member sign-in
+
   }
 
   // A short-lived, single-use code the browser trades for a session (plus the authenticator code when required).
-  #handoff(method, email, needsTotp) {
+  handoff({ method, email, needsTotp, kind = 'owner', userId = null, name = null }) {
     for (const [k, v] of this.handoffs) if (v.expires < this.now()) this.handoffs.delete(k);
     const code = b64url(randomBytes(24));
-    this.handoffs.set(code, { method, email, needsTotp, expires: this.now() + 3 * 60_000 });
+    this.handoffs.set(code, { method, email, needsTotp, kind, userId, name, expires: this.now() + 3 * 60_000 });
     return { handoff: code, needsTotp };
   }
   peekHandoff(code) { const h = this.handoffs.get(String(code ?? '')); return h && h.expires >= this.now() ? h : null; }

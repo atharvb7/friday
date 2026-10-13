@@ -71,14 +71,31 @@ async function showLogin(message = '', presetToken = '') {
   }
 
   if (mode.google) card.append(h('a', { class: 'btn google full', href: '/oauth/google/login' }, h('span', { class: 'g' }, 'G'), 'Continue with Google'));
-  if (mode.google && mode.password) card.append(h('div', { class: 'or' }, h('span', {}, 'or')));
-  if (mode.password) {
+  if (mode.google) card.append(h('div', { class: 'or' }, h('span', {}, 'or')));
+  { // email sign-in: password, or (owner only) the authenticator code instead
+    let useCode = false;
     const email = h('input', { type: 'email', autocomplete: 'username', placeholder: 'you@example.com', 'aria-label': 'Email', required: true });
-    const pass = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'Password', 'aria-label': 'Password', required: true });
-    const code = codeInput(); code.required = true;
-    card.append(h('form', { class: 'stack', onsubmit: async (e) => { e.preventDefault(); await post('/v1/auth/login', { email: email.value, password: pass.value, code: code.value.replace(/\D/g, '') }); } },
-      h('label', {}, 'Email'), email, h('label', {}, 'Password'), pass, h('label', {}, 'Authenticator code'), code, rememberRow, h('button', { class: 'btn primary full', type: 'submit' }, 'Sign in')));
+    const pass = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'Password', 'aria-label': 'Password' });
+    const code = codeInput(); code.hidden = true;
+    const secretLabel = h('label', {}, 'Password');
+    const toggle = h('button', { class: 'linkish', type: 'button', onclick: () => { useCode = !useCode; pass.hidden = useCode; code.hidden = !useCode; secretLabel.textContent = useCode ? 'Authenticator code' : 'Password'; toggle.textContent = useCode ? 'Use my password instead' : 'Use authenticator code instead'; (useCode ? code : pass).focus(); } }, 'Use authenticator code instead');
+    card.append(h('form', { class: 'stack', onsubmit: async (e) => { e.preventDefault(); await post('/v1/auth/login', useCode ? { email: email.value, code: code.value.replace(/\D/g, '') } : { email: email.value, password: pass.value }); } },
+      h('label', {}, 'Email'), email, secretLabel, pass, code, toggle, rememberRow, h('button', { class: 'btn primary full', type: 'submit' }, 'Sign in')));
     (presetToken ? null : email)?.focus();
+  }
+  // New here? Ask for an account — the owner approves it.
+  {
+    const nm = h('input', { type: 'text', autocomplete: 'name', placeholder: 'Your name', required: true });
+    const em = h('input', { type: 'email', autocomplete: 'email', placeholder: 'you@example.com', required: true });
+    const pw = h('input', { type: 'password', autocomplete: 'new-password', placeholder: 'At least 10 characters', minlength: 10, required: true });
+    const done = h('p', { class: 'ok-msg', hidden: true });
+    const form = h('form', { class: 'stack', onsubmit: async (e) => { e.preventDefault();
+      const r = await fetch('/v1/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nm.value, email: em.value, password: pw.value }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { fail(j.message ?? `Couldn’t send the request (${j.error ?? r.status}).`); return; }
+      form.hidden = true; done.hidden = false; done.textContent = `🎉 ${j.message}`; } },
+      h('label', {}, 'Name'), nm, h('label', {}, 'Email'), em, h('label', {}, 'Password'), pw, h('button', { class: 'btn full', type: 'submit' }, 'Request access'));
+    card.append(h('details', { class: 'token-login' }, h('summary', {}, 'New here? Create an account'), h('p', { class: 'muted small' }, 'Accounts are approved by Friday’s owner. You can also just use “Continue with Google”.'), form, done));
   }
   // Token sign-in stays available (device pairing QR codes use it).
   const tok = h('input', { type: 'password', autocomplete: 'off', placeholder: 'Access or device token', 'aria-label': 'Access token', value: presetToken });
@@ -99,10 +116,10 @@ function openSheet() {
   const item = (icon, label, onclick, cls = '') => h('button', { class: `sheet-item ${cls}`, onclick: () => { closeSheet(); onclick(); } }, svgIcon(icon), h('span', {}, label));
   clear(sheet.panel).append(
     h('div', { class: 'sheet-grab' }),
-    h('div', { class: 'sheet-grid' }, ...Object.keys(VIEWS).filter((v) => !PRIMARY.includes(v)).map((v) => item(v, LABELS[v], () => go(v), app.current === v ? 'on' : ''))),
+    app.member ? h('p', { class: 'muted', style: 'text-align:center;margin:4px 0 10px' }, `Signed in as ${app.me?.name ?? 'you'}`) : h('div', { class: 'sheet-grid' }, ...Object.keys(VIEWS).filter((v) => !PRIMARY.includes(v)).map((v) => item(v, LABELS[v], () => go(v), app.current === v ? 'on' : ''))),
     h('div', { class: 'sheet-list' },
       item(isLight() ? 'moon' : 'sun', isLight() ? 'Dark mode' : 'Light mode', toggleTheme),
-      item('power', app.status?.emergencyStopped ? 'Resume Friday' : 'Emergency stop', emergency, 'danger'),
+      app.member ? null : item('power', app.status?.emergencyStopped ? 'Resume Friday' : 'Emergency stop', emergency, 'danger'),
       item('logout', 'Sign out', () => { if (confirm('Sign out of Friday on this device?')) app.signOut(); })));
   sheet.hidden = false; requestAnimationFrame(() => sheet.classList.add('open'));
 }
@@ -115,7 +132,7 @@ function buildShell() {
   linkDot = h('span', { class: 'dot' }); linkText = h('span', {}, 'connecting');
   stopBtn = h('button', { class: 'btn quiet icon stop-btn', title: 'Emergency stop: cancel all agents and revoke elevated autonomy', 'aria-label': 'Emergency stop', onclick: emergency }, svgIcon('power', 18), h('span', { class: 'hide-mobile' }, 'Stop'));
   const nav = h('nav', { class: 'sidebar', 'aria-label': 'Sections' }, h('div', { class: 'brand' }, h('div', { class: 'orb idle' }), 'Friday'));
-  for (const name of Object.keys(VIEWS)) {
+  for (const name of Object.keys(VIEWS).filter((v) => !app.member || v === 'chat')) {
     const badge = h('span', { class: 'badge', hidden: true });
     const b = h('button', { class: `nav${PRIMARY.includes(name) ? ' primary' : ''}`, 'data-view': name, onclick: () => go(name), 'aria-label': LABELS[name] }, h('span', { class: 'ico' }, svgIcon(name), badge), h('span', { class: 'lbl' }, LABELS[name]));
     navEls[name] = { b, badge };
@@ -139,7 +156,7 @@ app.setHeadSlot = (...els) => { clear(headSlot); headSlot.append(...els); };
 app.setHeadRight = (...els) => { clear(headRight); headRight.append(...els); };
 
 function go(name) {
-  if (!VIEWS[name]) name = 'chat';
+  if (!VIEWS[name] || (app.member && name !== 'chat')) name = 'chat';
   app.view?.destroy?.();
   app.current = name;
   try { history.replaceState(null, '', `#${name}`); } catch { /* ignore */ }
@@ -153,6 +170,7 @@ function go(name) {
 }
 
 async function refresh() {
+  if (app.member) { paint(); return; } // members only have their chat
   try {
     const [s, n, a] = await Promise.all([api('/v1/status'), api('/v1/notifications?unread=1'), api('/v1/approvals')]);
     app.status = s; app.unread = n.unread; app.pendingApprovals = a.approvals.length;
@@ -168,9 +186,9 @@ function paint() {
   stoppedBar.hidden = !s?.emergencyStopped;
   linkDot.className = `dot ${app.link === 'online' ? 'on' : 'bad'}`; linkText.textContent = app.link === 'online' ? `${s?.brain === 'friday-brain' ? 'brain online' : 'local mode'}${s?.nodes?.length ? ' · laptop' : ''}` : 'reconnecting…';
   const badge = app.unread + app.pendingApprovals;
-  navEls.inbox.badge.hidden = !badge; navEls.inbox.badge.textContent = badge > 9 ? '9+' : badge;
+  if (navEls.inbox) navEls.inbox.badge.hidden = !badge; if (navEls.inbox) navEls.inbox.badge.textContent = badge > 9 ? '9+' : badge;
   document.title = badge ? `(${badge}) Friday` : 'Friday';
-  stopBtn.hidden = !s || (app.me && !app.me.scopes.includes('read'));
+  stopBtn.hidden = !s || app.member || (app.me && !app.me.scopes.includes('read'));
 }
 
 async function emergency() {
@@ -200,7 +218,7 @@ app.paint = paint;
 
 async function boot() {
   const who = await api('/v1/auth/whoami');
-  app.me = who.principal; app.totpActive = who.totpActive;
+  app.me = who.principal; app.totpActive = who.totpActive; app.member = who.principal.scopes.includes('member');
   buildShell();
   app.stopEvents?.();
   app.stopEvents = startEvents(onEvent, (st) => { app.link = st; if (st === 'unauthorized') signOut('Session expired.'); else { paint(); if (st === 'online') refresh(); } });
