@@ -33,6 +33,9 @@ if (!['127.0.0.1', '::1', 'localhost'].includes(host) && process.env.FRIDAY_ALLO
   process.exit(2);
 }
 const port = Number(process.env.FRIDAY_PORT ?? 4317);
+// Optional PUBLIC listener for a Cloudflare Tunnel (e.g. https://fridayy.site). It is never published on the host:
+// only the cloudflared container reaches it, so anything arriving here is internet traffic and gets the strict rules.
+const publicPort = Number(process.env.FRIDAY_PUBLIC_PORT ?? 0);
 const ctx = createContext({ appRoot });
 ctx.start();
 
@@ -84,9 +87,41 @@ function bodyReader(req) {
   };
 }
 
-const server = createServer(async (req, res) => {
+// Public-internet abuse control: wrong logins per real client IP -> 1 hour block.
+const PUBLIC_FAIL_MAX = 10, PUBLIC_FAIL_WINDOW = 15 * 60_000, PUBLIC_BLOCK_MS = 60 * 60_000;
+const publicFails = new Map(); // ip -> { n, start, blockedUntil }
+const publicBlocked = (ip) => (publicFails.get(ip)?.blockedUntil ?? 0) > Date.now();
+function publicFail(ip) {
+  const now = Date.now(); const e = publicFails.get(ip);
+  const cur = !e || now - e.start > PUBLIC_FAIL_WINDOW ? { n: 0, start: now, blockedUntil: e?.blockedUntil ?? 0 } : e;
+  cur.n += 1; if (cur.n >= PUBLIC_FAIL_MAX) { cur.blockedUntil = now + PUBLIC_BLOCK_MS; cur.n = 0; cur.start = now; }
+  publicFails.set(ip, cur);
+}
+setInterval(() => { const now = Date.now(); for (const [k, v] of publicFails) if (v.blockedUntil < now && now - v.start > PUBLIC_FAIL_WINDOW) publicFails.delete(k); }, 600_000).unref();
+
+const handler = async (req, res) => {
   const url = new URL(req.url, `http://${host}:${port}`);
+  const isPublic = Boolean(publicPort) && req.socket.localPort === publicPort;
+  const clientIp = isPublic ? String(req.headers['cf-connecting-ip'] ?? req.socket.remoteAddress ?? 'unknown').slice(0, 64) : (req.socket.remoteAddress ?? 'unknown');
+  if (isPublic) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    if (url.pathname === '/robots.txt') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('User-agent: *\nDisallow: /\n'); }
+    if (publicBlocked(clientIp)) return send(res, 429, { error: 'too_many_failed_logins', retry: 'later' }, { 'Retry-After': '3600' });
+  }
   if (serveStatic(req, res, url.pathname)) return;
+  if (req.method === 'GET' && url.pathname === '/v1/auth/mode') return send(res, 200, { public: isPublic, totpActive: ctx.auth.totpActive() });
+  // Internet sign-in: owner/device token + a fresh authenticator code -> a 30-day, revocable browser session.
+  if (isPublic && req.method === 'POST' && url.pathname === '/v1/auth/session') {
+    let b = {}; try { b = await bodyReader(req)(); } catch { return send(res, 400, { error: 'bad_request' }); }
+    const who = ctx.auth.authenticate(String(b.token ?? ''));
+    if (!who || who.kind === 'session' || (who.kind === 'device' && who.scopes.includes('node'))) { publicFail(clientIp); return send(res, 401, { error: 'unauthorized' }); }
+    if (!ctx.auth.totpActive()) return send(res, 403, { error: 'totp_not_set_up', message: 'Set up the authenticator from your private (Tailscale) Friday first — internet sign-in needs it.' });
+    if (!ctx.auth.checkTotp(String(b.code ?? ''))) { publicFail(clientIp); return send(res, 401, { error: 'bad_code' }); }
+    const s = ctx.auth.createSession(who, { ip: clientIp, userAgent: req.headers['user-agent'], days: b.remember === false ? 1 : 30 });
+    try { ctx.audit.append('auth', 'session.created', { kind: who.kind, ip: clientIp }); } catch { /* best effort */ }
+    return send(res, 201, { token: s.token, expires_at: s.expires_at });
+  }
   if (req.method === 'GET' && url.pathname === '/oauth/google/callback') { // browser redirect from Google: protected by the single-use state
     const page = (title, msg) => { const b = `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width"><title>${title}</title><body style="font-family:system-ui;max-width:520px;margin:15vh auto;padding:0 16px;text-align:center"><h2>${title}</h2><p>${msg}</p><p><a href="/">Back to Friday</a></p>`; res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'", 'Referrer-Policy': 'no-referrer' }); res.end(b); };
     const esc = (s) => String(s).replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -97,17 +132,20 @@ const server = createServer(async (req, res) => {
   }
   const bearer = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
   const principal = ctx.auth.authenticate(bearer);
-  const ip = req.socket.remoteAddress ?? 'unknown';
+  const ip = clientIp;
   if (!principal) {
+    if (isPublic) { if (bearer) publicFail(ip); return send(res, 401, { error: 'unauthorized' }); }
     if (limited(`fail:${ip}`, 30)) return send(res, 429, { error: 'rate_limited' }, { 'Retry-After': '60' });
     return send(res, 401, { error: 'unauthorized' });
   }
+  // On the internet only browser sessions (token + authenticator) are accepted; raw tokens are for the private address.
+  if (isPublic && principal.kind !== 'session') return send(res, 401, { error: 'session_required' });
   if (limited(`p:${principal.id}`, 240)) return send(res, 429, { error: 'rate_limited' }, { 'Retry-After': '60' });
   const scope = requiredScope(req.method, url.pathname);
   const guestChat = principal.scopes.includes('guest') && req.method === 'POST' && url.pathname === '/v1/chat'; // guests may ONLY chat (as guests)
-  if (!principal.scopes.includes(scope) && !guestChat) return send(res, 403, { error: 'forbidden', needs: scope });
-  // Devices (phone etc.) must back consequential actions with a fresh TOTP code.
-  if (principal.kind === 'device' && req.method !== 'GET' && needsTotp(url.pathname) && ctx.auth.totpActive()
+  if (!principal.scopes.includes(scope) && !guestChat) return send(res, 403, { error: 'forbidden', needs: scope, ...(isPublic && ['admin', 'node'].includes(scope) ? { hint: 'owner and laptop-node functions only work on the private Tailscale address' } : {}) });
+  // Everyone except the owner on the private address backs consequential actions with a fresh TOTP code.
+  if (principal.kind !== 'owner' && req.method !== 'GET' && needsTotp(url.pathname) && ctx.auth.totpActive()
       && !ctx.auth.checkTotp(String(req.headers['x-friday-totp'] ?? ''))) {
     return send(res, 403, { error: 'totp_required' });
   }
@@ -121,9 +159,13 @@ const server = createServer(async (req, res) => {
     const [status, payload] = mapError(error);
     return send(res, status, payload);
   }
-});
+};
+const server = createServer(handler);
+const publicServer = publicPort ? createServer(handler) : null;
+
 
 server.listen(port, host, () => console.log(`Friday core listening on http://${host}:${port}`));
+publicServer?.listen(publicPort, '0.0.0.0', () => console.log(`Friday public listener (Cloudflare Tunnel) on :${publicPort}`));
 server.on('error', (error) => {
   console.error(`Friday core failed to listen: ${error.message}`);
   try { ctx.stop(); } catch {}
@@ -134,6 +176,7 @@ let shuttingDown = false;
 function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  publicServer?.close();
   server.close(() => { ctx.stop(); process.exit(0); });
   setTimeout(() => { ctx.stop(); process.exit(0); }, 5000).unref();
 }

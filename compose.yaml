@@ -22,6 +22,7 @@ services:
       FRIDAY_WORKER_CONCURRENCY: "2"
       FRIDAY_AGENT_URL: http://agent:4320
       FRIDAY_AGENT_SECRET: ${FRIDAY_AGENT_SECRET:?set FRIDAY_AGENT_SECRET in .env}
+      FRIDAY_PUBLIC_PORT: "4318"   # internet listener: NOT published on the host; only the tunnel container reaches it
       TZ: ${TZ:-Asia/Kolkata}
     volumes: ["${FRIDAY_DATA:-./data}:/data"]
     tmpfs: ["/tmp:size=512m,exec"]   # espeak (Kokoro) is extracted to /tmp and dlopen()ed
@@ -66,6 +67,20 @@ services:
     networks: [agentnet, egress]
     mem_limit: 128m
     pids_limit: 128
+
+  # Public domain via Cloudflare Tunnel (outbound only; no open ports). Starts only with COMPOSE_PROFILES=public
+  # and CLOUDFLARE_TUNNEL_TOKEN in .env. Public hostname in Cloudflare: https://fridayy.site -> http://friday:4318
+  tunnel:
+    <<: *hardening
+    image: cloudflare/cloudflared:2025.9.1
+    profiles: ["public"]
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    networks: [egress]
+    depends_on: [friday]
+    mem_limit: 128m
+    pids_limit: 64
 
 networks:
   agentnet: { internal: true }   # agent <-> core <-> proxy; nothing here can reach the internet or the host directly

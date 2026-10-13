@@ -11,7 +11,7 @@ export function render({ app, api, toast, go }) {
   const owner = app.me?.kind === 'owner';
   const el = h('div', { class: 'page stack' }, h('div', { class: 'page-head' }, h('h2', {}, 'Settings')));
   const section = (title, ...kids) => { const c = h('section', { class: 'card stack' }, h('h3', {}, title), ...kids); el.append(c); return c; };
-  const totpHeader = async () => (app.me?.kind === 'device' && app.totpActive ? prompt('Authenticator code (6 digits)') || null : undefined);
+  const totpHeader = async () => (app.me?.kind !== 'owner' && app.totpActive ? prompt('Authenticator code (6 digits)') || null : undefined);
 
   async function build() {
     const [pers, tz, auto, pro, health, models] = await Promise.all([api('/v1/personality'), api('/v1/settings/timezone'), api('/v1/autonomy'), api('/v1/proactive'), api('/v1/health'), api('/v1/models')]);
@@ -131,6 +131,9 @@ export function render({ app, api, toast, go }) {
         h('button', { class: 'btn small bad', onclick: async () => { if (confirm(`Revoke ${d.name}?`)) { await api(`/v1/devices/${d.id}`, { method: 'DELETE' }); build(); } } }, 'Revoke'))));
       const dn = h('input', { type: 'text', placeholder: 'Device name (e.g. phone, laptop-node)' });
       const sc = h('select', {}, [['read,chat,tasks,approve', 'Phone (chat, tasks, approvals)'], ['guest', 'Guest (chat only — Friday won’t share anything private)'], ['read,node', 'Laptop node'], ['read', 'Read-only (e.g. desk companion)'], ['read,chat,tasks', 'Phone without approvals']].map(([v, l]) => h('option', { value: v }, l)));
+      const { sessions } = await api('/v1/sessions').catch(() => ({ sessions: [] }));
+      const sessList = h('div', { class: 'list' }, sessions.map((x) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('strong', {}, `🌐 ${x.name ?? x.principal_kind} · ${String(x.user_agent ?? 'browser').replace(/^Mozilla\/5\.0 \(([^)]*)\).*$/, '$1').slice(0, 60)}`), h('div', { class: 'meta muted' }, `${x.ip ?? '?'} · ${x.last_seen_at ? `seen ${timeAgo(x.last_seen_at)}` : 'not used yet'} · until ${x.expires_at.slice(0, 10)}`)),
+        h('button', { class: 'btn small bad', onclick: async () => { if (confirm('Sign this browser out?')) { await api(`/v1/sessions/${x.id}`, { method: 'DELETE' }); build(); } } }, 'Sign out'))));
       const reveal = h('div');
       section('Devices & security', devList.children.length ? devList : h('p', { class: 'muted' }, 'No devices yet.'),
         h('div', { class: 'row wrap' }, h('div', { class: 'grow' }, dn), sc, h('button', { class: 'btn primary', onclick: async () => {
@@ -145,6 +148,7 @@ export function render({ app, api, toast, go }) {
               h('p', { class: 'faint small' }, 'The phone must be on your Tailscale network. Shown once — close this when done.'),
               h('details', {}, h('summary', {}, 'Or copy the token'), h('pre', { class: 'mono' }, r.device.token)),
               h('button', { class: 'btn small', onclick: () => clear(reveal) }, 'Done'))); } catch (e) { toast(e.message); } } }, 'Add device')), reveal,
+        h('h4', {}, 'Signed in over the internet'), sessions.length ? sessList : h('p', { class: 'muted' }, 'No browsers signed in through your domain.'),
         h('div', { class: 'row' }, app.totpActive ? h('span', { class: 'chip good' }, '✓ Authenticator active — phone approvals require a code') : h('button', { class: 'btn', onclick: enrollTotp }, 'Set up authenticator (recommended before using the phone)')));
     }
 

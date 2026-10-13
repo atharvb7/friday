@@ -31,21 +31,32 @@ function toggleTheme() {
 applyTheme();
 
 // ---- login -----------------------------------------------------------------
-function showLogin(message = '') {
+async function showLogin(message = '', presetToken = '') {
   clear(root);
-  const input = h('input', { type: 'password', id: 'tok', autocomplete: 'off', placeholder: 'Access token', 'aria-label': 'Access token', required: true });
-  const remember = h('input', { type: 'checkbox', id: 'rem' });
+  let mode = { public: false, totpActive: false };
+  try { mode = await (await fetch('/v1/auth/mode', { cache: 'no-store' })).json(); } catch { /* offline: assume private */ }
+  const input = h('input', { type: 'password', id: 'tok', autocomplete: 'off', placeholder: 'Access token', 'aria-label': 'Access token', required: true, value: presetToken });
+  const code = h('input', { type: 'text', id: 'otp', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 6, placeholder: '6-digit code', 'aria-label': 'Authenticator code', required: mode.public });
+  const remember = h('input', { type: 'checkbox', id: 'rem', checked: true });
   const err = h('p', { class: 'muted', role: 'alert' }, message);
   const form = h('form', { class: 'stack', onsubmit: async (e) => {
     e.preventDefault();
-    auth.set(input.value.trim(), remember.checked);
-    try { await boot(); } catch (ex) { auth.clear(); err.textContent = ex.status === 401 ? 'That token was not accepted.' : `Could not reach Friday (${ex.message}).`; }
+    try {
+      if (mode.public) { // internet: exchange token + authenticator code for a browser session
+        const r = await fetch('/v1/auth/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: input.value.trim(), code: code.value.replace(/\D/g, ''), remember: remember.checked }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { err.textContent = j.message ?? ({ bad_code: 'That code didn’t match — use the current one from your authenticator.', unauthorized: 'That token was not accepted.', too_many_failed_logins: 'Too many failed attempts. Try again in an hour.' }[j.error] ?? `Sign-in failed (${j.error ?? r.status}).`); return; }
+        auth.set(j.token, remember.checked);
+      } else auth.set(input.value.trim(), remember.checked);
+      await boot();
+    } catch (ex) { auth.clear(); err.textContent = ex.status === 401 ? 'That token was not accepted.' : `Could not reach Friday (${ex.message}).`; }
   } },
     h('div', {}, h('label', { for: 'tok' }, 'Access token'), input),
+    mode.public ? h('div', {}, h('label', { for: 'otp' }, 'Authenticator code'), code) : null,
     h('label', { class: 'row', for: 'rem' }, remember, ' Keep me signed in on this device'),
-    h('button', { class: 'btn primary', type: 'submit' }, 'Connect'), err);
+    h('button', { class: 'btn primary', type: 'submit' }, mode.public ? 'Sign in securely' : 'Connect'), err);
   root.append(h('div', { class: 'login' }, h('div', { class: 'card' }, h('div', { class: 'orb idle' }), h('h1', {}, 'Friday'), h('p', { class: 'muted' }, 'Your personal AI. Enter the access token from your Friday server (or the device token from Settings → Devices).'), form)));
-  input.focus();
+  (presetToken && mode.public ? code : input).focus();
 }
 
 // ---- shell -----------------------------------------------------------------
@@ -168,6 +179,7 @@ async function boot() {
 }
 
 // Pairing link from a QR code (Settings → Devices): take the token from the fragment, then wipe it from the address bar/history.
-{ const m = /^#pair=([^&]+)/.exec(location.hash); if (m) { try { auth.set(decodeURIComponent(m[1]), true); } catch { /* ignore */ } history.replaceState(null, '', location.pathname + location.search); } }
-if (auth.token) boot().catch((e) => { if (e?.status === 401) auth.clear(); showLogin(e?.status === 401 ? '' : `Something went wrong loading Friday (${e?.message ?? e}). Your token was kept — reload to retry.`); console.error(e); }); else showLogin();
+let pairToken = '';
+{ const m = /^#pair=([^&]+)/.exec(location.hash); if (m) { try { pairToken = decodeURIComponent(m[1]); auth.set(pairToken, true); } catch { /* ignore */ } history.replaceState(null, '', location.pathname + location.search); } }
+if (auth.token) boot().catch((e) => { const t = auth.token; if (e?.status === 401) auth.clear(); showLogin(e?.status === 401 ? (pairToken ? 'Enter your authenticator code to finish signing in.' : '') : `Something went wrong loading Friday (${e?.message ?? e}). Your token was kept — reload to retry.`, e?.status === 401 && pairToken ? t : ''); console.error(e); }); else showLogin();
 addEventListener('hashchange', () => { if (app.me) go(location.hash.slice(1)); });
