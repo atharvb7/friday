@@ -50,10 +50,12 @@ export class Auth {
     const row = this.db.prepare('SELECT * FROM web_sessions WHERE token_hash=? AND revoked_at IS NULL').get(sha(token));
     if (!row || row.expires_at < new Date().toISOString()) return null;
     if (row.principal_kind === 'device' && !this.db.prepare('SELECT 1 FROM devices WHERE id=? AND revoked_at IS NULL').get(row.principal_id)) return null; // device revoked -> its sessions die
+    if (row.principal_kind === 'member' && !this.memberActive?.(row.principal_id)) return null; // disabled/rejected member -> sessions die
     this.db.prepare('UPDATE web_sessions SET last_seen_at=? WHERE id=?').run(new Date().toISOString(), row.id);
-    return { kind: 'session', id: `session:${row.id}`, sessionOf: row.principal_kind, name: row.name ?? (row.principal_kind === 'owner' ? 'owner' : null), scopes: JSON.parse(row.scopes) };
+    return { kind: 'session', id: `session:${row.id}`, sessionOf: row.principal_kind, ...(row.principal_kind === 'member' ? { userId: row.principal_id } : {}), name: row.name ?? (row.principal_kind === 'owner' ? 'owner' : null), scopes: JSON.parse(row.scopes) };
   }
-  listSessions() { return this.db.prepare("SELECT id, principal_kind, name, created_at, expires_at, last_seen_at, ip, user_agent FROM web_sessions WHERE revoked_at IS NULL AND expires_at > ? ORDER BY last_seen_at DESC NULLS LAST, created_at DESC").all(new Date().toISOString()); }
+  listSessions() { return this.db.prepare("SELECT id, principal_kind, name, created_at, expires_at, last_seen_at, ip, user_agent FROM web_sessions WHERE revoked_at IS NULL AND expires_at > ? AND principal_kind != 'member' ORDER BY last_seen_at DESC NULLS LAST, created_at DESC").all(new Date().toISOString()); }
+  revokeMemberSessions(userId) { return this.db.prepare("UPDATE web_sessions SET revoked_at=? WHERE principal_kind='member' AND principal_id=? AND revoked_at IS NULL").run(new Date().toISOString(), userId).changes; }
   revokeSession(id) { return this.db.prepare('UPDATE web_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL').run(new Date().toISOString(), id).changes > 0; }
 
   createDevice({ name, scopes = ['read', 'chat', 'tasks'] }) {
@@ -119,7 +121,7 @@ export function requiredScope(method, pathname) {
   if (pathname.startsWith('/v1/node/')) return 'node';
   if (pathname === '/v1/emergency-stop') return 'read';
   if (pathname === '/v1/auth/whoami') return 'read';
-  if (/^\/v1\/(devices|sessions|auth|backup|mcp)/.test(pathname) || pathname === '/v1/skills/install') return 'admin';
+  if (/^\/v1\/(devices|sessions|auth|backup|mcp|users)/.test(pathname) || pathname === '/v1/skills/install') return 'admin';
   if (pathname === '/v1/emergency-clear') return 'approve';
   if (/^\/v1\/effects\/[^/]+\/approve$/.test(pathname) || /^\/v1\/approvals\/[^/]+\/decide$/.test(pathname) || (method !== 'GET' && pathname === '/v1/autonomy')) return 'approve';
   if (pathname === '/v1/companion/events') return 'read';

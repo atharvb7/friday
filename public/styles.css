@@ -452,3 +452,5 @@ input[type=range] { accent-color: #ff7eb3; }
 .login-err.shake { animation: shake .4s; } @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 input[type=email] { width: 100%; background: var(--glass-strong); border: 1px solid var(--line2); border-radius: 10px; padding: 9px 12px; }
 @media (max-width: 820px) { input[type=email] { font-size: 16px; } }
+.linkish { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 6px 0 0; font-size: 13.5px; text-align: left; }
+.ok-msg { color: var(--good); text-align: center; font-weight: 600; margin-top: 10px; }

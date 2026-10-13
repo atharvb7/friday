@@ -37,13 +37,15 @@ export class ChatStore {
     `);
     // Files attached to a message (JSON array of file ids); added in place for existing databases.
     if (!this.db.prepare('PRAGMA table_info(messages)').all().some((c) => c.name === 'attachments')) this.db.exec('ALTER TABLE messages ADD COLUMN attachments TEXT');
+    // Whose conversation: NULL = the owner; otherwise an approved member's id (members only ever see their own).
+    if (!this.db.prepare('PRAGMA table_info(conversations)').all().some((c) => c.name === 'user_id')) this.db.exec('ALTER TABLE conversations ADD COLUMN user_id TEXT');
   }
 
-  createConversation(title = 'New chat') {
+  createConversation(title = 'New chat', userId = null) {
     const id = randomUUID();
     const now = new Date().toISOString();
     const clean = typeof title === 'string' && title.trim() ? title.trim().slice(0, 200) : 'New chat';
-    this.db.prepare('INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)').run(id, clean, now, now);
+    this.db.prepare('INSERT INTO conversations (id, title, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?)').run(id, clean, now, now, userId);
     return this.getConversation(id);
   }
 
@@ -51,9 +53,12 @@ export class ChatStore {
     return this.db.prepare('SELECT * FROM conversations WHERE id=?').get(id) ?? null;
   }
 
-  listConversations() {
-    return this.db.prepare('SELECT * FROM conversations ORDER BY updated_at DESC LIMIT 50').all();
+  listConversations(userId = null) {
+    return userId ? this.db.prepare('SELECT * FROM conversations WHERE user_id=? ORDER BY updated_at DESC LIMIT 50').all(userId)
+      : this.db.prepare('SELECT * FROM conversations WHERE user_id IS NULL ORDER BY updated_at DESC LIMIT 50').all();
   }
+  // Does this conversation belong to that person? (null = owner)
+  owns(conversationId, userId = null) { const c = this.getConversation(conversationId); return Boolean(c) && (c.user_id ?? null) === (userId ?? null); }
 
   // Permanently delete a conversation and its messages. Memories already saved from it are kept
   // (they live in the Memory tab, which has its own delete).

@@ -150,6 +150,15 @@ export function render({ app, api, toast, go }) {
           h('label', { class: 'row' }, skip, ' Trust Google’s own 2-step verification (skip Friday’s 6-digit code after Google sign-in)'),
           h('button', { class: 'btn', onclick: async () => { try { await api('/v1/auth/google-login', { method: 'POST', body: { email: ge.value, skipTotp: skip.checked } }); toast('Saved.'); build(); } catch (e) { toast(e.message); } } }, 'Save Google settings'));
       }
+      const { users } = await api('/v1/users').catch(() => ({ users: [] }));
+      const chip = { approved: 'good', pending: 'warn', rejected: 'bad', disabled: 'bad' };
+      section('People',
+        h('p', { class: 'muted' }, 'Other people who asked for an account on fridayy.site. New requests also arrive in your Inbox as approvals. Approved people get their own chats only — none of your laptop, mail, Instagram, memories or settings.'),
+        users.length ? h('div', { class: 'list' }, users.map((u) => h('div', { class: 'row wrap' },
+          h('div', { class: 'grow' }, h('strong', {}, u.name), h('div', { class: 'meta muted' }, `${u.email} · via ${u.provider}${u.last_login_at ? ` · last seen ${timeAgo(u.last_login_at)}` : ''}`)),
+          h('span', { class: `chip ${chip[u.status] ?? ''}` }, u.status),
+          u.status !== 'approved' ? h('button', { class: 'btn small good', onclick: async () => { await api(`/v1/users/${u.id}/status`, { method: 'POST', body: { status: 'approved' } }); toast(`${u.name} can use Friday now.`); build(); } }, 'Approve') : null,
+          u.status === 'approved' ? h('button', { class: 'btn small bad', onclick: async () => { if (confirm(`Disable ${u.name}? They are signed out everywhere.`)) { await api(`/v1/users/${u.id}/status`, { method: 'POST', body: { status: 'disabled' } }); build(); } } }, 'Disable') : null))) : h('p', { class: 'muted' }, 'Nobody else has asked for an account yet.'));
       const { sessions } = await api('/v1/sessions').catch(() => ({ sessions: [] }));
       const sessList = h('div', { class: 'list' }, sessions.map((x) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('strong', {}, `🌐 ${x.name ?? x.principal_kind} · ${String(x.user_agent ?? 'browser').replace(/^Mozilla\/5\.0 \(([^)]*)\).*$/, '$1').slice(0, 60)}`), h('div', { class: 'meta muted' }, `${x.ip ?? '?'} · ${x.last_seen_at ? `seen ${timeAgo(x.last_seen_at)}` : 'not used yet'} · until ${x.expires_at.slice(0, 10)}`)),
         h('button', { class: 'btn small bad', onclick: async () => { if (confirm('Sign this browser out?')) { await api(`/v1/sessions/${x.id}`, { method: 'DELETE' }); build(); } } }, 'Sign out'))));
