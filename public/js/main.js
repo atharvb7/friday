@@ -33,30 +33,61 @@ applyTheme();
 // ---- login -----------------------------------------------------------------
 async function showLogin(message = '', presetToken = '') {
   clear(root);
-  let mode = { public: false, totpActive: false };
+  let mode = { public: false, totpActive: false, password: false, google: false };
   try { mode = await (await fetch('/v1/auth/mode', { cache: 'no-store' })).json(); } catch { /* offline: assume private */ }
-  const input = h('input', { type: 'password', id: 'tok', autocomplete: 'off', placeholder: 'Access token', 'aria-label': 'Access token', required: true, value: presetToken });
-  const code = h('input', { type: 'text', id: 'otp', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 6, placeholder: '6-digit code', 'aria-label': 'Authenticator code', required: mode.public });
+  const err = h('p', { class: 'login-err', role: 'alert' }, message);
+  const fail = (t) => { err.textContent = t; err.classList.remove('shake'); void err.offsetWidth; err.classList.add('shake'); };
+  const ERR = { bad_code: 'That code didn’t match — use the current one from your authenticator.', bad_credentials: 'Email or password is wrong.', unauthorized: 'That token was not accepted.', too_many_failed_logins: 'Too many failed attempts. Try again in an hour.', expired: 'That sign-in expired — try again.' };
   const remember = h('input', { type: 'checkbox', id: 'rem', checked: true });
-  const err = h('p', { class: 'muted', role: 'alert' }, message);
-  const form = h('form', { class: 'stack', onsubmit: async (e) => {
-    e.preventDefault();
-    try {
-      if (mode.public) { // internet: exchange token + authenticator code for a browser session
-        const r = await fetch('/v1/auth/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: input.value.trim(), code: code.value.replace(/\D/g, ''), remember: remember.checked }) });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) { err.textContent = j.message ?? ({ bad_code: 'That code didn’t match — use the current one from your authenticator.', unauthorized: 'That token was not accepted.', too_many_failed_logins: 'Too many failed attempts. Try again in an hour.' }[j.error] ?? `Sign-in failed (${j.error ?? r.status}).`); return; }
-        auth.set(j.token, remember.checked);
-      } else auth.set(input.value.trim(), remember.checked);
-      await boot();
-    } catch (ex) { auth.clear(); err.textContent = ex.status === 401 ? 'That token was not accepted.' : `Could not reach Friday (${ex.message}).`; }
-  } },
-    h('div', {}, h('label', { for: 'tok' }, 'Access token'), input),
-    mode.public ? h('div', {}, h('label', { for: 'otp' }, 'Authenticator code'), code) : null,
-    h('label', { class: 'row', for: 'rem' }, remember, ' Keep me signed in on this device'),
-    h('button', { class: 'btn primary', type: 'submit' }, mode.public ? 'Sign in securely' : 'Connect'), err);
-  root.append(h('div', { class: 'login' }, h('div', { class: 'card' }, h('div', { class: 'orb idle' }), h('h1', {}, 'Friday'), h('p', { class: 'muted' }, 'Your personal AI. Enter the access token from your Friday server (or the device token from Settings → Devices).'), form)));
-  (presetToken && mode.public ? code : input).focus();
+  const rememberRow = h('label', { class: 'row remember', for: 'rem' }, remember, ' Keep me signed in on this device');
+  const codeInput = () => h('input', { type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 6, placeholder: '6-digit code', 'aria-label': 'Authenticator code', class: 'otp' });
+  async function post(path, body) {
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, remember: remember.checked }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { fail(j.message ?? ERR[j.error] ?? `Sign-in failed (${j.error ?? r.status}).`); return false; }
+    auth.set(j.token, remember.checked); await boot(); return true;
+  }
+  const card = h('div', { class: 'card login-card' }, h('div', { class: 'orb idle big' }), h('h1', {}, mode.public ? 'Welcome back' : 'Friday'), h('p', { class: 'muted' }, mode.public ? 'Sign in to your Friday.' : 'Your personal AI. Enter the access token from your Friday server (or a device token from Settings → Devices).'));
+  root.append(h('div', { class: 'login' }, card));
+
+  // Back from Google: finish with the authenticator code (or straight in if Google is trusted).
+  const fromGoogle = /^#login=([^&]+)(&totp=1)?/.exec(location.hash); const gErr = /^#login_error=(.*)$/.exec(location.hash);
+  if (fromGoogle || gErr) history.replaceState(null, '', location.pathname + location.search);
+  if (gErr) fail(decodeURIComponent(gErr[1]));
+  if (fromGoogle) {
+    const handoff = fromGoogle[1];
+    if (!fromGoogle[2]) { card.append(h('p', { class: 'muted' }, 'Signing you in…'), err); if (!(await post('/v1/auth/login/handoff', { handoff }))) showLogin(err.textContent); return; }
+    const code = codeInput();
+    card.append(h('form', { class: 'stack', onsubmit: async (e) => { e.preventDefault(); await post('/v1/auth/login/handoff', { handoff, code: code.value.replace(/\D/g, '') }); } },
+      h('p', {}, '✅ Google says it’s you. One more step:'), h('label', {}, 'Authenticator code'), code, rememberRow, h('button', { class: 'btn primary full', type: 'submit' }, 'Continue'), err));
+    code.focus(); return;
+  }
+
+  if (!mode.public) { // private (Tailscale) address: token sign-in as before
+    const input = h('input', { type: 'password', autocomplete: 'off', placeholder: 'Access token', 'aria-label': 'Access token', required: true, value: presetToken });
+    card.append(h('form', { class: 'stack', onsubmit: async (e) => { e.preventDefault(); auth.set(input.value.trim(), remember.checked); try { await boot(); } catch (ex) { auth.clear(); fail(ex.status === 401 ? ERR.unauthorized : `Could not reach Friday (${ex.message}).`); } } },
+      h('label', {}, 'Access token'), input, rememberRow, h('button', { class: 'btn primary full', type: 'submit' }, 'Connect'), err));
+    input.focus(); return;
+  }
+
+  if (mode.google) card.append(h('a', { class: 'btn google full', href: '/oauth/google/login' }, h('span', { class: 'g' }, 'G'), 'Continue with Google'));
+  if (mode.google && mode.password) card.append(h('div', { class: 'or' }, h('span', {}, 'or')));
+  if (mode.password) {
+    const email = h('input', { type: 'email', autocomplete: 'username', placeholder: 'you@example.com', 'aria-label': 'Email', required: true });
+    const pass = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'Password', 'aria-label': 'Password', required: true });
+    const code = codeInput(); code.required = true;
+    card.append(h('form', { class: 'stack', onsubmit: async (e) => { e.preventDefault(); await post('/v1/auth/login', { email: email.value, password: pass.value, code: code.value.replace(/\D/g, '') }); } },
+      h('label', {}, 'Email'), email, h('label', {}, 'Password'), pass, h('label', {}, 'Authenticator code'), code, rememberRow, h('button', { class: 'btn primary full', type: 'submit' }, 'Sign in')));
+    (presetToken ? null : email)?.focus();
+  }
+  // Token sign-in stays available (device pairing QR codes use it).
+  const tok = h('input', { type: 'password', autocomplete: 'off', placeholder: 'Access or device token', 'aria-label': 'Access token', value: presetToken });
+  const tcode = codeInput();
+  const tokenForm = h('form', { class: 'stack', onsubmit: async (e) => { e.preventDefault(); await post('/v1/auth/session', { token: tok.value.trim(), code: tcode.value.replace(/\D/g, '') }); } },
+    h('label', {}, 'Token'), tok, h('label', {}, 'Authenticator code'), tcode, h('button', { class: 'btn full', type: 'submit' }, 'Sign in with token'));
+  const tokenBox = h('details', { class: 'token-login', open: Boolean(presetToken) || (!mode.password && !mode.google) }, h('summary', {}, 'Use an access token instead'), tokenForm);
+  card.append(tokenBox, err);
+  if (presetToken) tcode.focus();
 }
 
 // ---- shell -----------------------------------------------------------------

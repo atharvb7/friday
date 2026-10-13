@@ -131,6 +131,25 @@ export function render({ app, api, toast, go }) {
         h('button', { class: 'btn small bad', onclick: async () => { if (confirm(`Revoke ${d.name}?`)) { await api(`/v1/devices/${d.id}`, { method: 'DELETE' }); build(); } } }, 'Revoke'))));
       const dn = h('input', { type: 'text', placeholder: 'Device name (e.g. phone, laptop-node)' });
       const sc = h('select', {}, [['read,chat,tasks,approve', 'Phone (chat, tasks, approvals)'], ['guest', 'Guest (chat only — Friday won’t share anything private)'], ['read,node', 'Laptop node'], ['read', 'Read-only (e.g. desk companion)'], ['read,chat,tasks', 'Phone without approvals']].map(([v, l]) => h('option', { value: v }, l)));
+      const ls = await api('/v1/auth/login-settings').catch(() => null);
+      if (ls) {
+        const em = h('input', { type: 'email', value: ls.email ?? '', placeholder: 'your@email.com', autocomplete: 'username' });
+        const pw = h('input', { type: 'password', placeholder: ls.password ? 'New password (leave empty to keep)' : 'At least 10 characters', autocomplete: 'new-password' });
+        const ge = h('input', { type: 'email', value: ls.googleEmail ?? '', placeholder: 'Google account allowed to sign in' });
+        const skip = h('input', { type: 'checkbox', checked: ls.googleSkipTotp });
+        section('Sign-in methods (fridayy.site)',
+          h('p', { class: 'muted' }, 'How you sign in on your public address. Email + password always also asks for your authenticator code.'),
+          h('label', {}, 'Email'), em, h('label', {}, 'Password'), pw,
+          h('div', { class: 'row wrap' }, h('button', { class: 'btn primary', onclick: async () => {
+            try { if (!pw.value) { toast('Type a new password first.'); return; } await api('/v1/auth/password', { method: 'POST', body: { email: em.value, password: pw.value } }); pw.value = ''; toast('Password saved 🔐'); build(); } catch (e) { toast(e.message); } } }, ls.password ? 'Change password' : 'Set password'),
+            ls.password ? h('button', { class: 'btn', onclick: async () => { if (confirm('Turn off email + password sign-in?')) { await api('/v1/auth/password', { method: 'DELETE' }); build(); } } }, 'Turn off') : null,
+            h('span', { class: `chip ${ls.password ? 'good' : ''}` }, ls.password ? 'password set' : 'no password yet')),
+          h('h4', {}, 'Sign in with Google'),
+          ls.google ? null : h('p', { class: 'muted small' }, 'Not set up on the server yet (needs FRIDAY_SITE_URL and the Google redirect address).'),
+          h('label', {}, 'Allowed Google account'), ge,
+          h('label', { class: 'row' }, skip, ' Trust Google’s own 2-step verification (skip Friday’s 6-digit code after Google sign-in)'),
+          h('button', { class: 'btn', onclick: async () => { try { await api('/v1/auth/google-login', { method: 'POST', body: { email: ge.value, skipTotp: skip.checked } }); toast('Saved.'); build(); } catch (e) { toast(e.message); } } }, 'Save Google settings'));
+      }
       const { sessions } = await api('/v1/sessions').catch(() => ({ sessions: [] }));
       const sessList = h('div', { class: 'list' }, sessions.map((x) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('strong', {}, `🌐 ${x.name ?? x.principal_kind} · ${String(x.user_agent ?? 'browser').replace(/^Mozilla\/5\.0 \(([^)]*)\).*$/, '$1').slice(0, 60)}`), h('div', { class: 'meta muted' }, `${x.ip ?? '?'} · ${x.last_seen_at ? `seen ${timeAgo(x.last_seen_at)}` : 'not used yet'} · until ${x.expires_at.slice(0, 10)}`)),
         h('button', { class: 'btn small bad', onclick: async () => { if (confirm('Sign this browser out?')) { await api(`/v1/sessions/${x.id}`, { method: 'DELETE' }); build(); } } }, 'Sign out'))));

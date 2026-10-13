@@ -56,6 +56,7 @@ import { Files } from './files.mjs';
 import { Documents } from './documents.mjs';
 import { DmChats } from './dm-chat.mjs';
 import { GoogleAuth, Gmail } from './google.mjs';
+import { OwnerLogin } from './login.mjs';
 import { Questions } from './questions.mjs';
 
 function findDshBin() {
@@ -222,6 +223,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.files = new Files({ store, dir: resolve(dataDir, 'files'), bus });
   ctx.google = new GoogleAuth({ clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, publicUrl: env.FRIDAY_PUBLIC_URL, dataDir });
   ctx.gmail = new Gmail({ google: ctx.google, files: ctx.files });
+  ctx.login = new OwnerLogin({ settings, google: ctx.google, publicUrl: env.FRIDAY_SITE_URL });
   ctx.documents = new Documents({ files: ctx.files, appRoot, python: env.FRIDAY_DOCS_PYTHON ?? 'python3' });
   ctx.learner = new Learner({ ai, store, skills, dir: resolve(dataDir, 'skills'), profile: ctx.profile, bus, settings });
   { // successful laptop/Hermes runs become (or improve) playbooks, off the hot path

@@ -21,16 +21,16 @@ test('public listener: raw tokens refused, token+TOTP gives a session without ad
     const token = readFileSync(join(dir, 'access-token'), 'utf8').trim();
     const pub = (p, o = {}) => fetch(`http://127.0.0.1:${PUB}${p}`, o);
     const priv = (p, o = {}) => fetch(`http://127.0.0.1:${PORT}${p}`, { ...o, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(o.headers ?? {}) } });
-    assert.deepEqual(await (await pub('/v1/auth/mode')).json(), { public: true, totpActive: false });
+    assert.deepEqual(await (await pub('/v1/auth/mode')).json(), { public: true, totpActive: false, password: false, google: false });
     assert.equal((await (await fetch(`http://127.0.0.1:${PORT}/v1/auth/mode`)).json()).public, false);
     assert.match((await pub('/')).headers.get('strict-transport-security') ?? '', /max-age/);
     assert.equal((await pub('/v1/status', { headers: { Authorization: `Bearer ${token}` } })).status, 401, 'raw owner token is not enough on the internet');
     const login = (code, t = token, ip = '9.9.9.9') => pub('/v1/auth/session', { method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': ip }, body: JSON.stringify({ token: t, code }) });
     assert.equal((await (await login('123456')).json()).error, 'totp_not_set_up');
     const en = await (await priv('/v1/auth/totp/enroll', { method: 'POST' })).json();
-    assert.equal((await priv('/v1/auth/totp/confirm', { method: 'POST', body: JSON.stringify({ code: totp(en.secret) }) })).status, 200);
+    assert.equal((await priv('/v1/auth/totp/confirm', { method: 'POST', body: JSON.stringify({ code: totp(en.secret, -1) }) })).status, 200); // codes from three different 30s steps: -1 confirm, 0 token login, +1 password login
     assert.equal((await login('000000')).status, 401);
-    const ok = await login(totp(en.secret, 1)); // next step (current one was used to confirm)
+    const ok = await login(totp(en.secret, 0));
     assert.equal(ok.status, 201);
     const sess = (await ok.json()).token;
     assert.match(sess, /^fws_/);
@@ -43,10 +43,23 @@ test('public listener: raw tokens refused, token+TOTP gives a session without ad
     assert.equal(list.sessions.length, 1);
     await priv(`/v1/sessions/${list.sessions[0].id}`, { method: 'DELETE' });
     assert.equal((await as('/v1/status')).status, 401, 'revoked session is dead');
+    assert.equal((await priv('/v1/status')).status, 200, 'private address still takes the raw token');
+    // email + password (+ authenticator) on the public site
+    assert.equal((await priv('/v1/auth/password', { method: 'POST', body: JSON.stringify({ email: 'me@x.com', password: 'a-good-password-1' }) })).status, 200);
+    assert.equal((await (await pub('/v1/auth/mode')).json()).password, true);
+    const plog = (body, ip = '5.5.5.5') => pub('/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': ip }, body: JSON.stringify(body) });
+    assert.equal((await plog({ email: 'me@x.com', password: 'wrong-password-9', code: totp(en.secret) })).status, 401);
+    assert.equal((await plog({ email: 'me@x.com', password: 'a-good-password-1', code: '000000' })).status, 401, 'password alone is not enough');
+    let okp = null; for (const off of [1]) { const r = await plog({ email: 'me@x.com', password: 'a-good-password-1', code: totp(en.secret, off) }); if (r.status === 201) { okp = r; break; } }
+    assert.ok(okp, 'password + current code signs in');
+    const ps = (await okp.json()).token;
+    assert.equal((await pub('/v1/status', { headers: { Authorization: `Bearer ${ps}` } })).status, 200);
+    assert.equal((await pub('/v1/auth/login-settings', { headers: { Authorization: `Bearer ${ps}` } })).status, 403, 'login settings are owner-only on the private address');
+    assert.equal((await pub('/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
+    assert.equal((await fetch(`http://127.0.0.1:${PORT}/v1/auth/login`, { method: 'POST', body: '{}' })).status, 401, 'password login does not exist on the private address');
     for (let i = 0; i < 10; i++) await login('111111', token, '6.6.6.6');
     assert.equal((await login(totp(en.secret), token, '6.6.6.6')).status, 429, 'locked out after 10 failures');
     assert.notEqual((await login('111111', token, '7.7.7.7')).status, 429, 'other visitors unaffected');
-    assert.equal((await priv('/v1/status')).status, 200, 'private address still takes the raw token');
   } finally {
     child.kill('SIGTERM'); await new Promise((r) => child.on('exit', r)); rmSync(dir, { recursive: true, force: true });
   }

@@ -110,7 +110,39 @@ const handler = async (req, res) => {
     if (publicBlocked(clientIp)) return send(res, 429, { error: 'too_many_failed_logins', retry: 'later' }, { 'Retry-After': '3600' });
   }
   if (serveStatic(req, res, url.pathname)) return;
-  if (req.method === 'GET' && url.pathname === '/v1/auth/mode') return send(res, 200, { public: isPublic, totpActive: ctx.auth.totpActive() });
+  if (req.method === 'GET' && url.pathname === '/v1/auth/mode') { const ls = ctx.login.status(); return send(res, 200, { public: isPublic, totpActive: ctx.auth.totpActive(), password: isPublic && ls.password, google: isPublic && ls.google && Boolean(ls.googleEmail) }); }
+  // ---- owner sign-in on the public site: email + password, or Google; both end in a browser session ----
+  const OWNER = { kind: 'owner', id: 'owner', name: 'owner', scopes: ['read', 'chat', 'tasks', 'approve', 'node', 'guest', 'admin'] };
+  const startSession = (b) => { const s = ctx.auth.createSession(OWNER, { ip: clientIp, userAgent: req.headers['user-agent'], days: b.remember === false ? 1 : 30 }); return send(res, 201, { token: s.token, expires_at: s.expires_at }); };
+  if (isPublic && req.method === 'POST' && url.pathname === '/v1/auth/login') {
+    let b = {}; try { b = await bodyReader(req)(); } catch { return send(res, 400, { error: 'bad_request' }); }
+    if (!ctx.login.checkPassword(b.email, b.password)) { publicFail(clientIp); return send(res, 401, { error: 'bad_credentials' }); }
+    if (!ctx.auth.totpActive()) return send(res, 403, { error: 'totp_not_set_up', message: 'Set up the authenticator from your private (Tailscale) Friday first.' });
+    if (!ctx.auth.checkTotp(String(b.code ?? ''))) { publicFail(clientIp); return send(res, 401, { error: 'bad_code' }); }
+    try { ctx.audit.append('auth', 'session.created', { method: 'password', ip: clientIp }); } catch { /* best effort */ }
+    return startSession(b);
+  }
+  if (isPublic && req.method === 'GET' && url.pathname === '/oauth/google/login') {
+    try { res.writeHead(302, { Location: ctx.login.googleStart(), 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); return res.end(); }
+    catch (e) { return send(res, 503, { error: e.message }); }
+  }
+  if (isPublic && req.method === 'GET' && url.pathname === '/oauth/google/login/callback') {
+    const back = (frag) => { res.writeHead(302, { Location: `/#${frag}`, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); res.end(); };
+    try { const h = await ctx.login.googleFinish({ code: url.searchParams.get('code'), state: url.searchParams.get('state'), error: url.searchParams.get('error') }); return back(`login=${h.handoff}${h.needsTotp ? '&totp=1' : ''}`); }
+    catch (e) { publicFail(clientIp); return back(`login_error=${encodeURIComponent(String(e.message).slice(0, 120))}`); }
+  }
+  if (isPublic && req.method === 'POST' && url.pathname === '/v1/auth/login/handoff') {
+    let b = {}; try { b = await bodyReader(req)(); } catch { return send(res, 400, { error: 'bad_request' }); }
+    const h = ctx.login.peekHandoff(b.handoff);
+    if (!h) { publicFail(clientIp); return send(res, 401, { error: 'expired', message: 'That sign-in expired — try again.' }); }
+    if (h.needsTotp) {
+      if (!ctx.auth.totpActive()) return send(res, 403, { error: 'totp_not_set_up' });
+      if (!ctx.auth.checkTotp(String(b.code ?? ''))) { publicFail(clientIp); return send(res, 401, { error: 'bad_code' }); }
+    }
+    ctx.login.takeHandoff(b.handoff);
+    try { ctx.audit.append('auth', 'session.created', { method: h.method, ip: clientIp }); } catch { /* best effort */ }
+    return startSession(b);
+  }
   // Internet sign-in: owner/device token + a fresh authenticator code -> a 30-day, revocable browser session.
   if (isPublic && req.method === 'POST' && url.pathname === '/v1/auth/session') {
     let b = {}; try { b = await bodyReader(req)(); } catch { return send(res, 400, { error: 'bad_request' }); }
