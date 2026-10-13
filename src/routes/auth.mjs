@@ -5,6 +5,8 @@ export function authRoutes(router, { auth, audit }) {
 
   router.get('/v1/auth/whoami', ({ principal }) => [200, { principal: { kind: principal.kind, id: principal.id, name: principal.name ?? null, scopes: principal.scopes }, totpActive: auth.totpActive() }]);
   router.get('/v1/devices', () => [200, { devices: auth.listDevices() }]);
+  router.get('/v1/sessions', () => [200, { sessions: auth.listSessions() }]);
+  router.delete('/v1/sessions/:id([A-Za-z0-9-]+)', ({ params }) => { const ok = auth.revokeSession(params.id); return [ok ? 200 : 404, { revoked: ok }]; });
   router.post('/v1/devices', async ({ body }) => {
     const b = await body();
     try { const d = auth.createDevice({ name: b.name, scopes: b.scopes }); a('device.created', { id: d.id, name: d.name, scopes: d.scopes }); return [201, { device: d }]; }

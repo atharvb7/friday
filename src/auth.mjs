@@ -16,6 +16,10 @@ export class Auth {
         id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
         scopes TEXT NOT NULL, created_at TEXT NOT NULL, last_seen_at TEXT, revoked_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS web_sessions (
+        id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, principal_kind TEXT NOT NULL, principal_id TEXT NOT NULL, name TEXT,
+        scopes TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, last_seen_at TEXT, ip TEXT, user_agent TEXT, revoked_at TEXT
+      );
       CREATE TABLE IF NOT EXISTS auth_totp (
         id INTEGER PRIMARY KEY CHECK (id = 1), secret TEXT NOT NULL, confirmed INTEGER NOT NULL DEFAULT 0, last_step INTEGER NOT NULL DEFAULT 0
       );
@@ -26,11 +30,31 @@ export class Auth {
     if (!token) return null;
     const b = Buffer.from(token);
     if (b.length === this.owner.length && timingSafeEqual(b, this.owner)) return { kind: 'owner', id: 'owner', scopes: [...SCOPES] };
+    if (token.startsWith('fws_')) return this.#session(token);
     const row = this.db.prepare('SELECT * FROM devices WHERE token_hash=? AND revoked_at IS NULL').get(sha(token));
     if (!row) return null;
     this.db.prepare('UPDATE devices SET last_seen_at=? WHERE id=?').run(new Date().toISOString(), row.id);
     return { kind: 'device', id: row.id, name: row.name, scopes: JSON.parse(row.scopes) };
   }
+
+  // Web sessions: what a browser gets after signing in over the public internet with token + authenticator code.
+  // Never carry admin or node scope (those stay on the private Tailscale address), expire, and can be revoked.
+  createSession(principal, { ip = null, userAgent = null, days = 30 } = {}) {
+    const token = `fws_${randomBytes(32).toString('hex')}`; const id = randomUUID(); const now = Date.now();
+    const scopes = principal.scopes.filter((s) => s !== 'admin' && s !== 'node');
+    this.db.prepare('INSERT INTO web_sessions (id, token_hash, principal_kind, principal_id, name, scopes, created_at, expires_at, ip, user_agent) VALUES (?,?,?,?,?,?,?,?,?,?)')
+      .run(id, sha(token), principal.kind, principal.id, principal.name ?? null, JSON.stringify(scopes), new Date(now).toISOString(), new Date(now + days * 86_400_000).toISOString(), ip, String(userAgent ?? '').slice(0, 160) || null);
+    return { id, token, expires_at: new Date(now + days * 86_400_000).toISOString() };
+  }
+  #session(token) {
+    const row = this.db.prepare('SELECT * FROM web_sessions WHERE token_hash=? AND revoked_at IS NULL').get(sha(token));
+    if (!row || row.expires_at < new Date().toISOString()) return null;
+    if (row.principal_kind === 'device' && !this.db.prepare('SELECT 1 FROM devices WHERE id=? AND revoked_at IS NULL').get(row.principal_id)) return null; // device revoked -> its sessions die
+    this.db.prepare('UPDATE web_sessions SET last_seen_at=? WHERE id=?').run(new Date().toISOString(), row.id);
+    return { kind: 'session', id: `session:${row.id}`, sessionOf: row.principal_kind, name: row.name ?? (row.principal_kind === 'owner' ? 'owner' : null), scopes: JSON.parse(row.scopes) };
+  }
+  listSessions() { return this.db.prepare("SELECT id, principal_kind, name, created_at, expires_at, last_seen_at, ip, user_agent FROM web_sessions WHERE revoked_at IS NULL AND expires_at > ? ORDER BY last_seen_at DESC NULLS LAST, created_at DESC").all(new Date().toISOString()); }
+  revokeSession(id) { return this.db.prepare('UPDATE web_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL').run(new Date().toISOString(), id).changes > 0; }
 
   createDevice({ name, scopes = ['read', 'chat', 'tasks'] }) {
     if (typeof name !== 'string' || !name.trim() || name.length > 80) throw new TypeError('invalid device name');
@@ -95,7 +119,7 @@ export function requiredScope(method, pathname) {
   if (pathname.startsWith('/v1/node/')) return 'node';
   if (pathname === '/v1/emergency-stop') return 'read';
   if (pathname === '/v1/auth/whoami') return 'read';
-  if (/^\/v1\/(devices|auth|backup|mcp)/.test(pathname) || pathname === '/v1/skills/install') return 'admin';
+  if (/^\/v1\/(devices|sessions|auth|backup|mcp)/.test(pathname) || pathname === '/v1/skills/install') return 'admin';
   if (pathname === '/v1/emergency-clear') return 'approve';
   if (/^\/v1\/effects\/[^/]+\/approve$/.test(pathname) || /^\/v1\/approvals\/[^/]+\/decide$/.test(pathname) || (method !== 'GET' && pathname === '/v1/autonomy')) return 'approve';
   if (pathname === '/v1/companion/events') return 'read';
