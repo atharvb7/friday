@@ -134,7 +134,10 @@ export class BrowserController {
   async ensure() {
     if (this.ctx && this.page && !this.page.isClosed()) return this.page;
     if (!this.ctx) {
-      this.ctx = await this.chromium.launchPersistentContext(this.profileDir, { executablePath: this.executablePath, headless: this.headless, viewport: { width: 1280, height: 800 }, args: ['--no-first-run', '--no-default-browser-check'] });
+      // Launch like a normal Chrome: keep Chrome's sandbox on and drop the "controlled by automation" flags —
+      // Google refuses sign-in ("This browser or app may not be secure") in browsers that advertise automation.
+      this.ctx = await this.chromium.launchPersistentContext(this.profileDir, { executablePath: this.executablePath, headless: this.headless, viewport: { width: 1280, height: 800 },
+        chromiumSandbox: true, ignoreDefaultArgs: ['--enable-automation', '--no-sandbox'], args: ['--no-first-run', '--no-default-browser-check', '--disable-blink-features=AutomationControlled'] });
       this.ctx.on('close', () => { this.ctx = null; this.page = null; });
       // A site opening a popup / new tab (target=_blank, "continue in app"): follow it, like a person would.
       this.ctx.on('page', (p) => { this.page = p; this.#watchDownloads(p); p.on('close', () => { if (this.page === p) this.page = this.ctx?.pages().at(-1) ?? null; }); });

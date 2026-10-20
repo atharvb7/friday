@@ -201,3 +201,12 @@ test('real Chrome: downloads are saved into Downloads/friday-media/<folder> and 
     await assert.rejects(() => b.download_folder({ name: '../../etc' }).then((r) => { if (!r.folder.startsWith(join(dl, 'friday-media'))) throw new Error('escaped'); throw new Error('sanitized'); }), /sanitized/);
   } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('real Chrome: launched like a normal browser (sandbox on, no automation flag) so Google sign-in is not refused', { skip: !existsSync(CHROME) }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fn-st-'));
+  const b = new BrowserController({ chromium, profileDir: join(dir, 'profile'), headless: true, allowPrivate: true });
+  try {
+    const page = await b.ensure(); await page.goto('about:blank');
+    assert.equal(await page.evaluate(() => navigator.webdriver), false);
+  } finally { await b.close(); rmSync(dir, { recursive: true, force: true }); }
+});
