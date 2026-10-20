@@ -7,6 +7,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { reelEdit } from './reel-edit.mjs';
 import { BrowserController } from './browser.mjs';
 import { atspiAvailable, defaultAllowedDirs, idleMs, makeDesktop } from './desktop.mjs';
 
@@ -51,6 +52,7 @@ const handlers = {
     browser_wait: (a) => browser.wait(a), browser_click_text: (a) => browser.click_text(a), browser_screenshot: (a) => browser.screenshot(a),
     ig_dm_send: (a) => browser.ig_dm_send(a),
     browser_download_folder: (a) => browser.download_folder(a), browser_downloads: (a) => browser.downloads_list(a),
+    reel_edit: (a) => reelEdit(a, { downloadsRoot: allowedDirs.find((d) => /\/Downloads$/.test(d)) ?? join(homedir(), 'Downloads') }),
   } : {}),
   file_find: (a) => desktop.file_find(a), open_target: (a) => desktop.open_target(a), open_app: (a) => desktop.open_app(a),
 };

@@ -353,14 +353,15 @@ export function buildFridayTools(ctx) {
     },
     {
       name: 'reel_create', risk: 'gated', category: 'computer', riskClass: 'consequential',
-      description: 'Make the raw clips for a reel with Google Gemini in the user\'s laptop browser (his Gemini Pro account): for each clip, generate an image from your image prompt, then turn that image into an ~8 s Veo video with your motion prompt, and download both into Downloads/friday-media/reel-<name>/. YOU write the storyboard and every prompt (vivid, specific, consistent characters/style across clips). Gemini Pro allows only about 3 videos per day, so plan 1-3 clips (max 4); if the limit is hit the job stops and reports what is missing. After it finishes, tell the user the clips are ready for editing in Claude Code (folder path), and later use reel_send to deliver the final reel. One approval covers the job.',
+      description: 'Make the raw clips for a reel with Google Gemini in the user\'s laptop browser (his Gemini Pro account): for each clip, generate an image from your image prompt, then turn that image into an ~8 s Veo video with your motion prompt, and download both into Downloads/friday-media/reel-<name>/. YOU write the storyboard and every prompt (vivid, specific, consistent characters/style across clips). Gemini Pro allows only about 3 videos per day, so plan 1-3 clips (max 4); if the limit is hit the job stops and reports what is missing. When the clips are done Friday automatically edits them into one reel with Claude Code + SynthCut on the laptop and sends final.mp4 to his WhatsApp. One approval covers the whole chain.',
       parameters: obj({
         name: { type: 'string', description: 'short slug, e.g. goa-sunset' },
         idea: { type: 'string', description: 'the reel idea in one or two sentences' },
         aspect: { type: 'string', enum: ['9:16', '16:9', '1:1'] },
         clips: { type: 'array', items: { type: 'object', properties: { image_prompt: { type: 'string' }, motion_prompt: { type: 'string' } }, required: ['image_prompt', 'motion_prompt'] } },
+        seconds: { type: 'integer', description: 'target reel length' }, autoEdit: { type: 'boolean', description: 'default true: edit with Claude Code + SynthCut when the clips are done' }, autoSend: { type: 'boolean', description: 'default true: send the final reel to his WhatsApp' },
       }, ['name', 'idea', 'clips']),
-      summarize: (a) => `Make reel clips “${clip(a.name, 40)}” in Gemini on your laptop: ${(a.clips ?? []).length} image→video clip(s) (${a.aspect ?? '9:16'})\n${(a.clips ?? []).map((c, i) => `${i + 1}. 🖼 ${clip(c.image_prompt, 160)} → 🎬 ${clip(c.motion_prompt, 120)}`).join('\n')}`,
+      summarize: (a) => `Make reel “${clip(a.name, 40)}”: ${(a.clips ?? []).length} Gemini image→video clip(s) (${a.aspect ?? '9:16'}) on your laptop${a.autoEdit === false ? '' : ' → edit with Claude Code + SynthCut'}${a.autoEdit === false || a.autoSend === false ? '' : ' → send to your WhatsApp'}\n${(a.clips ?? []).map((c, i) => `${i + 1}. 🖼 ${clip(c.image_prompt, 160)} → 🎬 ${clip(c.motion_prompt, 120)}`).join('\n')}`,
       run: (a, { conversationId } = {}) => {
         const slug = String(a.name ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'reel';
         const clips = (Array.isArray(a.clips) ? a.clips : []).slice(0, 4).map((c) => ({ image: str(c.image_prompt, 'image_prompt', 1500), motion: str(c.motion_prompt, 'motion_prompt', 800) }));
@@ -377,8 +378,9 @@ Make ${clips.length} image→video clip(s) in Google Gemini (https://gemini.goog
 3. If Gemini says the daily video limit is reached, or offers a lower/older video model instead, STOP making videos (do not use the fallback model, never upgrade or pay). Still download any images made.
 4. Final report: a Markdown table — clip number, image file path, video file path, status — plus anything that went wrong.
 ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion prompt: ${c.motion}`).join('')}`;
-        const t = store.createTask({ title: `Laptop: Gemini reel clips “${slug}”`, kind: 'computer', instruction, conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: true } });
-        return { queued: true, id: t.id.slice(0, 8), folder: `~/Downloads/friday-media/reel-${slug}`, laptop_online: nodes.online, note: 'Gemini Pro allows ~3 videos/day.' };
+        const folder = `~/Downloads/friday-media/reel-${slug}`;
+        const t = store.createTask({ title: `Laptop: Gemini reel clips “${slug}”`, kind: 'computer', instruction, conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: true, reel: { slug, folder: `reel-${slug}`, brief: clip(a.idea, 600), aspect, seconds: a.seconds ?? null, autoEdit: a.autoEdit !== false, autoSend: a.autoSend !== false } } });
+        return { queued: true, id: t.id.slice(0, 8), folder, laptop_online: nodes.online, then: t && (a.autoEdit !== false) ? 'when the clips are done I edit the reel with Claude Code + SynthCut on the laptop and send it to your WhatsApp automatically' : 'clips only', note: 'Gemini Pro allows ~3 videos/day.' };
       },
     },
     {
@@ -387,11 +389,16 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
       parameters: obj({ path: { type: 'string', description: 'absolute path on the laptop' }, caption: { type: 'string' } }, ['path']),
       summarize: (a) => `Send ${clip(String(a.path).split('/').pop(), 80)} to your own WhatsApp${a.caption ? ` with “${clip(a.caption, 120)}”` : ''}`,
       run: (a, { conversationId } = {}) => {
-        const p = str(a.path, 'path', 500);
-        const t = store.createTask({ title: `Laptop: send reel to your WhatsApp`, kind: 'computer', conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: true },
-          instruction: `Send a file to the user's OWN WhatsApp chat (not to anyone else). Open https://web.whatsapp.com (wait for the chat list). Open the chat with the user himself — search his name or "You"; it is marked "(You)" / "Message yourself". Verify the open chat header is his own chat before attaching. Use the attach (+ / paperclip) control → "Photos & videos", and attach this file with browser_upload: ${p}\n${a.caption ? `Type the caption exactly: ${clip(a.caption, 500)}\n` : ''}Press Send (intent submit_external, expect the Send button label), wait until the video finishes uploading, and confirm it appears in the chat. If the chat is not clearly his own, stop and report.` });
+        const t = ctx.reelSendTask({ path: str(a.path, 'path', 500), caption: a.caption ?? '', conversationId: conversationId ?? null });
         return { queued: true, id: t.id.slice(0, 8), laptop_online: nodes.online };
       },
+    },
+    {
+      name: 'reel_edit', risk: 'gated', category: 'computer', riskClass: 'consequential',
+      description: 'Edit downloaded reel clips into one finished reel: starts a headless Claude Code session with SynthCut on the user\'s laptop (video editing tools only), exports final.mp4 into the same folder, then (send=true, default) delivers it to his own WhatsApp. reel_create already does this automatically after the clips are made — use this to (re)edit a folder, e.g. with a new brief.',
+      parameters: obj({ folder: { type: 'string', description: 'reel folder name (e.g. reel-goa-sunset) or full path inside Downloads/friday-media' }, brief: { type: 'string' }, aspect: { type: 'string', enum: ['9:16', '16:9', '1:1'] }, seconds: { type: 'integer' }, send: { type: 'boolean' } }, ['folder']),
+      summarize: (a) => `Edit the reel in ${clip(a.folder, 120)} with Claude Code + SynthCut on your laptop${a.send === false ? '' : ', then send it to your WhatsApp'}${a.brief ? ` — “${clip(a.brief, 200)}”` : ''}`,
+      run: (a, { conversationId } = {}) => { void ctx.reels.edit({ conversationId: conversationId ?? null, folder: str(a.folder, 'folder', 500), brief: a.brief ?? '', aspect: a.aspect ?? '9:16', seconds: a.seconds ?? null, autoSend: a.send !== false, title: String(a.folder).split('/').pop() }); return { started: true, note: 'Editing runs in the background; progress messages arrive in this chat.' }; },
     },
     {
       name: 'dm_chat_start', risk: 'gated', category: 'messaging', riskClass: 'consequential',
