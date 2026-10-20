@@ -353,15 +353,15 @@ export function buildFridayTools(ctx) {
     },
     {
       name: 'reel_create', risk: 'gated', category: 'computer', riskClass: 'consequential',
-      description: 'Make the raw clips for a reel with Google Gemini in the user\'s laptop browser (his Gemini Pro account): for each clip, generate an image from your image prompt, then turn that image into an ~8 s Veo video with your motion prompt, and download both into Downloads/friday-media/reel-<name>/. YOU write the storyboard and every prompt (vivid, specific, consistent characters/style across clips). Gemini Pro allows only about 3 videos per day, so plan 1-3 clips (max 4); if the limit is hit the job stops and reports what is missing. When the clips are done Friday automatically edits them into one reel with Claude Code + SynthCut on the laptop and sends final.mp4 to his WhatsApp. One approval covers the whole chain.',
+      description: 'Make the raw clips for a reel with Google Gemini in the user\'s laptop browser (his Gemini Pro account): for each clip, generate an image from your image prompt, then turn that image into an ~8 s Veo video with your motion prompt, and download both into Downloads/friday-media/reel-<name>/. YOU write the storyboard and every prompt (vivid, specific, consistent characters/style across clips). Gemini Pro allows only about 3 videos per day, so plan 1-3 clips (max 4); if the limit is hit the job stops and reports what is missing. When the clips are done, all photos and videos are zipped and attached to this chat as a .zip download (he edits them with Claude himself). One approval covers the job.',
       parameters: obj({
         name: { type: 'string', description: 'short slug, e.g. goa-sunset' },
         idea: { type: 'string', description: 'the reel idea in one or two sentences' },
         aspect: { type: 'string', enum: ['9:16', '16:9', '1:1'] },
         clips: { type: 'array', items: { type: 'object', properties: { image_prompt: { type: 'string' }, motion_prompt: { type: 'string' } }, required: ['image_prompt', 'motion_prompt'] } },
-        seconds: { type: 'integer', description: 'target reel length' }, autoEdit: { type: 'boolean', description: 'default true: edit with Claude Code + SynthCut when the clips are done' }, autoSend: { type: 'boolean', description: 'default true: send the final reel to his WhatsApp' },
+        seconds: { type: 'integer', description: 'target reel length' }, autoEdit: { type: 'boolean', description: 'default false (he edits with Claude himself); true = also auto-edit with Claude Code + SynthCut on the laptop' }, autoSend: { type: 'boolean', description: 'only with autoEdit: send the final reel to his WhatsApp (default true)' },
       }, ['name', 'idea', 'clips']),
-      summarize: (a) => `Make reel “${clip(a.name, 40)}”: ${(a.clips ?? []).length} Gemini image→video clip(s) (${a.aspect ?? '9:16'}) on your laptop${a.autoEdit === false ? '' : ' → edit with Claude Code + SynthCut'}${a.autoEdit === false || a.autoSend === false ? '' : ' → send to your WhatsApp'}\n${(a.clips ?? []).map((c, i) => `${i + 1}. 🖼 ${clip(c.image_prompt, 160)} → 🎬 ${clip(c.motion_prompt, 120)}`).join('\n')}`,
+      summarize: (a) => `Make reel “${clip(a.name, 40)}”: ${(a.clips ?? []).length} Gemini image→video clip(s) (${a.aspect ?? '9:16'}) on your laptop${a.autoEdit === true ? ' → edit with Claude Code + SynthCut' : ' → .zip of all photos & videos in chat'}${a.autoEdit === true && a.autoSend !== false ? ' → send to your WhatsApp' : ''}\n${(a.clips ?? []).map((c, i) => `${i + 1}. 🖼 ${clip(c.image_prompt, 160)} → 🎬 ${clip(c.motion_prompt, 120)}`).join('\n')}`,
       run: (a, { conversationId } = {}) => {
         const slug = String(a.name ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'reel';
         const clips = (Array.isArray(a.clips) ? a.clips : []).slice(0, 4).map((c) => ({ image: str(c.image_prompt, 'image_prompt', 1500), motion: str(c.motion_prompt, 'motion_prompt', 800) }));
@@ -379,8 +379,8 @@ Make ${clips.length} image→video clip(s) in Google Gemini (https://gemini.goog
 4. Final report: a Markdown table — clip number, image file path, video file path, status — plus anything that went wrong.
 ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion prompt: ${c.motion}`).join('')}`;
         const folder = `~/Downloads/friday-media/reel-${slug}`;
-        const t = store.createTask({ title: `Laptop: Gemini reel clips “${slug}”`, kind: 'computer', instruction, conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: true, reel: { slug, folder: `reel-${slug}`, brief: clip(a.idea, 600), aspect, seconds: a.seconds ?? null, autoEdit: a.autoEdit !== false, autoSend: a.autoSend !== false } } });
-        return { queued: true, id: t.id.slice(0, 8), folder, laptop_online: nodes.online, then: t && (a.autoEdit !== false) ? 'when the clips are done I edit the reel with Claude Code + SynthCut on the laptop and send it to your WhatsApp automatically' : 'clips only', note: 'Gemini Pro allows ~3 videos/day.' };
+        const t = store.createTask({ title: `Laptop: Gemini reel clips “${slug}”`, kind: 'computer', instruction, conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: true, reel: { slug, folder: `reel-${slug}`, brief: clip(a.idea, 600), aspect, seconds: a.seconds ?? null, zip: true, autoEdit: a.autoEdit === true, autoSend: a.autoEdit === true && a.autoSend !== false } } });
+        return { queued: true, id: t.id.slice(0, 8), folder, laptop_online: nodes.online, then: a.autoEdit === true ? 'zip in chat, then auto-edit with Claude Code + SynthCut and send to WhatsApp' : 'when the clips are done you get a .zip of all photos and videos here in the chat', note: 'Gemini Pro allows ~3 videos/day.' };
       },
     },
     {
@@ -392,6 +392,12 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
         const t = ctx.reelSendTask({ path: str(a.path, 'path', 500), caption: a.caption ?? '', conversationId: conversationId ?? null });
         return { queued: true, id: t.id.slice(0, 8), laptop_online: nodes.online };
       },
+    },
+    {
+      name: 'reel_zip', risk: 'safe',
+      description: 'Zip a reel folder on the laptop (all generated photos and videos) and attach the .zip to this chat as a download. reel_create already does this when its clips are done; use this to resend or after adding clips.',
+      parameters: obj({ folder: { type: 'string', description: 'reel folder name, e.g. reel-goa-sunset' } }, ['folder']),
+      run: (a, { conversationId } = {}) => { void ctx.reels.bundle({ conversationId: conversationId ?? null, folder: str(a.folder, 'folder', 200), title: String(a.folder).replace(/^reel-/, '') }); return { started: true, note: 'The .zip arrives in this chat in a moment.' }; },
     },
     {
       name: 'reel_edit', risk: 'gated', category: 'computer', riskClass: 'consequential',

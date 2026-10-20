@@ -41,10 +41,10 @@ export class Files {
     return this.get(id);
   }
 
-  save({ name, data, source = 'friday', conversationId = null, taskId = null, parentId = null }) {
+  save({ name, data, source = 'friday', conversationId = null, taskId = null, parentId = null, maxBytes = MAX_FILE_BYTES }) {
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(String(data ?? ''), 'utf8');
     if (!buf.length) throw new TypeError('empty file');
-    if (buf.length > MAX_FILE_BYTES) throw new TypeError('file too large (max 25 MB)');
+    if (buf.length > maxBytes) throw new TypeError(`file too large (max ${Math.round(maxBytes / 1048576)} MB)`);
     const clean = safeName(name); if (!MIME[extOf(clean)]) throw new TypeError(`file type .${extOf(clean) || '?'} is not allowed`);
     const id = randomUUID();
     writeFileSync(this.path(id), buf, { mode: 0o600 });
