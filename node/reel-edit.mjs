@@ -17,6 +17,16 @@ function synthcutServer() {
   try { const c = JSON.parse(readFileSync(join(homedir(), '.claude.json'), 'utf8')); return c.mcpServers?.['ai-video-editor'] ?? null; } catch { return null; }
 }
 
+// Resolve a reel folder (bare name or path) strictly inside Downloads/friday-media.
+export function reelFolder(folder, downloadsRoot) {
+  mkdirSync(join(downloadsRoot, 'friday-media'), { recursive: true });
+  const root = realpathSync(join(downloadsRoot, 'friday-media'));
+  const f = String(folder ?? '').replace(/^~(?=\/)/, homedir());
+  let dir; try { dir = realpathSync(f.startsWith('/') ? f : join(root, f)); } catch { throw new Error('folder not found'); }
+  if (!dir.startsWith(root + sep) || !statSync(dir).isDirectory()) throw new Error('folder must be inside Downloads/friday-media');
+  return dir;
+}
+
 export async function reelEdit({ folder, brief = '', aspect = '9:16', seconds = null }, { downloadsRoot }) {
   if (running) throw new Error('another reel edit is already running');
   mkdirSync(join(downloadsRoot, 'friday-media'), { recursive: true });

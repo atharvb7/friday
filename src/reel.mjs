@@ -8,10 +8,24 @@ export class ReelPipeline {
   async onTaskCompleted(taskId) {
     const t = this.store.getTask(taskId); if (!t) return;
     let meta = {}; try { meta = JSON.parse(t.meta ?? '{}'); } catch { return; }
-    const r = meta.reel; if (!r?.autoEdit || this.busy.has(taskId)) return;
+    const r = meta.reel; if (!r || this.busy.has(taskId)) return;
     this.busy.add(taskId);
-    try { await this.edit({ conversationId: t.conversation_id, folder: r.folder, brief: r.brief, aspect: r.aspect, seconds: r.seconds, autoSend: r.autoSend !== false, title: r.slug }); }
-    finally { this.busy.delete(taskId); }
+    try {
+      if (r.zip !== false) await this.bundle({ conversationId: t.conversation_id, folder: r.folder, title: r.slug });
+      if (r.autoEdit) await this.edit({ conversationId: t.conversation_id, folder: r.folder, brief: r.brief, aspect: r.aspect, seconds: r.seconds, autoSend: r.autoSend !== false, title: r.slug });
+    } finally { this.busy.delete(taskId); }
+  }
+
+  // Zip everything the job generated (photos + videos) on the laptop and hand it over as a download in the chat.
+  async bundle({ conversationId = null, folder, title = 'reel' }) {
+    const t = { conversation_id: conversationId };
+    if (!this.nodes.online) { this.#tell(t, `📦 The clips for “${title}” are done, but your laptop went offline before I could zip them. Say “zip the ${title} clips” when it's back.`); return { error: 'laptop_offline' }; }
+    let out;
+    try { out = await this.nodes.dispatch({ action: 'reel_zip', args: { folder, conversationId }, timeoutMs: 15 * 60_000 }); }
+    catch (e) { this.#tell(t, `⚠️ I couldn't zip the clips for “${title}”: ${String(e.message).slice(0, 200)}`); return { error: e.message }; }
+    if (conversationId && this.chat.getConversation(conversationId)) this.chat.addMessage(conversationId, 'assistant', `📦 All generated photos and videos for “${title}” (${out.files} files, ${Math.round(out.bytes / 1048576 * 10) / 10} MB) — download below.`, { attachments: [out.file.id] });
+    this.bus?.publish('reel.zipped', { file: out.file.id });
+    return { zipped: true, file: out.file };
   }
 
   async edit({ conversationId = null, folder, brief = '', aspect = '9:16', seconds = null, autoSend = true, title = 'reel' }) {

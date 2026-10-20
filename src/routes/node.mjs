@@ -12,6 +12,15 @@ export function nodeRoutes(router, ctx) {
     try { nodes.hello(principal.id, b); return [200, { ok: true }]; } catch (e) { return [409, { error: e.message }]; }
   });
 
+  // The laptop node uploads a bundle it made (e.g. a reel's zip of generated photos/videos) into Friday's files.
+  router.post('/v1/node/upload', async ({ url, rawBody }) => {
+    const name = url.searchParams.get('name') ?? '';
+    if (!/\.zip$/i.test(name)) return [400, { error: 'only .zip bundles' }];
+    const conversationId = url.searchParams.get('conversation') || null;
+    if (conversationId && !ctx.chat.getConversation(conversationId)) return [404, { error: 'conversation_not_found' }];
+    let data; try { data = await rawBody({ max: 300 * 1024 * 1024 }); } catch { return [413, { error: 'too large (300 MB)' }]; }
+    try { return [201, { file: ctx.files.public(ctx.files.save({ name, data, source: 'task', conversationId, maxBytes: 300 * 1024 * 1024 })) }]; } catch (e) { return [400, { error: e.message }]; }
+  });
   router.post('/v1/node/result', async ({ body, principal }) => {
     const b = await body({ max: 3 * 1024 * 1024 }); // screenshots ride in results
     if (typeof b.id !== 'string') return [400, { error: 'id required' }];

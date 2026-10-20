@@ -7,7 +7,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { reelEdit } from './reel-edit.mjs';
+import { reelEdit, reelFolder } from './reel-edit.mjs';
+import { zipFolder } from './zip.mjs';
 import { BrowserController } from './browser.mjs';
 import { atspiAvailable, defaultAllowedDirs, idleMs, makeDesktop } from './desktop.mjs';
 
@@ -52,6 +53,16 @@ const handlers = {
     browser_wait: (a) => browser.wait(a), browser_click_text: (a) => browser.click_text(a), browser_screenshot: (a) => browser.screenshot(a),
     ig_dm_send: (a) => browser.ig_dm_send(a),
     browser_download_folder: (a) => browser.download_folder(a), browser_downloads: (a) => browser.downloads_list(a),
+    // Zip a reel folder and upload it to Friday, attached to the chat (the server posts the download card).
+    reel_zip: async (a) => {
+      const dir = reelFolder(a.folder, allowedDirs.find((d) => /\/Downloads$/.test(d)) ?? join(homedir(), 'Downloads'));
+      const { zip, count } = zipFolder(dir);
+      const name = `${dir.split('/').pop()}.zip`;
+      const r = await fetch(`${server}/v1/node/upload?name=${encodeURIComponent(name)}${a.conversationId ? `&conversation=${encodeURIComponent(a.conversationId)}` : ''}`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/zip' }, body: zip, signal: AbortSignal.timeout(10 * 60_000) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(`upload failed: ${j.error ?? r.status}`);
+      return { file: j.file, files: count, bytes: zip.length };
+    },
     reel_edit: (a) => reelEdit(a, { downloadsRoot: allowedDirs.find((d) => /\/Downloads$/.test(d)) ?? join(homedir(), 'Downloads') }),
   } : {}),
   file_find: (a) => desktop.file_find(a), open_target: (a) => desktop.open_target(a), open_app: (a) => desktop.open_app(a),
