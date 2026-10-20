@@ -4,7 +4,7 @@ export function authRoutes(router, ctx) {
   const a = (type, data) => { try { audit.append('ad-hoc-local', type, data); } catch {} };
   const typeErr = (e) => (e instanceof TypeError ? [400, { error: e.message }] : [400, { error: e.message }]);
 
-  router.get('/v1/auth/whoami', ({ principal }) => [200, { principal: { kind: principal.kind, id: principal.id, name: principal.name ?? null, scopes: principal.scopes }, totpActive: auth.totpActive() }]);
+  router.get('/v1/auth/whoami', ({ principal }) => [200, { principal: { kind: principal.kind, sessionOf: principal.sessionOf ?? null, id: principal.id, name: principal.name ?? null, scopes: principal.scopes }, totpActive: auth.totpActive() }]);
   router.get('/v1/devices', () => [200, { devices: auth.listDevices() }]);
   router.get('/v1/sessions', () => [200, { sessions: auth.listSessions() }]);
   router.get('/v1/auth/login-settings', () => [200, ctx.login.status()]);

@@ -221,8 +221,9 @@ const handler = async (req, res) => {
   const scope = requiredScope(req.method, url.pathname);
   const guestChat = principal.scopes.includes('guest') && req.method === 'POST' && url.pathname === '/v1/chat'; // guests may ONLY chat (as guests)
   if (!isMember && !principal.scopes.includes(scope) && !guestChat) return send(res, 403, { error: 'forbidden', needs: scope, ...(isPublic && ['admin', 'node'].includes(scope) ? { hint: 'owner and laptop-node functions only work on the private Tailscale address' } : {}) });
-  // Everyone except the owner on the private address backs consequential actions with a fresh TOTP code.
-  if (principal.kind !== 'owner' && req.method !== 'GET' && needsTotp(url.pathname) && ctx.auth.totpActive()
+  // Devices (and browser sessions opened with a device token) back consequential actions with a fresh code.
+  // The owner — on the private address or signed in on the site — is not asked again for every approval.
+  if ((principal.kind === 'device' || (principal.kind === 'session' && principal.sessionOf === 'device')) && req.method !== 'GET' && needsTotp(url.pathname) && ctx.auth.totpActive()
       && !ctx.auth.checkTotp(String(req.headers['x-friday-totp'] ?? ''))) {
     return send(res, 403, { error: 'totp_required' });
   }

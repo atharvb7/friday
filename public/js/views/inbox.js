@@ -7,7 +7,7 @@ export function render({ app, api, toast, refresh }) {
   const el = h('div', { class: 'page' }, h('div', { class: 'page-head' }, h('h2', {}, 'Inbox'), h('button', { class: 'btn small', onclick: markAll }, 'Mark all read')), tabs, body);
 
   async function totpFor() {
-    if (app.me?.kind === 'device' && app.totpActive) { const c = prompt('Authenticator code (6 digits)'); return c ? c.trim() : null; }
+    if (app.needsCode?.() && app.totpActive) { const c = prompt('Authenticator code (6 digits)'); return c ? c.trim() : null; }
     return undefined;
   }
   async function decide(a, approve) {
