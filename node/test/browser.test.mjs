@@ -175,3 +175,29 @@ test('real Chrome: smart waits return as soon as the page is still; popups are f
     assert.equal(await b.page.title(), 'Popup', 'new tab became the active page');
   } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('real Chrome: downloads are saved into Downloads/friday-media/<folder> and listed with their paths', { skip: !existsSync(CHROME) }, async () => {
+  const srv = http.createServer((req, res) => {
+    if (req.url === '/clip.mp4') { res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Disposition': 'attachment; filename="clip 1.mp4"' }); return res.end(Buffer.alloc(2048, 1)); }
+    res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<html><body><a href="/clip.mp4">Download</a></body></html>');
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const dir = mkdtempSync(join(tmpdir(), 'fn-dl-'));
+  const dl = join(dir, 'Downloads'); mkdirSync(dl);
+  const b = new BrowserController({ chromium, profileDir: join(dir, 'profile'), headless: true, allowedDirs: [dl], allowPrivate: true });
+  try {
+    const { folder } = await b.download_folder({ name: 'Reel Goa!' });
+    assert.equal(folder, join(dl, 'friday-media', 'reel-goa'));
+    const page = await b.ensure();
+    await page.goto(`http://127.0.0.1:${srv.address().port}/`);
+    await b.click_text({ text: 'Download' });
+    await b.click_text({ text: 'Download' });
+    const out = await b.downloads_list({ waitMs: 10_000 });
+    for (let i = 0; i < 20 && out.downloads.filter((d) => d.status === 'done').length < 2; i++) { await new Promise((r) => setTimeout(r, 300)); Object.assign(out, await b.downloads_list({ waitMs: 2000 })); }
+    const done = out.downloads.filter((d) => d.status === 'done');
+    assert.equal(done.length, 2);
+    assert.deepEqual(done.map((d) => d.name).sort(), ['clip 1-2.mp4', 'clip 1.mp4']);
+    assert.ok(done.every((d) => d.path.startsWith(folder) && d.size === 2048));
+    await assert.rejects(() => b.download_folder({ name: '../../etc' }).then((r) => { if (!r.folder.startsWith(join(dl, 'friday-media'))) throw new Error('escaped'); throw new Error('sanitized'); }), /sanitized/);
+  } finally { await b.close(); srv.close(); rmSync(dir, { recursive: true, force: true }); }
+});
