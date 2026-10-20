@@ -194,7 +194,7 @@ function paint() {
 async function emergency() {
   if (app.status?.emergencyStopped) {
     if (!confirm('Resume Friday? Agents and the worker will start again.')) return;
-    const totp = app.me?.kind === 'device' && app.totpActive ? prompt('6-digit authenticator code') : undefined;
+    const totp = app.needsCode() && app.totpActive ? prompt('6-digit authenticator code') : undefined;
     try { await api('/v1/emergency-clear', { method: 'POST', totp }); toast('Resumed.'); } catch (e) { toast(`Could not resume: ${e.message}`); }
   } else {
     if (!confirm('Stop everything? All running agents are cancelled and elevated autonomy is revoked.')) return;
@@ -215,6 +215,8 @@ function onEvent(evt) {
 function signOut(msg) { app.stopEvents?.(); auth.clear(); app.view?.destroy?.(); showLogin(msg); }
 app.signOut = () => signOut('Signed out.');
 app.paint = paint;
+// Only devices (and sessions opened with a device token) confirm approvals with a fresh authenticator code.
+app.needsCode = () => app.me?.kind === 'device' || (app.me?.kind === 'session' && app.me?.sessionOf === 'device');
 
 async function boot() {
   const who = await api('/v1/auth/whoami');

@@ -38,7 +38,7 @@ test('public listener: raw tokens refused, token+TOTP gives a session without ad
     assert.equal((await as('/v1/status')).status, 200);
     assert.equal((await as('/v1/devices')).status, 403, 'admin stays private');
     assert.equal((await as('/v1/node/status')).status, 403, 'laptop node stays private');
-    assert.equal((await as('/v1/emergency-clear', { method: 'POST' })).status, 403, 'consequential actions need a fresh code');
+    assert.equal((await as('/v1/emergency-clear', { method: 'POST' })).status, 200, 'the owner signed in on the site is not asked for a code on every approval');
     const list = await (await priv('/v1/sessions')).json();
     assert.equal(list.sessions.length, 1);
     await priv(`/v1/sessions/${list.sessions[0].id}`, { method: 'DELETE' });

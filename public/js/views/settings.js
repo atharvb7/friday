@@ -11,7 +11,7 @@ export function render({ app, api, toast, go }) {
   const owner = app.me?.kind === 'owner';
   const el = h('div', { class: 'page stack' }, h('div', { class: 'page-head' }, h('h2', {}, 'Settings')));
   const section = (title, ...kids) => { const c = h('section', { class: 'card stack' }, h('h3', {}, title), ...kids); el.append(c); return c; };
-  const totpHeader = async () => (app.me?.kind !== 'owner' && app.totpActive ? prompt('Authenticator code (6 digits)') || null : undefined);
+  const totpHeader = async () => (app.needsCode?.() && app.totpActive ? prompt('Authenticator code (6 digits)') || null : undefined);
 
   async function build() {
     const [pers, tz, auto, pro, health, models] = await Promise.all([api('/v1/personality'), api('/v1/settings/timezone'), api('/v1/autonomy'), api('/v1/proactive'), api('/v1/health'), api('/v1/models')]);
