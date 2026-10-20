@@ -10,7 +10,7 @@ const RESULT_CHARS = 6000;
 const ACTIONS = {
   browser_open: ['browser', 'routine'], browser_snapshot: ['browser', 'routine'], browser_screenshot: ['browser', 'routine'], browser_wait: ['browser', 'routine'],
   browser_scroll: ['browser', 'routine'], browser_back: ['browser', 'routine'], browser_click: ['browser', 'routine'], browser_click_text: ['browser', 'routine'], browser_type: ['browser', 'routine'], browser_press: ['browser', 'routine'],
-  browser_upload: ['browser', 'consequential'],
+  browser_upload: ['browser', 'consequential'], browser_download_folder: ['browser', 'routine'], browser_downloads: ['browser', 'routine'],
   windows_list: ['computer', 'routine'], ui_tree: ['computer', 'routine'], file_find: ['computer', 'routine'],
   ui_act: ['computer', 'consequential'], ui_set_text: ['computer', 'consequential'], open_app: ['computer', 'consequential'], open_target: ['computer', 'consequential'],
 };
@@ -33,6 +33,8 @@ export const COMPUTER_TOOLS = [
   t('browser_click_text', 'Click the visible element containing this text (use when refs are stale or the element is not in the snapshot).', { text: { type: 'string' }, exact: { type: 'boolean' } }, ['text']),
   t('browser_type', 'Type into an input by ref (replaces content unless clear=false). submit=true presses Enter.', { ref: { type: 'integer' }, text: { type: 'string' }, clear: { type: 'boolean' }, submit: { type: 'boolean' } }, ['ref', 'text']),
   t('browser_press', 'Press a key, e.g. Enter, Escape, Control+a.', { key: { type: 'string' } }, ['key']),
+  t('browser_download_folder', 'Choose the folder (inside Downloads/friday-media) where the next downloaded files are saved — one folder per project, e.g. "reel-goa-trip".', { name: { type: 'string' } }, ['name']),
+  t('browser_downloads', 'List files you downloaded recently with their saved paths (waitMs: wait for in-progress downloads such as videos, up to 120000).', { waitMs: { type: 'integer' } }),
   t('browser_upload', 'Attach a local file (from the allowed folders) to a file input ref (hidden inputs are listed).', { ref: { type: 'integer' }, path: { type: 'string' } }, ['ref', 'path']),
   t('browser_scroll', 'Scroll the page by dy pixels (positive = down).', { dy: { type: 'integer' } }),
   t('browser_back', 'Go back in history.'),

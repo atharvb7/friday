@@ -2,7 +2,7 @@
 // DEDICATED Friday profile (log into WhatsApp etc. once, manually; sessions persist).
 // The model never sees cookies or passwords. Elements are addressed by short refs
 // produced by snapshot(), so clicks are DOM-based, not guessed pixel coordinates.
-import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { hostIsPrivate, isPrivateAddress } from './netpolicy.mjs';
 import net from 'node:net';
 import { dirname, join, resolve } from 'node:path';
@@ -112,9 +112,23 @@ const SETTLE_FN = ({ quietMs, maxMs, minInteractive }) => new Promise((resolve) 
 });
 
 export class BrowserController {
-  constructor({ chromium, profileDir, executablePath = '/usr/bin/google-chrome', headless = false, allowedDirs = [], allowPrivate = false }) {
+  constructor({ chromium, profileDir, executablePath = '/usr/bin/google-chrome', headless = false, allowedDirs = [], allowPrivate = false, downloadRoot = null }) {
     Object.assign(this, { chromium, profileDir, executablePath, headless, allowedDirs, allowPrivate }); // allowPrivate is for tests only
     this.ctx = null; this.page = null;
+    // Files the agent downloads (e.g. generated images/videos) land in <Downloads>/friday-media/<folder>/.
+    this.downloadRoot = downloadRoot ?? (allowedDirs.find((d) => /\/Downloads$/.test(d)) ? join(allowedDirs.find((d) => /\/Downloads$/.test(d)), 'friday-media') : null);
+    this.downloadFolder = 'inbox'; this.downloads = [];
+  }
+  #watchDownloads(page) {
+    page.on('download', async (d) => {
+      if (!this.downloadRoot) return d.cancel().catch(() => {});
+      const dir = join(this.downloadRoot, this.downloadFolder); mkdirSync(dir, { recursive: true });
+      const base = String(d.suggestedFilename() || 'download').replace(/[^\w.\- ]/g, '_').slice(0, 120) || 'download';
+      let target = join(dir, base); for (let i = 2; existsSync(target); i++) target = join(dir, base.replace(/(\.[^.]*)?$/, `-${i}$1`));
+      const rec = { name: target.split('/').pop(), path: target, status: 'downloading', started: new Date().toISOString() };
+      this.downloads.push(rec); if (this.downloads.length > 50) this.downloads.shift();
+      try { await d.saveAs(target); rec.status = 'done'; rec.size = statSync(target).size; } catch (e) { rec.status = `failed: ${String(e.message).slice(0, 80)}`; }
+    });
   }
 
   async ensure() {
@@ -123,7 +137,7 @@ export class BrowserController {
       this.ctx = await this.chromium.launchPersistentContext(this.profileDir, { executablePath: this.executablePath, headless: this.headless, viewport: { width: 1280, height: 800 }, args: ['--no-first-run', '--no-default-browser-check'] });
       this.ctx.on('close', () => { this.ctx = null; this.page = null; });
       // A site opening a popup / new tab (target=_blank, "continue in app"): follow it, like a person would.
-      this.ctx.on('page', (p) => { this.page = p; p.on('close', () => { if (this.page === p) this.page = this.ctx?.pages().at(-1) ?? null; }); });
+      this.ctx.on('page', (p) => { this.page = p; this.#watchDownloads(p); p.on('close', () => { if (this.page === p) this.page = this.ctx?.pages().at(-1) ?? null; }); });
       // Every request (incl. redirects and sub-resources) is checked: private/loopback/LAN targets and non-web schemes are blocked.
       if (!this.allowPrivate) await this.ctx.route('**/*', async (route) => {
         const u = new URL(route.request().url());
@@ -133,6 +147,7 @@ export class BrowserController {
       });
     }
     this.page = this.ctx.pages()[0] ?? await this.ctx.newPage();
+    for (const p of this.ctx.pages()) if (!p._fridayDl) { p._fridayDl = true; this.#watchDownloads(p); }
     return this.page;
   }
 
@@ -256,6 +271,20 @@ export class BrowserController {
     const probe = lines[0].slice(0, 40);
     try { await page.getByText(probe, { exact: false }).last().waitFor({ state: 'visible', timeout: 10_000 }); } catch { throw new Error('send_not_confirmed: the message did not appear in the chat'); }
     return { sent: true, to: u, thread: page.url() };
+  }
+  // Choose the sub-folder of Downloads/friday-media for the next downloads (one folder per project).
+  async download_folder({ name }) {
+    const n = String(name ?? '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+    if (!n) throw new Error('invalid_folder_name');
+    if (!this.downloadRoot) throw new Error('downloads_not_allowed');
+    this.downloadFolder = n; mkdirSync(join(this.downloadRoot, n), { recursive: true });
+    return { folder: join(this.downloadRoot, n) };
+  }
+  // Recent downloads (waits up to waitMs for in-progress ones, e.g. a video that is still saving).
+  async downloads_list({ waitMs = 0 } = {}) {
+    const until = Date.now() + Math.min(Number(waitMs) || 0, 120_000);
+    while (this.downloads.some((d) => d.status === 'downloading') && Date.now() < until) await new Promise((r) => setTimeout(r, 500));
+    return { folder: this.downloadRoot ? join(this.downloadRoot, this.downloadFolder) : null, downloads: this.downloads.slice(-20).map(({ name, path, status, size }) => ({ name, path, status, size })) };
   }
   async screenshot({ scale = 0.6 } = {}) {
     const page = await this.ensure();

@@ -352,6 +352,48 @@ export function buildFridayTools(ctx) {
       run: (a) => ctx.deployer.remove(a.name),
     },
     {
+      name: 'reel_create', risk: 'gated', category: 'computer', riskClass: 'consequential',
+      description: 'Make the raw clips for a reel with Google Gemini in the user\'s laptop browser (his Gemini Pro account): for each clip, generate an image from your image prompt, then turn that image into an ~8 s Veo video with your motion prompt, and download both into Downloads/friday-media/reel-<name>/. YOU write the storyboard and every prompt (vivid, specific, consistent characters/style across clips). Gemini Pro allows only about 3 videos per day, so plan 1-3 clips (max 4); if the limit is hit the job stops and reports what is missing. After it finishes, tell the user the clips are ready for editing in Claude Code (folder path), and later use reel_send to deliver the final reel. One approval covers the job.',
+      parameters: obj({
+        name: { type: 'string', description: 'short slug, e.g. goa-sunset' },
+        idea: { type: 'string', description: 'the reel idea in one or two sentences' },
+        aspect: { type: 'string', enum: ['9:16', '16:9', '1:1'] },
+        clips: { type: 'array', items: { type: 'object', properties: { image_prompt: { type: 'string' }, motion_prompt: { type: 'string' } }, required: ['image_prompt', 'motion_prompt'] } },
+      }, ['name', 'idea', 'clips']),
+      summarize: (a) => `Make reel clips “${clip(a.name, 40)}” in Gemini on your laptop: ${(a.clips ?? []).length} image→video clip(s) (${a.aspect ?? '9:16'})\n${(a.clips ?? []).map((c, i) => `${i + 1}. 🖼 ${clip(c.image_prompt, 160)} → 🎬 ${clip(c.motion_prompt, 120)}`).join('\n')}`,
+      run: (a, { conversationId } = {}) => {
+        const slug = String(a.name ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'reel';
+        const clips = (Array.isArray(a.clips) ? a.clips : []).slice(0, 4).map((c) => ({ image: str(c.image_prompt, 'image_prompt', 1500), motion: str(c.motion_prompt, 'motion_prompt', 800) }));
+        if (!clips.length) return { error: 'at least one clip needed' };
+        const aspect = a.aspect ?? '9:16';
+        const instruction = `REEL ASSET JOB "reel-${slug}" — idea: ${clip(a.idea, 400)}
+Make ${clips.length} image→video clip(s) in Google Gemini (https://gemini.google.com/app — the user is already logged in) and download every asset.
+1. browser_download_folder with name "reel-${slug}" FIRST, so all files land in Downloads/friday-media/reel-${slug}/.
+2. For each clip below, in order:
+   a. Open a NEW Gemini chat. Send exactly: "Create an image, aspect ratio ${aspect}: <image prompt>". Image generation can take 20-60 s: wait briefly and re-read the page; never resend while it is working.
+   b. Open the generated image and press its Download (full size) control. Check browser_downloads and note the saved path.
+   c. Turn it into a video: in Gemini choose the Video / Veo option (tools menu or "Create video"), attach the image you just downloaded with browser_upload (use its saved path), and send the motion prompt (keep aspect ${aspect}). Video generation takes 1-3 minutes: wait in steps and re-read; do not resend.
+   d. Press the video's Download control, then browser_downloads with waitMs 60000 until it is saved.
+3. If Gemini says the daily video limit is reached, or offers a lower/older video model instead, STOP making videos (do not use the fallback model, never upgrade or pay). Still download any images made.
+4. Final report: a Markdown table — clip number, image file path, video file path, status — plus anything that went wrong.
+${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion prompt: ${c.motion}`).join('')}`;
+        const t = store.createTask({ title: `Laptop: Gemini reel clips “${slug}”`, kind: 'computer', instruction, conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: true } });
+        return { queued: true, id: t.id.slice(0, 8), folder: `~/Downloads/friday-media/reel-${slug}`, laptop_online: nodes.online, note: 'Gemini Pro allows ~3 videos/day.' };
+      },
+    },
+    {
+      name: 'reel_send', risk: 'gated', category: 'messaging', riskClass: 'consequential',
+      description: 'Send a finished video/reel file from the user\'s laptop to HIS OWN WhatsApp (the "Message yourself" chat) via WhatsApp Web on the laptop. path must be inside Downloads/Documents/Desktop/Pictures, e.g. ~/Downloads/friday-media/reel-goa-sunset/final.mp4.',
+      parameters: obj({ path: { type: 'string', description: 'absolute path on the laptop' }, caption: { type: 'string' } }, ['path']),
+      summarize: (a) => `Send ${clip(String(a.path).split('/').pop(), 80)} to your own WhatsApp${a.caption ? ` with “${clip(a.caption, 120)}”` : ''}`,
+      run: (a, { conversationId } = {}) => {
+        const p = str(a.path, 'path', 500);
+        const t = store.createTask({ title: `Laptop: send reel to your WhatsApp`, kind: 'computer', conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: true },
+          instruction: `Send a file to the user's OWN WhatsApp chat (not to anyone else). Open https://web.whatsapp.com (wait for the chat list). Open the chat with the user himself — search his name or "You"; it is marked "(You)" / "Message yourself". Verify the open chat header is his own chat before attaching. Use the attach (+ / paperclip) control → "Photos & videos", and attach this file with browser_upload: ${p}\n${a.caption ? `Type the caption exactly: ${clip(a.caption, 500)}\n` : ''}Press Send (intent submit_external, expect the Send button label), wait until the video finishes uploading, and confirm it appears in the chat. If the chat is not clearly his own, stop and report.` });
+        return { queued: true, id: t.id.slice(0, 8), laptop_online: nodes.online };
+      },
+    },
+    {
       name: 'dm_chat_start', risk: 'gated', category: 'messaging', riskClass: 'consequential',
       description: 'Let Friday chat on Instagram DM with specific people (by username) for a limited time, replying on her own whenever they message — the user approves ONCE for the whole session. Use this for "chat with X when they reply", "keep talking to them", "have a chat with both". Optionally send an intro first. Friday stays an openly-AI, friendly assistant, never shares his private info, and tells him if someone needs him. Find exact usernames with instagram_read LIST_ALL_CONVERSATIONS (fields participants) first.',
       parameters: obj({ usernames: { type: 'array', items: { type: 'string' } }, minutes: { type: 'integer', description: 'How long to keep chatting (default 60, max 180)' }, goal: { type: 'string', description: 'What he wants, e.g. "introduce yourself, keep it playful"' }, intro: { type: 'string', description: 'Optional first message to send now (same for everyone)' } }, ['usernames']),
