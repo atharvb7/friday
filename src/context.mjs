@@ -59,6 +59,7 @@ import { GoogleAuth, Gmail } from './google.mjs';
 import { OwnerLogin } from './login.mjs';
 import { Users } from './users.mjs';
 import { Deployer } from './deployer.mjs';
+import { ReelPipeline } from './reel.mjs';
 import { Questions } from './questions.mjs';
 
 function findDshBin() {
@@ -242,6 +243,11 @@ export function createContext({ appRoot, env = process.env }) {
   kindRouter.byKind.hermes = ctx.hermes;
   kindRouter.byKind.watch = kindRouter.byKind.computer; // read-only laptop checks for watches
   ctx.dmChats = new DmChats({ store, ai, composio: ctx.composio, nodes: ctx.nodes, chat: ctx.chat, notifications: ctx.notifications, bus, settings });
+  // Deliver a finished reel to the owner's own WhatsApp (laptop task); shared by reel_send and the reel pipeline.
+  ctx.reelSendTask = ({ path, caption = '', conversationId = null }) => store.createTask({ title: 'Laptop: send reel to your WhatsApp', kind: 'computer', conversationId, meta: { grant: true, autoSubmit: true },
+    instruction: `Send a file to the user's OWN WhatsApp chat (not to anyone else). Open https://web.whatsapp.com (wait for the chat list). Open the chat with the user himself — search his name or "You"; it is marked "(You)" / "Message yourself". Verify the open chat header is his own chat before attaching. Use the attach (+ / paperclip) control → "Photos & videos", and attach this file with browser_upload: ${path}\n${caption ? `Type the caption exactly: ${String(caption).slice(0, 500)}\n` : ''}Press Send (intent submit_external, expect the Send button label), wait until the video finishes uploading, and confirm it appears in the chat. If the chat is not clearly his own, stop and report.` });
+  ctx.reels = new ReelPipeline({ store, nodes: ctx.nodes, chat: ctx.chat, notifications: ctx.notifications, bus, createSendTask: ctx.reelSendTask });
+  { const prev = store.onEvent; store.onEvent = (e) => { prev?.(e); if (e.kind === 'task.completed') setTimeout(() => { ctx.reels.onTaskCompleted(e.taskId).catch(() => {}); }, 1500).unref?.(); }; }
   ctx.watches = new Watches({ store, ai, jobs: ctx.jobs, notifications: ctx.notifications, chat: ctx.chat, bus, settings, gmail: ctx.gmail });
   { const prev = store.onEvent; store.onEvent = (e) => { prev?.(e); if (['task.completed', 'task.failed'].includes(e.kind)) setTimeout(() => { ctx.watches.onTaskFinished(e.taskId, e.kind).catch(() => {}); }, 500).unref?.(); }; }
   kindRouter.byKind.team = new TeamOrchestrator({ store, router: kindRouter, ai });
