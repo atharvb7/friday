@@ -48,6 +48,12 @@ function businessTools(pipeline) {
       run: (a) => { const { id, ...rest } = a; const l = pipeline.update(str(id, 'id', 60), rest); return { id: l.id.slice(0, 8), company: l.company, stage: l.stage, next_action: l.next_action, next_at: l.next_at }; },
     },
     {
+      name: 'outreach_pause', risk: 'safe',
+      description: 'Pause or resume all outreach sending (queued emails are held while paused). Friday pauses automatically when bounces pass 2%; resume only after the user says the cause is fixed.',
+      parameters: obj({ paused: { type: 'boolean' }, reason: { type: 'string' } }, ['paused']),
+      run: (a) => (a.paused ? { paused: pipeline.pause(a.reason ?? 'paused by the user') } : pipeline.resume()),
+    },
+    {
       name: 'outreach_cancel', risk: 'safe',
       description: 'Cancel queued (not yet sent) outreach emails for a lead (lead_id) or all of them (all=true). Sent mail cannot be unsent. See the queue with lead_find stats=true.',
       parameters: obj({ lead_id: { type: 'string' }, all: { type: 'boolean' } }, []),

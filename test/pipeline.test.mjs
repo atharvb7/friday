@@ -280,3 +280,31 @@ test('send queue: slots inside the prospect\'s business hours, spaced, restart-s
     assert.equal(s.p.outbox().length, 0, 'do-not-contact cancels too');
   } finally { s.close(); }
 });
+
+test('circuit breaker: >2% bounces over the recent sends pauses outreach and holds the queue', async () => {
+  const s = setup();
+  try {
+    const body = 'Noticed your quote form. A specific, honest observation. Want the one-page plan?';
+    s.settings.set('outreach_daily_cap', 100);
+    const ids = Array.from({ length: 30 }, (_, i) => s.p.save({ company: `Co ${i}`, email: `p${i}@co${i}.example` }).id);
+    // 10 sent: below the 20-send minimum, one bounce does not trip the breaker
+    const drain = async () => { while (await s.p.flushOutbox()) { /* the minute timer, sped up */ } };
+    await s.p.send(ids.slice(0, 10).map((id) => ({ lead_id: id, subject: 'quick one', body }))); await drain();
+    const date = () => new Date(s.now()).toUTCString();
+    s.inbox.push({ id: 'b1', from: 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>', date: date(), snippet: "wasn't delivered to p3@co3.example" });
+    await s.p.tick();
+    assert.equal(s.p.paused(), null);
+    // 25 sent, 1 bounced = 4% > 2%: paused, user notified, queue held
+    await s.p.send(ids.slice(10, 25).map((id) => ({ lead_id: id, subject: 'quick one', body }))); await drain();
+    assert.equal(s.sent.length, 25);
+    s.inbox.push({ id: 'b2', from: 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>', date: date(), snippet: "wasn't delivered to p12@co12.example" });
+    await s.p.tick();
+    assert.match(s.p.paused().reason, /bounced \(over 2%\)/);
+    assert.ok(s.notes.some((n) => /Outreach paused/.test(n.title)));
+    const before = s.sent.length;
+    await s.p.send(ids.slice(25).map((id) => ({ lead_id: id, subject: 'quick one', body })));
+    assert.equal(s.sent.length, before, 'nothing leaves while paused'); assert.equal(s.p.outbox().length, 5);
+    s.p.resume(); await drain();
+    assert.equal(s.sent.length, before + 5);
+  } finally { s.close(); }
+});

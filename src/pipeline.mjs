@@ -173,7 +173,7 @@ export class Pipeline {
   history(id) { const l = this.get(id); if (!l) return null; return { lead: l, events: this.db.prepare('SELECT kind, summary, at FROM lead_events WHERE lead_id=? ORDER BY at DESC LIMIT 40').all(l.id) }; }
   stats() {
     const by = Object.fromEntries(this.db.prepare('SELECT stage, COUNT(*) n FROM leads GROUP BY stage').all().map((r) => [r.stage, r.n]));
-    return { by_stage: by, due_follow_ups: this.find({ due: true, limit: 100 }).count, sent_today: this.sentToday(), daily_cap: this.cap(), queued: this.outbox({ limit: 15 }), suppressed: this.db.prepare('SELECT COUNT(*) n FROM suppressions').get().n };
+    return { paused: this.paused(), by_stage: by, due_follow_ups: this.find({ due: true, limit: 100 }).count, sent_today: this.sentToday(), daily_cap: this.cap(), queued: this.outbox({ limit: 15 }), suppressed: this.db.prepare('SELECT COUNT(*) n FROM suppressions').get().n };
   }
 
   // ---- outreach ----
@@ -361,7 +361,7 @@ export class Pipeline {
 
   // Send every queued email whose slot has come (normally one per minute-tick, because slots are spaced).
   async flushOutbox() {
-    if (!this.gmail?.ready) return 0;
+    if (!this.gmail?.ready || this.paused()) return 0;
     let sent = 0;
     for (const row of this.db.prepare("SELECT * FROM outbox WHERE status='queued' AND scheduled_at <= ? ORDER BY scheduled_at LIMIT 5").all(this.#iso())) {
       const lead = this.get(row.lead_id);
@@ -478,8 +478,28 @@ export class Pipeline {
       this.#event(hit.id, 'bounce', clean(m.snippet, 300)); n++;
     }
     this.settings.set('pipeline_bounces_seen', [...seen].slice(-200));
+    if (n) this.#bounceBreaker();
     return n;
   }
+
+  // ---- circuit breaker: protect the sending account ----
+  // More than 2% of the last 100 first-touch sends bounced (with at least 20 sent): stop sending until the user resumes.
+  #bounceBreaker() {
+    const sent = this.db.prepare("SELECT lead_id FROM lead_events WHERE kind='sent' ORDER BY at DESC LIMIT 100").all();
+    if (sent.length < 20) return;
+    const ids = new Set(sent.map((r) => r.lead_id));
+    const bounced = this.db.prepare("SELECT DISTINCT lead_id FROM lead_events WHERE kind='bounce'").all().filter((r) => ids.has(r.lead_id)).length;
+    if (bounced / sent.length > 0.02) this.pause(`${bounced} of the last ${sent.length} emails bounced (over 2%): the list needs checking before the account gets flagged`);
+  }
+  paused() { return this.settings.get('outreach_paused', null); }
+  pause(reason) {
+    if (this.paused()) return this.paused();
+    const p = { reason: clean(reason, 300), at: this.#iso() };
+    this.settings.set('outreach_paused', p);
+    this.notifications?.create({ level: 'warning', title: '⏸ Outreach paused', body: `${p.reason}\nQueued emails are held. Ask me to resume outreach when it is fixed.` });
+    return p;
+  }
+  resume() { this.settings.set('outreach_paused', null); return { resumed: true }; }
 
   #nudgeDue() {
     const day = this.#iso().slice(0, 10);
