@@ -236,7 +236,7 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
       let out;
       try { out = jsonIn((await this.ai.run('reason', { maxTokens: 1400, temperature: round ? 0.3 : 0.5, messages })).content); } catch { return { ok: false, why: 'writer model unavailable' }; }
       if (!out?.body) { messages.push({ role: 'user', content: 'Output ONLY the JSON object {"subject": "...", "body": "..."}.' }); continue; }
-      const email = { lead_id: lead.id, subject: followUp ? undefined : clip(out.subject, 120), body: String(out.body), follow_up: followUp };
+      const email = { lead_id: lead.id, to: lead.email, company: lead.company, ...(followUp ? {} : { subject: clip(out.subject, 120) }), body: String(out.body), follow_up: followUp };
       let r;
       try { r = await this.pipeline.review([email]); } catch (e) { return { ok: false, why: clip(e.message, 200) }; }
       if (r.ok) return { ok: true, email, rounds: round + 1 };

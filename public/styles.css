@@ -458,3 +458,7 @@ input[type=email] { width: 100%; background: var(--glass-strong); border: 1px so
 /* long approval payloads wrap instead of pushing the page sideways */
 .page .card pre.bubble, .page .card .mono.bubble { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 .page { overflow-x: hidden; } .page .card { min-width: 0; max-width: 100%; }
+
+/* Approval cards: long payloads scroll inside the card (inline styles are blocked by the CSP). */
+.payload-raw { max-height: 60vh; overflow: auto; white-space: pre-wrap; }
+.payload-emails { max-height: 70vh; overflow: auto; }

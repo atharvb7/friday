@@ -16,6 +16,12 @@ export function render({ app, api, toast, refresh }) {
     catch (e) { toast(e.message === 'totp_required' ? 'A valid authenticator code is required.' : `Failed: ${e.message}`); }
     load(); refresh();
   }
+  const rawPayload = (x) => h('pre', { class: 'mono bubble payload-raw' }, JSON.stringify(x.payload, null, 2).slice(0, 40000));
+  // Outreach batches read like the emails they are: who, subject, the formatted body.
+  const emailPreview = (emails) => h('div', { class: 'stack payload-emails' }, ...emails.map((e, i) => h('div', { class: 'bubble stack' },
+    h('div', { class: 'row wrap' }, h('strong', { class: 'grow' }, `${i + 1}. ${e.company ?? e.to ?? e.lead_id ?? ''}`), e.to ? h('span', { class: 'faint small' }, e.to) : null, h('span', { class: 'chip' }, e.follow_up ? 'follow-up' : 'first email')),
+    e.subject ? h('div', {}, h('span', { class: 'faint small' }, 'Subject: '), h('strong', {}, e.subject)) : null,
+    h('div', {}, md(String(e.body ?? '').slice(0, 6000))))));
   async function markAll() { await api('/v1/notifications/read-all', { method: 'POST' }); load(); refresh(); }
 
   async function load() {
@@ -30,7 +36,7 @@ export function render({ app, api, toast, refresh }) {
       for (const x of a.approvals) {
         body.append(h('div', { class: 'card stack' },
           h('div', { class: 'row wrap' }, h('strong', { class: 'grow' }, x.summary), h('span', { class: `chip ${x.risk === 'critical' ? 'bad' : 'warn'}` }, x.risk), h('span', { class: 'chip' }, x.category), h('span', { class: 'faint' }, timeAgo(x.created_at))),
-          h('pre', { class: 'mono bubble', style: 'max-height:60vh;overflow:auto;white-space:pre-wrap' }, JSON.stringify(x.payload, null, 2).slice(0, 40000)),
+          ...(Array.isArray(x.payload?.emails) ? [emailPreview(x.payload.emails), h('details', {}, h('summary', { class: 'faint small' }, 'Exact payload'), rawPayload(x))] : [rawPayload(x)]),
           h('div', { class: 'row' }, h('button', { class: 'btn good', onclick: () => decide(x, true) }, 'Approve'), h('button', { class: 'btn bad', onclick: () => decide(x, false) }, 'Deny'),
             h('span', { class: 'faint small' }, 'Approving runs exactly what is shown above.'))));
       }
