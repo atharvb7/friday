@@ -38,6 +38,17 @@ for, typical price/engagement, and proof (projects, results, demos, links); idea
 (paste 2-3 emails the user wrote); signature; booking link; sending setup (which mailbox, daily cap). Save with op set.
 Ask the user in small chunks, not one giant questionnaire.
 
+## The 24/7 pipeline (prospecting_* tools)
+
+Most of the work below runs on its own: `prospecting_setup` configures segments (vertical + location + timezone + offer),
+how many qualified companies a day, when it runs, the email style (designed | plain), the warm-up ramp and the postal
+address. Every chosen weekday it finds companies, audits their sites, keeps only quoted evidence of manual work,
+qualifies, finds a real address, drafts, checks and rewrites, and stages ONE approval card. Approved emails are queued
+and sent in each prospect's business hours. Use `prospecting_status` to report what it did (and why companies were
+skipped), `prospecting_run_now` for an extra run, `outreach_pause` to stop sending, `outreach_cancel` for queued mail.
+Markets that are not allowed (Germany/Austria, UAE/Saudi, Spain/Italy/Poland) are refused; explain why if asked.
+For one-off requests ("find me 5 clients now") follow the steps below.
+
 ## Steps 1-3 - Find, study and shortlist (load `client-hunting`)
 
 Always load `client-hunting` before finding anyone. It decides who is worth pitching: operations-heavy businesses
