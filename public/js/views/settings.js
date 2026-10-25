@@ -75,19 +75,24 @@ export function render({ app, api, toast, go }) {
     const PRESETS = [['af_heart:65,af_nicole:35', 'Soft & playful — Heart + Nicole (default)'], ['af_heart', 'Warm & bright — Heart'], ['af_nicole', 'Soft, hushed — Nicole'], ['af_heart:50,af_sky:50', 'Light & airy — Heart + Sky'], ['af_bella', 'Expressive — Bella'], ['af_sarah', 'Calm — Sarah'], ['bf_emma', 'British, calm — Emma'], ['bf_isabella', 'British, soft — Isabella']];
     const voiceSel = h('select', {}, PRESETS.map(([v, l]) => h('option', { value: v, selected: vs.settings.voice === v }, l)));
     const speed = h('input', { type: 'range', min: 0.8, max: 1.15, step: 0.01, value: vs.settings.speed, 'aria-label': 'Speaking speed' });
+    const canExpress = vs.expressive === 'ready';
+    const expressive = h('input', { type: 'checkbox', checked: canExpress && vs.settings.engine === 'expressive', disabled: !canExpress });
+    const pitch = h('input', { type: 'range', min: 0.9, max: 1.3, step: 0.01, value: vs.settings.pitch ?? 1.12, 'aria-label': 'Cuteness (pitch)' });
     const ready = vs.tts === 'ready' && vs.stt === 'ready';
     const preview = async () => {
       toast('Generating…');
       try {
-        const r = await fetch('/v1/voice/speak', { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Hey you. It’s me, Friday. Did you miss me, or are you just pretending to be busy?', voice: voiceSel.value, speed: Number(speed.value) }) });
+        const r = await fetch('/v1/voice/speak', { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: expressive.checked ? 'Hey you. [chuckle] It’s me, Friday. [whispering] Did you miss me… or are you just pretending to be busy? [sigh]' : 'Hey you. It’s me, Friday. Did you miss me, or are you just pretending to be busy?', voice: voiceSel.value, speed: Number(speed.value), engine: expressive.checked ? 'expressive' : 'kokoro', pitch: Number(pitch.value) }) });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
         const a = new Audio(URL.createObjectURL(await r.blob())); a.play();
       } catch (e) { toast(`Preview failed: ${e.message}`); }
     };
-    section('Voice', h('div', { class: 'row wrap' }, h('span', { class: `chip ${vs.stt === 'ready' ? 'good' : 'warn'}` }, `Listening: ${vs.stt === 'ready' ? `Whisper ${vs.sttModel ?? ''}` : 'browser fallback'}`), h('span', { class: `chip ${vs.tts === 'ready' ? 'good' : 'warn'}` }, `Voice: ${vs.tts === 'ready' ? 'Kokoro' : 'browser fallback'}`)),
+    section('Voice', h('div', { class: 'row wrap' }, h('span', { class: `chip ${vs.stt === 'ready' ? 'good' : 'warn'}` }, `Listening: ${vs.stt === 'ready' ? `Whisper ${vs.sttModel ?? ''}` : 'browser fallback'}`), h('span', { class: `chip ${vs.tts === 'ready' ? 'good' : 'warn'}` }, `Voice: ${vs.tts !== 'ready' ? 'browser fallback' : canExpress && vs.settings.engine === 'expressive' ? 'expressive (Chatterbox)' : 'Kokoro'}`)),
       ready ? null : h('p', { class: 'muted' }, 'Install the voice engine for accurate listening and a natural voice: run  node bin/friday.mjs voice setup  (one-time ~600 MB download), then restart Friday.'),
       h('div', {}, h('label', {}, 'Her voice'), voiceSel), h('div', {}, h('label', {}, 'Speaking speed'), speed),
-      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: preview, disabled: vs.tts !== 'ready' }, '▶ Preview'), h('button', { class: 'btn primary', onclick: async () => { try { await api('/v1/voice/settings', { method: 'POST', body: { voice: voiceSel.value, speed: Number(speed.value) } }); toast('Voice saved.'); } catch (e) { toast(e.message); } } }, 'Save')));
+      h('label', { class: 'row' }, expressive, canExpress ? ' Expressive voice — she laughs, sighs, whispers and changes tone (a second or two slower to start)' : ' Expressive voice — not installed on this server'),
+      h('div', {}, h('label', {}, 'Cuteness (pitch, expressive voice)'), pitch),
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: preview, disabled: vs.tts !== 'ready' }, '▶ Preview'), h('button', { class: 'btn primary', onclick: async () => { try { await api('/v1/voice/settings', { method: 'POST', body: { voice: voiceSel.value, speed: Number(speed.value), engine: expressive.checked ? 'expressive' : 'kokoro', pitch: Number(pitch.value) } }); toast('Voice saved.'); } catch (e) { toast(e.message); } } }, 'Save')));
 
     // Autonomy
     const rows = Object.entries(CATS).map(([c, label]) => {

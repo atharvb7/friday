@@ -145,8 +145,8 @@ async function voiceCmd(args) {
   mkdirSync(home, { recursive: true });
   if (!prebuilt && !existsSync(py)) { console.log('Creating Python venv…'); if (spawnSync('python3', ['-m', 'venv', resolve(home, 'venv')], { stdio: 'inherit' }).status !== 0) return 1; }
   if (!prebuilt) console.log('Installing faster-whisper + kokoro-onnx (a few minutes)…');
-  if (!prebuilt && spawnSync(py, ['-m', 'pip', 'install', '--disable-pip-version-check', 'faster-whisper', 'kokoro-onnx', 'soundfile', 'numpy'], { stdio: 'inherit' }).status !== 0) return 1;
-  console.log('Downloading models (Whisper small ~250 MB, Kokoro ~330 MB)…');
+  if (!prebuilt && spawnSync(py, ['-m', 'pip', 'install', '--disable-pip-version-check', 'faster-whisper', 'kokoro-onnx', 'soundfile', 'numpy', 'tokenizers'], { stdio: 'inherit' }).status !== 0) return 1;
+  console.log('Downloading models (Whisper small ~250 MB, Kokoro ~330 MB, expressive voice ~1.2 GB; skip it with FRIDAY_VOICE_EXPRESSIVE=0)…');
   const r = spawnSync(py, [resolve(appRoot, 'voice', 'setup.py')], { stdio: 'inherit', env: { ...process.env, FRIDAY_VOICE_HOME: home } });
   if (r.status === 0) console.log('Voice ready. Restart Friday: friday restart');
   return r.status ?? 1;

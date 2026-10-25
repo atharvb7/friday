@@ -26,6 +26,9 @@ const greeting = () => { const hr = new Date().getHours(); const k = hr < 5 ? 'n
 
 // Text chat has no stage directions: hide *actions* (keeps **bold**) even while streaming.
 const ACTION_WORD = /^(gasps?|giggles?|sighs?|swoons?|smirks?|winks?|grins?|laughs?|blushes?|pouts?|hugs?|waves?|nods?|shrugs?|clutch\w*|bounc\w*|pok\w*|rolls?|squeals?|cackles?|snorts?|yawns?|whispers?|screams?|faints?|facepalms?|dramatic\w*|flops?|spins?|twirls?|slumps?|stares?|glares?|leans?|sips?|munches|crunches|steals?|waggles?|taps?|tilts?|peeks?|hides?|jumps?|dances?|cries|sobs?|beams?|melts?|nuzzles?|cuddles?|snuggles?|kisses|smooches|sticks?|puffs?|crosses|raises?|covers?|buries|collapses?|fans?|pretends?|ahem)\b/i;
+// [laugh], [whispering]… are performance tags for her expressive voice: spoken, never shown.
+const VOICE_TAGS = /\s*\[(?:laugh|chuckle|sigh|gasp|groan|sniff|cough|clear throat|shush|whispering|happy|sarcastic|surprised|dramatic|angry|crying|fear|narration|advertisement)\]\s*/gi;
+export const noTags = (t) => String(t ?? '').replace(VOICE_TAGS, ' ').replace(/ {2,}/g, ' ').trim();
 const noActions = (t) => t.replace(/(^|[\s(])\*(?!\*)([^*\n]{2,90}?)\*(?=[\s).,!?…:;]|$)/g, (m, pre, inner) => (ACTION_WORD.test(inner.trim()) || inner.trim().split(/\s+/).length >= 4 ? pre : m));
 
 export function render({ app, api, toast }) {
@@ -38,7 +41,7 @@ export function render({ app, api, toast }) {
   // One round action button: mic when the box is empty, send when there is something to send.
   const send = h('button', { class: 'act send', type: 'submit', 'aria-label': 'Send', title: 'Send' }, svgIcon('send', 20));
   const mic = h('button', { class: 'act mic', type: 'button', title: 'Talk to Friday', 'aria-label': 'Voice input', onclick: toggleMic }, svgIcon('mic', 20));
-  const spk = h('button', { class: 'btn quiet icon', type: 'button', title: 'Read replies aloud', 'aria-label': 'Toggle spoken replies', 'aria-pressed': 'false', onclick: () => { speak = !speak; spk.replaceChildren(svgIcon(speak ? 'volume' : 'mute', 20)); spk.setAttribute('aria-pressed', String(speak)); spk.classList.toggle('on', speak); if (!speak) speechSynthesis?.cancel(); toast(speak ? 'I’ll read my replies out loud 🔊' : 'Quiet mode 🤫'); } }, svgIcon('mute', 20));
+  const spk = h('button', { class: 'btn quiet icon', type: 'button', title: 'Read replies aloud', 'aria-label': 'Toggle spoken replies', 'aria-pressed': 'false', onclick: () => { speak = !speak; spk.replaceChildren(svgIcon(speak ? 'volume' : 'mute', 20)); spk.setAttribute('aria-pressed', String(speak)); spk.classList.toggle('on', speak); if (!speak) { speechSynthesis?.cancel(); speaking?.cancel(); } else if (voiceCaps.tts) fetch('/v1/voice/warm', { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {}); toast(speak ? 'I’ll read my replies out loud 🔊' : 'Quiet mode 🤫'); } }, svgIcon('mute', 20));
   const fileInput = h('input', { type: 'file', multiple: true, hidden: true, accept: '.docx,.xlsx,.pptx,.pdf,.md,.txt,.csv,.tsv,.html,.json,.xml,.png,.jpg,.jpeg,.gif,.webp,.doc,.xls,.ppt,.odt,.rtf,.zip' });
   const pending = []; // files uploaded and waiting to be sent with the next message
   const tray = h('div', { class: 'attach-tray', hidden: true });
@@ -88,7 +91,7 @@ export function render({ app, api, toast }) {
   function bubble(role, content, extra = {}) {
     const body = h('div', { class: 'bubble' });
     if (extra.tools?.length) body.append(h('div', { class: 'tools' }, extra.tools.map((t) => h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`))));
-    if (content) body.append(role === 'assistant' ? md(content) : h('div', {}, content));
+    if (content) body.append(role === 'assistant' ? md(noTags(content)) : h('div', {}, content));
     if (extra.files?.length) body.append(h('div', { class: 'files' }, extra.files.map((f) => fileChip(f, toast))));
     return h('div', { class: `msg ${role}` }, role === 'user' ? h('div', { class: 'av' }, 'You') : h('div', { class: 'av friday', role: 'img', 'aria-label': 'Friday' }), body);
   }
@@ -153,9 +156,10 @@ export function render({ app, api, toast }) {
     const wrap = h('div', { class: 'msg assistant' }, h('div', { class: 'av friday', role: 'img', 'aria-label': 'Friday' }), live);
     msgs.append(wrap); scroll();
     abort = new AbortController();
-    const paintReply = () => { live.lastChild?.remove(); live.append(md(noActions(acc))); scroll(); };
+    const paintReply = () => { live.lastChild?.remove(); live.append(md(noActions(noTags(acc)))); scroll(); };
     try {
-      await streamChat({ message: text, conversationId: convoId, channel: viaVoice ? 'voice' : 'chat', attachments: files.map((f) => f.id) }, {
+      // Speaker on = she is talking: the voice channel lets her write for speech (emotion tags, no emoji/markdown).
+      await streamChat({ message: text, conversationId: convoId, channel: viaVoice || speak ? 'voice' : 'chat', attachments: files.map((f) => f.id) }, {
         meta: (d) => { convoId = d.conversationId; },
         delta: (d) => { acc += d.text; paintReply(); },
         thinking: () => {},
@@ -176,7 +180,7 @@ export function render({ app, api, toast }) {
   function say(text) {
     if (voiceCaps.tts) { speaking?.cancel(); speaking = speakServer(text, fetchWav); return; }
     if (!('speechSynthesis' in window)) return;
-    for (const c of chunkSpeak(text.replace(/[`*#>|]/g, ''), 200)) speechSynthesis.speak(new SpeechSynthesisUtterance(c));
+    for (const c of chunkSpeak(noTags(text).replace(/[`*#>|]/g, ''), 200)) speechSynthesis.speak(new SpeechSynthesisUtterance(c));
   }
 
   async function serverMic() {

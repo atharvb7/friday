@@ -1,6 +1,10 @@
 // POST audio/wav -> text, text -> audio/wav, and a one-call "ask" for devices:
 // wav in -> transcribe -> Friday answers -> wav out (headers carry the texts).
-import { DEFAULT_VOICE } from '../voice-server.mjs';
+import { DEFAULT_VOICE, ENGINES } from '../voice-server.mjs';
+
+// Performance tags the expressive voice acts out; never shown or sent as text.
+const VOICE_TAGS = /\s*\[(?:laugh|chuckle|sigh|gasp|groan|sniff|cough|clear throat|shush|whispering|happy|sarcastic|surprised|dramatic|angry|crying|fear|narration|advertisement)\]\s*/gi;
+export const stripVoiceTags = (t) => String(t ?? '').replace(VOICE_TAGS, ' ').replace(/\s{2,}/g, ' ').trim();
 
 export function voiceRoutes(router, ctx) {
   const { voiceServer, bus, settings } = ctx;
@@ -14,8 +18,8 @@ export function voiceRoutes(router, ctx) {
   router.get('/v1/voice/status', () => [200, { ...voiceServer.status(), settings: cfg() }]);
   router.post('/v1/voice/settings', async ({ body }) => {
     const b = await body();
-    const next = { ...cfg(), ...(typeof b.voice === 'string' ? { voice: b.voice } : {}), ...(b.speed !== undefined ? { speed: Number(b.speed) } : {}) };
-    if (!/^[a-z]{2}_[a-z]+(:\d{1,3})?(,[a-z]{2}_[a-z]+(:\d{1,3})?){0,3}$/.test(next.voice) || !(next.speed >= 0.7 && next.speed <= 1.3)) return [400, { error: 'invalid voice settings' }];
+    const next = { ...cfg(), ...(typeof b.voice === 'string' ? { voice: b.voice } : {}), ...(b.speed !== undefined ? { speed: Number(b.speed) } : {}), ...(b.engine !== undefined ? { engine: b.engine } : {}), ...(b.pitch !== undefined ? { pitch: Number(b.pitch) } : {}) };
+    if (!/^[a-z]{2}_[a-z]+(:\d{1,3})?(,[a-z]{2}_[a-z]+(:\d{1,3})?){0,3}$/.test(next.voice) || !(next.speed >= 0.7 && next.speed <= 1.3) || !ENGINES.includes(next.engine) || !(next.pitch >= 0.8 && next.pitch <= 1.4)) return [400, { error: 'invalid voice settings' }];
     settings.set('voice', next); return [200, { settings: next }];
   });
 
@@ -25,7 +29,12 @@ export function voiceRoutes(router, ctx) {
 
   router.post('/v1/voice/speak', async ({ body }) => {
     const b = await body();
-    try { const audio = await voiceServer.speak(b.text, { voice: typeof b.voice === 'string' ? b.voice : cfg().voice, speed: b.speed ?? cfg().speed }); return { raw: (res) => wav(res, audio) }; } catch (e) { return fail(e); }
+    try { const audio = await voiceServer.speak(b.text, { ...cfg(), ...(typeof b.voice === 'string' ? { voice: b.voice } : {}), ...(b.speed !== undefined ? { speed: b.speed } : {}), ...(ENGINES.includes(b.engine) ? { engine: b.engine } : {}), ...(b.pitch !== undefined ? { pitch: b.pitch } : {}) }); return { raw: (res) => wav(res, audio) }; } catch (e) { return fail(e); }
+  });
+
+  // The speaker was switched on: load her voice now so the first sentence is not slow.
+  router.post('/v1/voice/warm', async () => {
+    try { return [200, await voiceServer.warm(cfg())]; } catch (e) { return fail(e); }
   });
 
   router.post('/v1/voice/ask', async ({ rawBody }) => {
@@ -36,7 +45,7 @@ export function voiceRoutes(router, ctx) {
       const out = await ctx.quickTurn(heard, null, 'voice');
       bus.publish('voice.speaking', {});
       const audio = await voiceServer.speak(out.reply, cfg());
-      return { raw: (res) => wav(res, audio, { 'X-Friday-Heard': enc(heard), 'X-Friday-Reply': enc(out.reply) }) };
+      return { raw: (res) => wav(res, audio, { 'X-Friday-Heard': enc(heard), 'X-Friday-Reply': enc(stripVoiceTags(out.reply)) }) };
     } catch (e) { return fail(e); } finally { bus.publish('voice.ended', {}); }
   });
 }

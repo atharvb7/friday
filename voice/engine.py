@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Friday voice worker: Whisper speech-to-text (faster-whisper) + Kokoro text-to-speech (kokoro-onnx).
+"""Friday voice worker: Whisper speech-to-text (faster-whisper) + text-to-speech.
+TTS engines: "expressive" = Chatterbox Nano (ONNX, CPU): performs inline tags like [laugh] [sigh] [whispering] in a
+voice cloned from a Kokoro-made reference (synthetic, no real person); "kokoro" = Kokoro (flat, fast) and the fallback.
 JSON-lines protocol on stdin/stdout, one request -> one response, models load lazily on first use.
   {"id":1,"op":"stt","wav":"/path.wav","lang":"en","prompt":"..."}   -> {"id":1,"ok":true,"text":"..."}
-  {"id":2,"op":"tts","text":"...","voice":"af_heart:60,af_nicole:40","speed":0.95,"out":"/path.wav"} -> {"id":2,"ok":true}
+  {"id":2,"op":"tts","text":"...","voice":"af_heart:60,af_nicole:40","speed":0.95,"out":"/path.wav",
+   "engine":"expressive","pitch":1.12}                                -> {"id":2,"ok":true,"engine":"expressive"}
+  {"id":3,"op":"warm","engine":"expressive","voice":"...","pitch":1.12} -> loads the TTS engine ahead of the first sentence
   {"id":3,"op":"status"}                                              -> {"id":3,"ok":true,...}
 """
 import json, os, sys, time
@@ -13,6 +17,12 @@ STT_MODEL = os.environ.get("FRIDAY_STT_MODEL", "small")
 KOKORO_ONNX = os.environ.get("FRIDAY_TTS_ONNX", os.path.join(MODELS, "kokoro-v1.0.onnx"))
 KOKORO_VOICES = os.environ.get("FRIDAY_TTS_VOICES", os.path.join(MODELS, "voices-v1.0.bin"))
 THREADS = int(os.environ.get("FRIDAY_VOICE_THREADS", "4"))
+CBX_DIR = os.environ.get("FRIDAY_TTS_EXPRESSIVE", os.path.join(MODELS, "chatterbox-nano"))
+CBX_FILES = {"enc": "onnx/speech_encoder.onnx", "emb": "onnx/embed_tokens.onnx", "lm": "onnx/language_model_int8_mixed.onnx",
+             "dec": "onnx/conditional_decoder_int8.onnx", "tok": "tokenizer.json"}
+CBX_THREADS = int(os.environ.get("FRIDAY_TTS_THREADS", "6"))
+# The reference the expressive voice is cloned from (rendered by Kokoro, so it is a synthetic voice).
+REF_TEXT = "Hey you! I was just thinking about you, you know? Come on, tell me everything, I want to hear all of it. You're kind of cute when you're nervous."
 
 _whisper = None
 _kokoro = None
@@ -63,18 +73,150 @@ def voice_style(k, spec):
         total += w
     return mix / total
 
+import re
+TAG_RE = re.compile(r"\[([A-Za-z][A-Za-z ]{1,20})\]")
+EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D]")
+
+def plain(text):
+    """Text for an engine without tags: drop [tags] and emoji."""
+    return re.sub(r"\s+", " ", EMOJI_RE.sub("", TAG_RE.sub(" ", text))).strip()
+
+def kokoro_tts(text, voice, speed):
+    k = kokoro()
+    samples, rate = k.create(plain(text) or "…", voice=voice_style(k, voice or "af_heart"), speed=float(speed or 1.0), lang="en-us")
+    return samples, rate
+
+def cbx_ready():
+    return all(os.path.exists(os.path.join(CBX_DIR, f)) for f in CBX_FILES.values())
+
+class Expressive:
+    """Chatterbox Nano on ONNX Runtime (CPU). Voice conditioning is computed once per voice and cached on disk."""
+    SR, START, STOP, SILENCE, HEAD = 24000, 6561, 6562, 4299, 64
+
+    def __init__(self):
+        import onnxruntime as ort
+        from tokenizers import Tokenizer
+        self.ort = ort
+        so = ort.SessionOptions(); so.intra_op_num_threads = CBX_THREADS; so.inter_op_num_threads = 1
+        self.so = so
+        mk = lambda key: ort.InferenceSession(os.path.join(CBX_DIR, CBX_FILES[key]), so, providers=["CPUExecutionProvider"])
+        self.emb, self.lm, self.dec = mk("emb"), mk("lm"), mk("dec")
+        self.tok = Tokenizer.from_file(os.path.join(CBX_DIR, CBX_FILES["tok"]))
+        with open(os.path.join(CBX_DIR, CBX_FILES["tok"]), encoding="utf-8") as f:
+            self.tags = {t["content"] for t in json.load(f).get("added_tokens", []) if t["content"].startswith("[")}
+        self.kv = [i for i in self.lm.get_inputs() if "past_key_values" in i.name]
+        self.kv_heads = self.kv[0].shape[1]
+        self.conds = {}
+
+    def cond(self, voice, pitch):
+        import hashlib
+        import numpy as np
+        key = f"{voice}@{float(pitch):.3f}"
+        if key in self.conds: return self.conds[key]
+        os.makedirs(os.path.join(CBX_DIR, "voices"), exist_ok=True)
+        path = os.path.join(CBX_DIR, "voices", hashlib.sha1(key.encode()).hexdigest()[:16] + ".npz")
+        if not os.path.exists(path):
+            ref, rate = kokoro_tts(REF_TEXT, voice, 1.0)
+            ref = np.asarray(ref, dtype=np.float32)
+            if float(pitch) != 1.0:  # resample: higher pitch (and a touch faster), a younger/cuter timbre
+                n = int(len(ref) / float(pitch))
+                ref = np.interp(np.linspace(0, len(ref) - 1, n), np.arange(len(ref)), ref).astype(np.float32)
+            if rate != self.SR:
+                n = int(len(ref) * self.SR / rate)
+                ref = np.interp(np.linspace(0, len(ref) - 1, n), np.arange(len(ref)), ref).astype(np.float32)
+            enc = self.ort.InferenceSession(os.path.join(CBX_DIR, CBX_FILES["enc"]), self.so, providers=["CPUExecutionProvider"])
+            a, b, c, d = enc.run(None, {"audio_values": ref[np.newaxis, :]})
+            del enc  # ~550 MB; only needed once per voice
+            np.savez(path + ".part.npz", cond=a, prompt=b, spk=c, feat=d); os.replace(path + ".part.npz", path)
+        z = np.load(path)
+        self.conds[key] = (z["cond"], z["prompt"], z["spk"], z["feat"])
+        return self.conds[key]
+
+    def clean(self, text):
+        # Known tags stay (the model performs them); anything else in brackets and emoji would be read out.
+        text = TAG_RE.sub(lambda m: f" {m.group(0).lower()} " if m.group(0).lower() in self.tags else " ", EMOJI_RE.sub("", text))
+        return re.sub(r"\s+", " ", text).strip()
+
+    def chunks(self, text, limit=240):
+        parts, cur = [], ""
+        for sent in re.findall(r"[^.!?]+[.!?]*[\"')\]]*\s*", text) or [text]:
+            tag_only = not TAG_RE.sub("", sent).strip()  # a lone [sigh] belongs to the sentence before it
+            if cur and not tag_only and len(cur) + len(sent) > limit: parts.append(cur.strip()); cur = ""
+            cur += sent
+        if cur.strip(): parts.append(cur.strip())
+        return [p for p in parts if TAG_RE.sub("", p).strip() or p in self.tags]
+
+    def one(self, text, cond, rng):
+        import numpy as np
+        cond_emb, prompt, spk, feat = cond
+        ids = np.array([self.tok.encode(text).ids], dtype=np.int64)
+        x = np.concatenate((cond_emb, self.emb.run(None, {"input_ids": ids})[0]), axis=1)
+        bs, sl, _ = x.shape
+        past = {i.name: np.zeros([bs, self.kv_heads, 0, self.HEAD], dtype=np.float16 if i.type == "tensor(float16)" else np.float32) for i in self.kv}
+        mask = np.ones((bs, sl), dtype=np.int64); pos = np.arange(sl, dtype=np.int64)[None, :]
+        gen = np.array([[self.START]], dtype=np.int64)
+        for _ in range(min(1000, 120 + 4 * len(text))):  # ~25 tokens/s of audio; the cap stops a runaway
+            logits, *present = self.lm.run(None, dict(inputs_embeds=x, attention_mask=mask, position_ids=pos, **past))
+            lg = logits[0, -1, :].astype(np.float64)
+            seen = gen[0]  # repetition penalty 1.2, then temperature 0.8 + top-p 0.95 (Chatterbox Turbo's defaults)
+            lg[seen] = np.where(lg[seen] < 0, lg[seen] * 1.2, lg[seen] / 1.2)
+            z = lg / 0.8; z -= z.max(); p = np.exp(z); p /= p.sum()
+            order = np.argsort(-p); keep = order[: int(np.searchsorted(np.cumsum(p[order]), 0.95)) + 1]
+            nxt = int(rng.choice(keep, p=p[keep] / p[keep].sum()))
+            gen = np.concatenate((gen, [[nxt]]), axis=1)
+            if nxt == self.STOP: break
+            x = self.emb.run(None, {"input_ids": np.array([[nxt]], dtype=np.int64)})[0]
+            mask = np.concatenate([mask, np.ones((bs, 1), dtype=np.int64)], axis=1); pos = pos[:, -1:] + 1
+            for j, key in enumerate(past): past[key] = present[j]
+        speech = gen[:, 1:]
+        if speech.shape[1] and speech[0, -1] == self.STOP: speech = speech[:, :-1]
+        speech = np.concatenate([prompt, speech, np.full((1, 3), self.SILENCE, dtype=np.int64)], axis=1)
+        return self.dec.run(None, dict(speech_tokens=speech, speaker_embeddings=spk, speaker_features=feat))[0].squeeze(0)
+
+    def say(self, text, voice, pitch):
+        import numpy as np
+        cond = self.cond(voice, pitch)
+        rng = np.random.default_rng()
+        gap = np.zeros(int(self.SR * 0.18), dtype=np.float32)
+        out = []
+        for part in self.chunks(self.clean(text)):
+            out += [self.one(part, cond, rng).astype(np.float32), gap]
+        if not out: raise ValueError("nothing to say")
+        return np.concatenate(out[:-1]), self.SR
+
+_expressive = None
+def expressive():
+    global _expressive
+    if _expressive is None: _expressive = Expressive()
+    return _expressive
+
 def tts(req):
     import soundfile as sf
-    k = kokoro()
-    samples, rate = k.create(req["text"], voice=voice_style(k, req.get("voice") or "af_heart"), speed=float(req.get("speed") or 1.0), lang="en-us")
+    engine = "kokoro"
+    if req.get("engine") == "expressive" and cbx_ready():
+        try:
+            samples, rate = expressive().say(req["text"], req.get("voice") or "af_heart", float(req.get("pitch") or 1.0))
+            engine = "expressive"
+        except Exception as e:  # never go silent: fall back to Kokoro
+            sys.stderr.write(f"expressive tts failed, using kokoro: {type(e).__name__}: {e}\n")
+            samples, rate = kokoro_tts(req["text"], req.get("voice"), req.get("speed"))
+    else:
+        samples, rate = kokoro_tts(req["text"], req.get("voice"), req.get("speed"))
     sf.write(req["out"], samples, rate)
-    return {"rate": rate, "seconds": round(len(samples) / rate, 2)}
+    return {"rate": rate, "seconds": round(len(samples) / rate, 2), "engine": engine}
+
+def warm(req):
+    if req.get("engine") == "expressive" and cbx_ready():
+        expressive().cond(req.get("voice") or "af_heart", float(req.get("pitch") or 1.0))
+        return {"engine": "expressive"}
+    kokoro(); return {"engine": "kokoro"}
 
 def status(_):
     return {"stt_model": STT_MODEL, "stt_loaded": _whisper is not None, "tts_loaded": _kokoro is not None,
-            "tts_files": os.path.exists(KOKORO_ONNX) and os.path.exists(KOKORO_VOICES)}
+            "tts_files": os.path.exists(KOKORO_ONNX) and os.path.exists(KOKORO_VOICES),
+            "expressive_files": cbx_ready(), "expressive_loaded": _expressive is not None}
 
-OPS = {"stt": stt, "tts": tts, "status": status}
+OPS = {"stt": stt, "tts": tts, "warm": warm, "status": status}
 
 def main():
     for line in sys.stdin:

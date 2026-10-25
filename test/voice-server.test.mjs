@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, chmodSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { VoiceServer } from '../src/voice-server.mjs';
 
 const wavHeader = () => { const b = Buffer.alloc(44); b.write('RIFF', 0, 'ascii'); b.write('WAVE', 8, 'ascii'); return b; };
@@ -40,7 +41,8 @@ const fs = require('fs');
 rl.on('line', (line) => {
   const r = JSON.parse(line);
   if (r.op === 'stt') return console.log(JSON.stringify({ id: r.id, ok: true, text: 'hey friday ' + (r.prompt ? 'primed' : 'plain') + ' ' + r.lang + ' ' + fs.statSync(r.wav).size }));
-  if (r.op === 'tts') { fs.writeFileSync(r.out, Buffer.concat([Buffer.from('RIFF'), Buffer.from(JSON.stringify({ v: r.voice, s: r.speed, t: r.text }))])); return console.log(JSON.stringify({ id: r.id, ok: true })); }
+  if (r.op === 'tts') { fs.writeFileSync(r.out, Buffer.concat([Buffer.from('RIFF'), Buffer.from(JSON.stringify({ v: r.voice, s: r.speed, t: r.text, e: r.engine, p: r.pitch }))])); return console.log(JSON.stringify({ id: r.id, ok: true, engine: r.engine })); }
+  if (r.op === 'warm') return console.log(JSON.stringify({ id: r.id, ok: true, engine: r.engine }));
   if (r.op === 'boom') return console.log(JSON.stringify({ id: r.id, ok: false, error: 'Boom' }));
   if (r.op === 'die') process.exit(1);
 });`;
@@ -88,4 +90,60 @@ test('voice server: overlapping speak requests (prefetched next sentence) queue 
     assert.equal(outs.length, 3); assert.ok(outs.every((o) => o.toString('ascii', 0, 4) === 'RIFF'));
     assert.equal(peak, 1, 'still one voice job at a time');
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('expressive voice: used only when its models are installed; engine/pitch forwarded; warm-up; tags kept for speech', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'friday-ex-'));
+  try {
+    const home = join(dir, 'voice'); const models = join(home, 'models'); mkdirSync(join(models, 'whisper'), { recursive: true });
+    for (const f of ['kokoro-v1.0.onnx', 'voices-v1.0.bin']) writeFileSync(join(models, f), 'x');
+    const appRoot = join(dir, 'app'); mkdirSync(join(appRoot, 'voice'), { recursive: true }); writeFileSync(join(appRoot, 'voice', 'engine.py'), FAKE_ENGINE);
+    const mk = () => new VoiceServer({ env: { FRIDAY_VOICE_PYTHON: process.execPath, FRIDAY_VOICE_HOME: home }, appRoot });
+    let vs = mk();
+    assert.equal(vs.status().expressive, 'not_installed');
+    let audio = (await vs.speak('[chuckle] Hi you', { engine: 'expressive', pitch: 1.12 })).toString();
+    assert.match(audio, /"e":"kokoro"/, 'falls back to Kokoro when the expressive models are missing');
+    vs.stop();
+    mkdirSync(join(models, 'chatterbox-nano', 'onnx'), { recursive: true });
+    for (const f of ['onnx/language_model_int8_mixed.onnx', 'onnx/conditional_decoder_int8.onnx', 'onnx/embed_tokens.onnx', 'onnx/speech_encoder.onnx', 'tokenizer.json']) writeFileSync(join(models, 'chatterbox-nano', f), 'x');
+    vs = mk();
+    assert.equal(vs.status().expressive, 'ready');
+    audio = (await vs.speak('[chuckle] Hi *you*', { voice: 'af_heart:65,af_nicole:35', engine: 'expressive', pitch: 1.12 })).toString();
+    assert.match(audio, /"e":"expressive"/); assert.match(audio, /"p":1.12/); assert.match(audio, /"t":"\[chuckle\] Hi you"/, 'tags reach the engine; markdown does not');
+    assert.match((await vs.speak('x', { engine: 'expressive', pitch: 9 })).toString(), /"p":1.4/, 'pitch is clamped');
+    assert.match((await vs.speak('x', { engine: 'kokoro' })).toString(), /"e":"kokoro"/);
+    assert.deepEqual(await vs.warm({ engine: 'expressive', pitch: 1.12 }), { warmed: true, engine: 'expressive' });
+    vs.stop();
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('voice tags: hidden from text, prompt teaches them only on the voice channel', async () => {
+  const { stripVoiceTags } = await import('../src/routes/voice.mjs');
+  assert.equal(stripVoiceTags('[whispering] Come here… [sigh] closer. [Laugh]'), 'Come here… closer.');
+  assert.equal(stripVoiceTags('keep [this] text'), 'keep [this] text', 'only known tags are removed');
+  const { buildSystemPrompt, normalizePersonality } = await import('../src/personality.mjs');
+  const voice = buildSystemPrompt({ personality: normalizePersonality({}), channel: 'voice' });
+  const text = buildSystemPrompt({ personality: normalizePersonality({}), channel: 'chat' });
+  assert.match(voice, /\[whispering\]/); assert.match(voice, /\[laugh\]/); assert.match(voice, /Never write "haha"/);
+  assert.ok(!text.includes('[whispering]'));
+});
+
+test('engine.py text handling: unknown tags and emoji are never read out, sentences are chunked', { skip: spawnSync('python3', ['--version']).status !== 0 && 'python3 not available' }, () => {
+  const code = `
+import sys, json, types
+sys.path.insert(0, ${JSON.stringify(join(process.cwd(), 'voice'))})
+import engine
+fake = types.SimpleNamespace(tags={'[laugh]', '[whispering]', '[sigh]'})
+out = {
+  'plain': engine.plain('[whispering] Hey 😘 you [laugh]!'),
+  'clean': engine.Expressive.clean(fake, '[Whispering] Hey 😘 [poke] you [laugh]!'),
+  'chunks': engine.Expressive.chunks(fake, 'One. Two! ' + 'x' * 250 + '. [sigh]', 240),
+}
+print(json.dumps(out))`;
+  const r = spawnSync('python3', ['-c', code], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const o = JSON.parse(r.stdout);
+  assert.equal(o.plain, 'Hey you !');
+  assert.equal(o.clean, '[whispering] Hey you [laugh] !');
+  assert.equal(o.chunks.length, 2); assert.equal(o.chunks[0], 'One. Two!'); assert.match(o.chunks[1], /\[sigh\]$/);
 });

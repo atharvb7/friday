@@ -1,4 +1,5 @@
-// Server-side voice. Preferred engine: the Python worker (Whisper STT + Kokoro TTS, see voice/engine.py),
+// Server-side voice. Preferred engine: the Python worker (Whisper STT + Kokoro TTS, plus the expressive Chatterbox
+// Nano voice that performs [laugh]/[sigh]/[whispering] tags when its models are installed; see voice/engine.py),
 // started on demand. Fallback engines: whisper.cpp / Piper CLIs (FRIDAY_WHISPER_*, FRIDAY_PIPER_*).
 // Audio is processed through a temp dir that is deleted immediately (no raw audio retention).
 import { execFile, spawn } from 'node:child_process';
@@ -9,7 +10,9 @@ import { PythonWorker } from './voice-worker.mjs';
 
 const MAX_AUDIO = 8 * 1024 * 1024;
 const TIMEOUT_MS = 60_000;
-export const DEFAULT_VOICE = { voice: 'af_heart:65,af_nicole:35', speed: 0.96 }; // soft + warm, a little playful
+// soft + warm, a little playful; 'expressive' clones this Kokoro blend at a slightly higher pitch (cuter) and adds emotion
+export const DEFAULT_VOICE = { voice: 'af_heart:65,af_nicole:35', speed: 0.96, engine: 'expressive', pitch: 1.12 };
+export const ENGINES = Object.freeze(['expressive', 'kokoro']);
 
 export class VoiceServer {
   constructor({ env = process.env, governor = null, dataDir = null, appRoot = null }) {
@@ -27,6 +30,8 @@ export class VoiceServer {
 
   #pyStt() { return this.pyEnabled && this.models && existsSync(join(this.models, 'whisper')) && readdirSync(join(this.models, 'whisper')).length > 0; }
   #pyTts() { return this.pyEnabled && this.models && existsSync(join(this.models, 'kokoro-v1.0.onnx')) && existsSync(join(this.models, 'voices-v1.0.bin')); }
+  // Expressive voice needs Kokoro too (it renders the reference voice and is the fallback).
+  #pyExpressive() { return this.#pyTts() && ['onnx/language_model_int8_mixed.onnx', 'onnx/conditional_decoder_int8.onnx', 'onnx/embed_tokens.onnx', 'onnx/speech_encoder.onnx', 'tokenizer.json'].every((f) => existsSync(join(this.models, 'chatterbox-nano', f))); }
   #cli(e) { return Boolean(e.bin && e.model && existsSync(e.bin) && existsSync(e.model)); }
 
   status() {
@@ -35,6 +40,7 @@ export class VoiceServer {
       tts: this.#pyTts() || this.#cli(this.piper) ? 'ready' : 'not_installed',
       engine: this.#pyStt() || this.#pyTts() ? 'whisper+kokoro' : (this.#cli(this.whisper) || this.#cli(this.piper)) ? 'cli' : 'none',
       sttModel: this.#pyStt() ? this.sttModel : null, loaded: this.worker?.running ?? false,
+      expressive: this.#pyExpressive() ? 'ready' : 'not_installed',
     };
   }
 
@@ -67,7 +73,7 @@ export class VoiceServer {
     } finally { rmSync(dir, { recursive: true, force: true }); lease.release(); }
   }
 
-  async speak(text, { voice = DEFAULT_VOICE.voice, speed = DEFAULT_VOICE.speed } = {}) {
+  async speak(text, { voice = DEFAULT_VOICE.voice, speed = DEFAULT_VOICE.speed, engine = DEFAULT_VOICE.engine, pitch = DEFAULT_VOICE.pitch } = {}) {
     if (this.status().tts !== 'ready') throw Object.assign(new Error('tts_not_installed'), { code: 'unavailable' });
     const t = String(text ?? '').replace(/[`*#>|_]/g, '').replace(/\s+/g, ' ').trim().slice(0, 1500);
     if (!t) throw new TypeError('text required');
@@ -77,7 +83,7 @@ export class VoiceServer {
     try {
       const out = join(dir, 'out.wav');
       if (this.#pyTts()) {
-        const r = await this.worker.call({ op: 'tts', text: t, voice, speed: sp, out });
+        const r = await this.worker.call({ op: 'tts', text: t, voice, speed: sp, out, engine: engine === 'expressive' && this.#pyExpressive() ? 'expressive' : 'kokoro', pitch: Math.min(1.4, Math.max(0.8, Number(pitch) || 1)) });
         if (!r.ok) { console.error(`voice tts error: ${r.error}`); throw new Error('tts_failed'); }
         return readFileSync(out);
       }
@@ -88,6 +94,13 @@ export class VoiceServer {
       });
       return readFileSync(out);
     } finally { rmSync(dir, { recursive: true, force: true }); lease.release(); }
+  }
+
+  // Load the TTS engine (and her cached voice) before the first sentence, e.g. when the speaker is switched on.
+  async warm({ voice = DEFAULT_VOICE.voice, engine = DEFAULT_VOICE.engine, pitch = DEFAULT_VOICE.pitch } = {}) {
+    if (!this.#pyTts()) return { warmed: false };
+    const r = await this.worker.call({ op: 'warm', voice, engine: engine === 'expressive' && this.#pyExpressive() ? 'expressive' : 'kokoro', pitch });
+    return { warmed: Boolean(r.ok), engine: r.engine ?? null };
   }
 
   stop() { this.worker?.stop(); }
