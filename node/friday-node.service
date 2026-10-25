@@ -1,12 +1,15 @@
 [Unit]
 Description=Friday laptop node
 After=network-online.target graphical-session.target
+# Start with the desktop session: the browser needs the session's DISPLAY/WAYLAND_DISPLAY/XAUTHORITY.
+# (Started from default.target on GNOME/Wayland it can win the race against the session and never get XAUTHORITY,
+# and every headed browser launch then fails with "launched a headed browser without having a XServer running".)
+PartOf=graphical-session.target
 
 [Service]
 ExecStart=/usr/bin/node %h/path/to/friday/node/friday-node.mjs run
 Restart=always
 RestartSec=5
-Environment=DISPLAY=:0
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target

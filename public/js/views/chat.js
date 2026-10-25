@@ -107,13 +107,20 @@ export function render({ app, api, toast }) {
       for (const c of conversations) {
         convos.append(h('div', { class: `convo-row${c.id === convoId ? ' active' : ''}` },
           h('button', { class: 'convo', type: 'button', title: c.title, onclick: () => open(c.id) }, c.title),
-          h('button', { class: 'convo-del', type: 'button', title: 'Delete chat', 'aria-label': `Delete chat ${c.title}`, onclick: (e) => { e.stopPropagation(); removeConvo(c); } }, '🗑')));
+          h('button', { class: 'convo-del', type: 'button', title: 'Delete chat', 'aria-label': `Delete chat ${c.title}`, onclick: (e) => { e.stopPropagation(); removeConvo(c, e.currentTarget); } }, '🗑')));
       }
     } catch { /* offline */ }
   }
 
-  async function removeConvo(c) {
-    if (!confirm(`Delete “${c.title}”? This removes the whole conversation and can’t be undone. (Memories I saved from it stay in the Memory tab.)`)) return;
+  // Two-step delete inside the app (first click arms, second deletes). A native confirm() can be silently
+  // suppressed by the browser ("prevent this page from creating additional dialogs"), which made delete do nothing.
+  async function removeConvo(c, btn) {
+    if (btn && btn.dataset.armed !== '1') {
+      btn.dataset.armed = '1'; btn.textContent = 'Delete?'; btn.classList.add('armed');
+      btn.title = 'Click again to delete this chat (memories saved from it stay in the Memory tab)';
+      setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '🗑'; btn.classList.remove('armed'); btn.title = 'Delete chat'; } }, 4000);
+      return;
+    }
     try {
       await api(`/v1/chat/${c.id}`, { method: 'DELETE' });
       if (c.id === convoId) { convoId = null; hello(); }

@@ -32,3 +32,6 @@ File find in allowed dirs. Not available: raw mouse/keyboard injection and deskt
 
 ## Run at login (optional)
 `node/friday-node.service` is a systemd **user** unit template.
+Copy it to `~/.config/systemd/user/`, fix the path, then `systemctl --user daemon-reload && systemctl --user enable --now friday-node`.
+It is wanted by `graphical-session.target` (not `default.target`) so it always starts after the desktop session has
+published `DISPLAY`/`WAYLAND_DISPLAY`/`XAUTHORITY`; without them the visible browser cannot open.

@@ -462,3 +462,6 @@ input[type=email] { width: 100%; background: var(--glass-strong); border: 1px so
 /* Approval cards: long payloads scroll inside the card (inline styles are blocked by the CSP). */
 .payload-raw { max-height: 60vh; overflow: auto; white-space: pre-wrap; }
 .payload-emails { max-height: 70vh; overflow: auto; }
+
+/* Chat delete: armed state after the first click (second click deletes). */
+.convo-del.armed { opacity: 1 !important; color: var(--bad); background: rgba(255,107,129,.15); font-weight: 600; font-size: 12px; white-space: nowrap; }
