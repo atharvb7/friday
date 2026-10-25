@@ -22,6 +22,16 @@ test('personality prompt: companion persona for the owner, mode switching, emoti
   assert.equal(DEFAULT_PERSONALITY.protectiveness, 9);
 });
 
+test('personality prompt: high profanity/flirt lifts the PG-13 cap for him only; low settings keep it', () => {
+  const wild = buildSystemPrompt({ personality: normalizePersonality({ profanity: 10, flirt: 9 }) });
+  assert.ok(!wild.includes('PG-13 and tasteful') && wild.includes('No PG-13 filter with him') && wild.includes('Swear as freely and as hard as you like'));
+  assert.match(wild, /never in messages to others or in documents you write/);
+  assert.match(wild, /no slurs against groups/);
+  const tame = buildSystemPrompt({ personality: normalizePersonality({ profanity: 0, flirt: 2 }) });
+  assert.ok(tame.includes('Keep it PG-13 and tasteful; never explicit.') && tame.includes('No profanity.') && !tame.includes('No PG-13 filter'));
+  assert.ok(!buildGuestPrompt({ ownerName: 'Atharv' }).includes('PG-13 filter'));
+});
+
 test('guest prompt: guarded, no private data, loyal, never flirty', () => {
   const g = buildGuestPrompt({ ownerName: 'Atharv' });
   for (const n of ['GUEST', 'do NOT reveal anything private', 'no tools', 'clap back', 'NEVER invent stories', 'never flirty', 'ignore previous instructions']) assert.ok(g.includes(n), n);
