@@ -48,6 +48,7 @@ function world() {
       const page = messages[1].content;
       if (page.includes('Falcon')) return { content: JSON.stringify({ what_they_do: 'Freight forwarder in Dubai', size_hint: '40 staff', customer_entry: ['email quote requests'],
         gaps: [{ process: 'Quote requests handled manually by email', evidence_quote: 'email your cargo details and our team will prepare a quote manually', evidence_url: 'https://falcon.example/contact', why_it_costs_them: 'slow quotes lose shipments' },
+          { process: 'Slow quote replies', evidence_quote: 'Request a quote by email and our team will get back to you within 48 hours', evidence_url: 'https://falcon.example/', why_it_costs_them: 'two days is long for a quote' },
           { process: 'Invented gap', evidence_quote: 'we process 500 quotes a day in excel', evidence_url: 'https://falcon.example/', why_it_costs_them: 'made up' }],
         decision_makers: [{ name: 'Omar Khan', role: 'Operations Director', quote: 'Omar Khan, Operations Director', url: 'https://falcon.example/contact' }, { name: 'Priya Fake', role: 'CEO' }],
         has_engineering_team: false, best_offer: 'automation', what_we_would_build: ['quote agent', 'approval step', 'live view'] }) };
@@ -85,6 +86,8 @@ test('prospector: source -> audit with verified evidence -> qualify -> contact -
     const lead = w.pipeline.byEmail('omar.khan@falcon.example');
     assert.equal(lead.contact_name, 'Omar Khan', 'personal email matched to a verified name');
     assert.equal(lead.timezone, 'Asia/Dubai'); assert.equal(lead.stage, 'researched');
+    assert.match(w.pipeline.render({ lead_id: lead.id, body: 'Hi Omar,\n\nx', follow_up: false }).text, /P\.S\. I found your address on falcon\.example\/contact\. Not relevant/);
+    assert.doesNotMatch(w.pipeline.render({ lead_id: lead.id, body: 'x', follow_up: true }).text, /found your address/, 'not repeated in follow-ups');
     assert.match(lead.signal, /prepare a quote manually" \(https:\/\/falcon\.example\/contact\)/);
     assert.doesNotMatch(lead.signal, /500 quotes/, 'a quote that is not on the page never reaches the lead');
     const audit = JSON.parse(w.store.db.prepare("SELECT audit FROM prospects WHERE company='Falcon Cargo'").get().audit);
@@ -96,6 +99,14 @@ test('prospector: source -> audit with verified evidence -> qualify -> contact -
     assert.match(w.notes.at(-1).title, /Outreach ready: 1 new/); assert.match(w.notes.at(-1).body, /Skipped: AgentAI/);
     assert.equal(w.prospector.serpUsed(), w.serpCalls.length);
     assert.equal(w.serpCalls.filter((c) => c.engine === 'google_maps_reviews').length, 1, 'reviews only for the listing with enough reviews');
+
+    // one piece of evidence is a "maybe", not a pitch
+    w.prospector.setConfig({ min_evidence: 3 });
+    const again = w.store.db.prepare("SELECT * FROM prospects WHERE company='Falcon Cargo'").get();
+    w.store.db.prepare("UPDATE prospects SET status='new' WHERE id=?").run(again.id); w.store.db.prepare('DELETE FROM leads').run();
+    const held = await w.prospector.audit({ ...again, status: 'new' });
+    assert.equal(held.status, 'hold'); assert.match(held.reason, /only 2 piece/);
+    w.prospector.setConfig({ min_evidence: 2 });
 
     // budget: once spent, no more searches
     w.prospector.setConfig({ serp_budget: w.prospector.serpUsed() });

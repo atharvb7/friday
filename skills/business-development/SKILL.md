@@ -93,7 +93,7 @@ the lead, and any other reply moves the lead to `replied`, stops its follow-ups 
 When asked to handle a reply: `email_open` the thread with `account: "outreach"` (all outreach and its replies live in
 the outreach inbox; never answer a lead from the personal inbox), classify it (positive / question / objection / not now /
 referral), and draft the answer (load `handle-objection` for pushback; `cold-email` reference reply-handling.md).
-Positive: propose two concrete times in their time zone + the booking link. Not now: thank them, `lead_update`
+Use `references/reply-scripts.md` (load it with skill_load). Positive: propose two concrete times in their time zone. Not now: thank them, `lead_update`
 stage nurture with next_at on the date they gave. Send only through `email_send` op reply with `account: "outreach"` (approval). Log the outcome
 with `lead_update`.
 

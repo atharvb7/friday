@@ -20,7 +20,7 @@ const EVENT_STAGES = new Set(['contacted', 'replied']);
 // "Operations Head" is a role, not a person; greeting a placeholder reads as a mail merge.
 const ROLE_ONLY_RE = /^(the\s+)?((head|director|manager|owner|founder|partner|ceo|coo|cto|team|admin|admissions|operations|ops|hr|sales|marketing|accounts|managing|general)\b[\s&,/-]*(of\s+)?)+$/i;
 const EMAIL_RE = /^[^\s@<>(),;:"]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
-const FOLLOW_UP_DAYS = [3, 4, 7]; // after touch 1, 2, 3; touch 4 is the breakup, then the sequence ends
+const FOLLOW_UP_DAYS = [3, 5, 7]; // day 0, 3, 8, 15: touch 4 is the breakup, then the sequence ends (4+ touches raise complaints)
 const MAX_TOUCHES = 4;
 const MAX_BATCH = 15;
 const DEFAULT_CAP = 25;
@@ -260,7 +260,11 @@ export class Pipeline {
   // The designed email (header + body + signature + opt-out) and its plain-text twin. Follow-ups/replies: no header.
   render(m) {
     const brand = { ...DEFAULT_BRAND, ...(this.settings.get('outreach_brand', null) ?? {}) };
-    return renderEmail({ body: m.body, signature: String(this.settings.get('outreach_signature', '') ?? '').trim(), optOut: m.opt_out === false ? '' : this.optOutLine(), brand, header: !m.follow_up });
+    // First touches say where the address came from (transparency the GDPR and India's DPDP expect, and it builds trust).
+    const lead = m.lead_id ? this.get(m.lead_id) : null;
+    const where = !m.follow_up && /email:\s*(https?:\/\/\S+)/.exec(lead?.source ?? '')?.[1]?.replace(/^https?:\/\/(www\.)?/, '').replace(/[;,]$/, '').replace(/\/$/, '');
+    const optOut = m.opt_out === false ? '' : `${where ? `P.S. I found your address on ${where}. ` : ''}${this.optOutLine().replace(/^P\.S\.\s*/, where ? '' : 'P.S. ')}`;
+    return renderEmail({ body: m.body, signature: String(this.settings.get('outreach_signature', '') ?? '').trim(), optOut, brand, header: !m.follow_up });
   }
   // Friday sometimes signs off itself ("Best,\nAtharv ..."); the template adds the real signature, so drop hers.
   stripSignoff(body) {
@@ -300,7 +304,8 @@ export class Pipeline {
   // ---- send queue ----
   // An approved batch is queued, not blasted: each email gets a slot inside the PROSPECT's business hours, spaced
   // minutes apart, within the daily cap. The queue lives in the database, so a restart never cuts a batch in half.
-  window() { const w = this.settings.get('outreach_window', null) ?? {}; return { start: w.start ?? '09:30', end: w.end ?? '16:30', days: Array.isArray(w.days) && w.days.length ? w.days : [1, 2, 3, 4, 5] }; }
+  // Mornings in the prospect's own time zone performed best in the large send studies (8am-12pm local).
+  window() { const w = this.settings.get('outreach_window', null) ?? {}; return { start: w.start ?? '09:00', end: w.end ?? '12:30', days: Array.isArray(w.days) && w.days.length ? w.days : [1, 2, 3, 4, 5] }; }
   spacing() { const s = this.settings.get('outreach_spacing_min', null); return Array.isArray(s) && s.length === 2 ? s.map(Number) : [6, 14]; }
   #tzOf(lead) { return lead?.timezone ?? this.settings.get('timezone', null) ?? 'Asia/Kolkata'; }
 

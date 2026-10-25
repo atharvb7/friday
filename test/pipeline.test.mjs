@@ -56,7 +56,7 @@ test('pipeline: leads upsert, outreach batch adds opt-out, schedules follow-ups 
     await s.p.send([{ lead_id: a.id, follow_up: true, body: 'One idea: forward after-hours calls to the agent, keep your staff for the day. Want the 2-minute demo? Reply no and I won\'t follow up.' }]);
     assert.equal(s.sent[1].op, 'reply'); assert.equal(s.sent[1].message_id, 'm1'); assert.equal(s.sent[1].to, 'rao@acmedental.in');
     assert.ok(!s.sent[1].body.includes(DEFAULT_OPT_OUT), 'existing opt-out wording is kept, not duplicated');
-    l = s.p.get(a.id); assert.equal(l.touches, 2); assert.equal(Date.parse(l.next_at) - s.now(), 4 * DAY);
+    l = s.p.get(a.id); assert.equal(l.touches, 2); assert.equal(Date.parse(l.next_at) - s.now(), 5 * DAY);
   } finally { s.close(); }
 });
 

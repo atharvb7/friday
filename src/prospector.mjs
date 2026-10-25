@@ -10,7 +10,7 @@ import { resolveMx } from 'node:dns/promises';
 import { safeFetch } from './web.mjs';
 import { partsInTz, isValidTimezone } from './time.mjs';
 
-export const PROSPECTING_DEFAULTS = Object.freeze({ enabled: false, segments: [], daily_new: 5, run_at: '08:30', days: [1, 2, 3, 4, 5], max_audits: 12, serp_budget: 150, reviews: true, followups: true });
+export const PROSPECTING_DEFAULTS = Object.freeze({ enabled: false, segments: [], daily_new: 5, run_at: '08:30', days: [1, 2, 3, 4, 5], max_audits: 12, serp_budget: 150, reviews: true, followups: true, min_evidence: 2 });
 const OFFERS = { automation: 'Forward-deployed AI engineering: production agentic systems that run an operational workflow end to end', freelance: 'Product engineering: building or fixing their web/mobile product end to end', friday: 'Friday, a custom autonomous AI agent set up for their business (early access)' };
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const JUNK_EMAIL = /\.(png|jpe?g|gif|webp|svg|css|js)$|^(example|test|user|name|email|your|yourname|someone)@|@(example|sentry|wixpress|domain|email|sentry-next)\./i;
@@ -62,6 +62,7 @@ export class Prospector {
     if (patch.serp_budget !== undefined) c.serp_budget = Math.max(0, Math.min(10_000, Math.round(Number(patch.serp_budget) || 0)));
     if (patch.reviews !== undefined) c.reviews = patch.reviews === true;
     if (patch.followups !== undefined) c.followups = patch.followups === true;
+    if (patch.min_evidence !== undefined) c.min_evidence = Math.max(1, Math.min(4, Math.round(Number(patch.min_evidence) || 2)));
     if (c.enabled && !c.segments.length) throw new TypeError('add at least one segment before enabling');
     this.settings.set('prospecting', c);
     return c;
@@ -186,6 +187,9 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
     if (raw.has_engineering_team === true) return this.#mark(p, 'skipped', 'has its own engineering team');
     if (raw.best_offer === 'none') return this.#mark(p, 'skipped', 'no fit for our offers');
     if (!audit.gaps.length) return this.#mark(p, 'skipped', audit.dropped ? 'gaps claimed but not found on their pages (dropped as unverified)' : 'no visible manual process on their site');
+    // Practitioners gate on at least two pieces of evidence before an account may be emailed; one is a "maybe".
+    const evidence = new Set(audit.gaps.map((g) => norm(g.evidence_quote))).size;
+    if (evidence < (this.config().min_evidence ?? 2)) return this.#mark(p, 'hold', `only ${evidence} piece of evidence for the gap (needs ${this.config().min_evidence ?? 2})`);
     const offer = OFFERS[raw.best_offer] ? raw.best_offer : seg.offer ?? 'automation';
     const gapText = audit.gaps.map((g) => `${g.process}: "${g.evidence_quote}" (${g.evidence_url})`).join('\n');
     if (this.judge?.ready) {
