@@ -20,6 +20,8 @@ export const OUTREACH_QUESTIONS = {
     criteria: { true: 'It lists several separate things the sender sells (for example lead qualification, document pipelines, websites) or names the sender\'s tech stack', false: 'It describes one offer in plain words; naming the client\'s own tools where the system would run (their email, sheets, CRM, phones) is part of that one offer, not a list of services' } },
   mentions_price: { type: 'noul', instructions: 'Does `email.body` mention a price, fee, rate or package cost?' },
   mixes_offers: { type: 'noul', instructions: 'Does `email.body` pitch more than one kind of offer (for example automation and also website development)?' },
+  unsupported_claims: { type: 'noul', instructions: 'Does `email.body` state a fact or number about the company in `lead` that `lead` does not support?',
+    criteria: { true: 'The email asserts something specific about the company (a volume, a process, hours worked, a problem) that does not appear in `lead`', false: 'Every statement about the company appears in `lead`, or the email only describes what usually happens in businesses like theirs' } },
   asks_one_easy_thing: { type: 'noul', instructions: 'Does `email.body` end with a single question that can be answered with a short reply?',
     criteria: { true: 'One clear, low-effort question such as "Want me to send it?"', false: 'No question, several asks, or it asks for a long meeting' } },
 };
@@ -36,6 +38,7 @@ export function judgeOutreach(answers) {
   if (n('lists_services') >= YES) problems.push({ why: 'it lists services/technologies: describe one end-to-end outcome instead' });
   if (n('mentions_price') >= YES) problems.push({ why: 'it mentions pricing: remove it (pricing comes after a call)' });
   if (n('mixes_offers') >= YES) problems.push({ why: 'it pitches more than one offer: keep one' });
+  if (n('unsupported_claims') >= YES) problems.push({ why: 'it states facts or numbers about them that your research does not show (e.g. invented volumes or hours): say only what you saw, or frame it as what usually happens' });
   if (n('asks_one_easy_thing') <= NO) problems.push({ why: 'it does not end with one easy question: end with a one-line ask' });
   return { ok: problems.length === 0, problems };
 }

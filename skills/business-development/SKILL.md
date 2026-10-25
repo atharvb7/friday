@@ -65,6 +65,9 @@ House rules on top of it:
 
 ## Step 5 - Send (one approval per batch)
 
+When the user says "mail them" / "send them", the job is to call `outreach_send` with the finished emails. Saving
+leads is not sending; never tell the user something was sent unless `outreach_send` was approved and reported sent.
+
 Show the batch briefly in chat only if the user asked to review drafts; otherwise call `outreach_send` directly with
 up to 15 emails; the approval card shows every email in full. The tool appends the opt-out line, refuses
 do-not-contact addresses, skips leads that already replied or closed, and enforces the daily cap. Tell the user what

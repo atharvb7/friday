@@ -169,8 +169,8 @@ test('sales judge: outreach review gates the batch before approval; replies are 
       return { answers: { sells_software: { noul: /AI/.test(state.lead.company) ? 0.95 : 0.05 }, gap_specific: { score: 2.7 }, offer_fits_gap: { noul: 0.9 }, opener_specific: { noul: generic ? 0.1 : 0.9 }, lists_services: { noul: 0.1 }, mentions_price: { noul: 0.05 }, mixes_offers: { noul: 0.1 }, asks_one_easy_thing: { noul: 0.9 } } };
     } };
     s.p.judge = new SalesJudge({ jev });
-    const good = s.p.save({ company: 'Falcon Cargo', email: 'omar@falcon.example', signal: 'quotes by email, reviews say 3-day wait', offer: 'automation' });
-    const comp = s.p.save({ company: 'AgentFlow AI', email: 'ceo@agentflow.example', signal: 'hiring ops' });
+    const good = s.p.save({ company: 'Falcon Cargo', email: 'omar@falcon.example', signal: 'quotes by email, reviews say 3-day wait (https://maps.example/falcon/reviews)', offer: 'automation' });
+    const comp = s.p.save({ company: 'AgentFlow AI', email: 'ceo@agentflow.example', signal: 'hiring ops (https://agentflow.example/careers)' });
     const okBody = 'Noticed Falcon asks for every quote by email and reviews mention waiting days. Want the one-page plan?';
     assert.deepEqual(await s.p.review([{ lead_id: good.id, subject: 'quotes at falcon', body: okBody }]), { ok: true, reviewed: true });
     const r = await s.p.review([{ lead_id: good.id, subject: 'hi', body: 'I am reaching out because I help companies automate work. Interested?' }, { lead_id: comp.id, subject: 'hi', body: okBody }]);
@@ -178,7 +178,7 @@ test('sales judge: outreach review gates the batch before approval; replies are 
     assert.equal(r.emails.find((e) => e.company === 'AgentFlow AI').drop_lead, true);
     assert.match(r.emails.find((e) => e.company === 'Falcon Cargo').fix.join(' '), /first sentence is generic/);
     assert.equal(calls[0].state.lead.company, 'Falcon Cargo'); assert.ok(calls[0].state.email.body.includes(DEFAULT_OPT_OUT), 'reviews the exact text that would be sent');
-    assert.deepEqual(await s.p.review([{ lead_id: comp.id, subject: 'hi', body: okBody }], { skipJudge: true }), { ok: true, reviewed: false });
+    assert.deepEqual(await s.p.review([{ lead_id: comp.id, subject: 'hi', body: okBody }], { skipJudge: true }), { ok: true, reviewed: false, note: 'quality review skipped at your request' });
     s.p.judge = new SalesJudge({ jev: { configured: true, decide: async () => { throw new Error('jev_http_503'); } } });
     assert.match((await s.p.review([{ lead_id: good.id, subject: 'x', body: okBody }])).note, /unavailable/, 'JEV down: the batch still goes to the user, who approves it');
 
@@ -197,5 +197,26 @@ test('sales judge: outreach review gates the batch before approval; replies are 
     assert.equal(s.p.byEmail('c@coc.com').stage, 'dnc');
     assert.equal(calls.length - before, 2, 'the explicit opt-out was handled by the fixed rule, not the model');
     assert.match(s.p.history(leads[0]).events.find((e) => e.kind === 'reply').summary, /^\[positive, wants a meeting\]/);
+  } finally { s.close(); }
+});
+
+test('pipeline: stages come from real events; house-style lint runs on every batch, model or not', async () => {
+  const s = setup();
+  try {
+    assert.throws(() => s.p.save({ company: 'X', email: 'a@x.io', stage: 'contacted' }), /set automatically/);
+    const l = s.p.save({ company: 'Crest Property', email: 'info@crest.example', contact_name: 'Operations Head', signal: 'tenant requests by phone only (https://crest.example/contact)' });
+    assert.equal(l.contact_name, null); assert.equal(l.role, 'Operations Head');
+    assert.throws(() => s.p.update(l.id, { stage: 'contacted' }), /automatically/);
+    s.settings.set('outreach_signature', 'Atharv Bhosale\nAI agents & automation\n+91 00000 00000');
+    const sig = s.settings.get('outreach_signature');
+    const bad = await s.p.review([{ lead_id: l.id, subject: 'Crest — automating tenant and vendor coordination across two cities', body: 'Hi Operations Head,\n\nI\'m reaching out because your team is drowning in tickets. We triage → assign → close. Worth a 15-min call?\n\nAtharv' }]);
+    const fix = bad.emails[0].fix.join(' | ');
+    for (const re of [/arrow chains/, /dashes/, /banned phrases: "i'm reaching out", "reaching out because", "drowning"/, /is a role, not a name/, /subject too long/, /not a call/, /exact signature/]) assert.match(fix, re);
+    const noEvidence = s.p.save({ company: 'Heena Tours', email: 'mail@heena.example', signal: 'travel agency, probably manual' });
+    const good = `Hi Crest team,\n\nNoticed tenants can only raise maintenance requests by phone on your contact page.\n\nThat is the work I take over, end to end, inside the tools you already use.\n\nWant me to send a one-page plan for automating maintenance requests?\n\n${sig}`;
+    const r = await s.p.review([{ lead_id: l.id, subject: 'maintenance requests at crest', body: good }, { lead_id: noEvidence.id, subject: 'enquiries at heena', body: good.replace('Crest', 'Heena') }]);
+    assert.equal(r.emails.length, 1); assert.match(r.emails[0].fix.join(' '), /no evidence link/);
+    assert.deepEqual(await s.p.review([{ lead_id: l.id, subject: 'maintenance requests at crest', body: good }]), { ok: true, reviewed: false });
+    assert.equal((await s.p.review([{ lead_id: noEvidence.id, subject: 'x', body: 'Hi there, a specific thing about you here.' }], { skipJudge: true })).ok, true, 'the user can override');
   } finally { s.close(); }
 });

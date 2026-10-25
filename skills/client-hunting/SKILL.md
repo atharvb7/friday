@@ -81,7 +81,9 @@ Score 1-5 each, with one line of evidence:
 
 Pitch only if total >= 18 and no score below 3. Fit P0 = 22+, P1 = 18-21. Everything else: skip and note why
 (the skip notes teach us which segments work). Save qualified ones with `lead_save` (research = the audit + gap
-hypothesis + scores, signal = the evidence, offer = which offer).
+hypothesis + scores, signal = the evidence WITH the URL where you saw it, offer = which offer). Outreach is refused
+for a lead without an evidence URL. Industry stereotypes ("CA firms chase documents") are not evidence: point to
+this company's page, review or post. Never set stage contacted yourself (it is set when an email really goes out).
 
 ## Rule 5: find the right person and a real email
 
@@ -99,6 +101,8 @@ hypothesis + scores, signal = the evidence, offer = which offer).
      send personally. Do NOT guess patterns (firstname@domain) and do not use personal addresses; guessed addresses
      bounce and burn the sending account.
 - Record where the email came from in `source`.
+- `contact_name` is a real person's name or empty. A role ("Operations Head") goes in `role`; then greet
+  "Hi {Company} team", never "Hi Operations Head".
 
 ## Rule 6: decide what to say (match message to gap)
 

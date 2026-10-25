@@ -12,6 +12,11 @@ import { randomUUID } from 'node:crypto';
 
 export const STAGES = ['new', 'researched', 'contacted', 'replied', 'meeting', 'proposal', 'won', 'lost', 'nurture', 'dnc'];
 const OPEN = new Set(['new', 'researched', 'contacted', 'nurture']);
+// Set only by what really happened (a send, a reply), never by lead_save: a lead marked contacted without an email
+// would get follow-ups to someone who never heard from us.
+const EVENT_STAGES = new Set(['contacted', 'replied']);
+// "Operations Head" is a role, not a person; greeting a placeholder reads as a mail merge.
+const ROLE_ONLY_RE = /^(the\s+)?((head|director|manager|owner|founder|partner|ceo|coo|cto|team|admin|admissions|operations|ops|hr|sales|marketing|accounts|managing|general)\b[\s&,/-]*(of\s+)?)+$/i;
 const EMAIL_RE = /^[^\s@<>(),;:"]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 const FOLLOW_UP_DAYS = [3, 4, 7]; // after touch 1, 2, 3; touch 4 is the breakup, then the sequence ends
 const MAX_TOUCHES = 4;
@@ -22,6 +27,12 @@ const OPT_OUT_RE = /unsubscribe|opt[ -]?out|reply\s+["“']?(no|stop|remove)|won
 const UNSUB_RE = /\b(unsubscribe|remove me|take me off|stop (emailing|contacting|sending)|do not (contact|email)|don['’]t (contact|email) me|opt me out)\b|^\s*(no|stop)[.!]?\s*$/i;
 const OOO_RE = /\b(out of (the )?office|on (annual |parental |sick )?leave|on vacation|automatic reply|auto-?reply|away until|currently away)\b/i;
 const DAY = 86_400_000;
+// House style, enforced in code (the model skips written rules when in a hurry). Extra phrases: setting outreach_banned.
+const BANNED = ["i'm reaching out", 'i am reaching out', 'reaching out because', 'quick intro', 'typical things', 'no pitch',
+  'hope this finds you', 'hope this email finds you', 'just checking in', 'circling back', 'leverage', 'synergy', 'game-changer',
+  'game changer', 'revolutionize', 'revolutionise', 'drowning', 'i help companies', 'i help businesses', 'cutting-edge', 'seamless'];
+const CALL_ASK_RE = /\b(\d{2})\s*-?\s*min(ute)?s?\b|\bquick call\b|\bhop on a call\b|\bjump on a call\b/i;
+const words = (s) => String(s ?? '').trim().split(/\s+/).filter(Boolean).length;
 // The reply's own words: Gmail snippets carry the quoted earlier mail after "On <date> <x> wrote:".
 const ownWords = (snippet) => String(snippet ?? '').split(/\s+On\s.{4,120}?wrote:|-{3,}\s*Original Message|\n>/i)[0].trim();
 
@@ -89,7 +100,10 @@ export class Pipeline {
     if (email && !EMAIL_RE.test(email)) throw new TypeError(`invalid email: ${input.email}`);
     const domain = domainOf(input.website ?? email ?? '') ?? null;
     if (input.stage && !STAGES.includes(input.stage)) throw new TypeError(`stage must be one of ${STAGES.join(', ')}`);
-    const fields = { company, domain, website: clean(input.website, 300), contact_name: clean(input.contact_name, 120), role: clean(input.role, 160), email,
+    if (EVENT_STAGES.has(input.stage)) throw new TypeError(`stage ${input.stage} is set automatically when an email is really sent or a reply arrives; save the lead as new or researched`);
+    let contactName = clean(input.contact_name, 120); let role = clean(input.role, 160);
+    if (contactName && ROLE_ONLY_RE.test(contactName)) { role = role ?? contactName; contactName = null; }
+    const fields = { company, domain, website: clean(input.website, 300), contact_name: contactName, role, email,
       offer: clean(input.offer, 160), source: clean(input.source, 300), signal: clean(input.signal, 600), fit: clean(input.fit, 20), research: clean(input.research, 4000), next_action: clean(input.next_action, 300) };
     const existing = (email && this.byEmail(email)) ?? (input.id ? this.get(input.id) : null)
       ?? (!email && domain && fields.contact_name ? this.#row(this.db.prepare('SELECT * FROM leads WHERE domain=? AND contact_name=?').get(domain, fields.contact_name)) : null)
@@ -117,6 +131,7 @@ export class Pipeline {
     const l = this.get(id); if (!l) throw new TypeError('lead not found');
     if (stage && !STAGES.includes(stage)) throw new TypeError(`stage must be one of ${STAGES.join(', ')}`);
     if (l.stage === 'dnc' && stage && stage !== 'dnc') throw new TypeError('lead is on the do-not-contact list');
+    if (stage === 'contacted' && !l.touches) throw new TypeError('stage contacted is set automatically when an email is really sent');
     const set = {};
     if (stage) set.stage = stage;
     if (fit) set.fit = clean(fit, 20);
@@ -179,17 +194,49 @@ export class Pipeline {
 
   // Quality gate before a batch is staged for approval: deterministic checks, then JEV's review of each email against
   // its lead (competitor? evidenced gap? offer fits? specific opener? no service lists, prices or mixed offers?).
+  // Deterministic house-style checks for one prepared email (no model involved).
+  lint(m) {
+    const lead = this.get(m.lead_id); const out = [];
+    const body = m.body.replace(this.optOutLine(), '');
+    const sig = String(this.settings.get('outreach_signature', '') ?? '').trim();
+    const text = sig ? body.replace(sig, '') : body;
+    const low = text.toLowerCase();
+    if (/→|->|=>/.test(text)) out.push('no arrow chains (a → b → c): describe the end result in one plain sentence');
+    if (/[—–]/.test(text) || /[—–]/.test(m.subject ?? '')) out.push('no em/en dashes: use a full stop or comma');
+    const extra = Array.isArray(this.settings.get('outreach_banned', null)) ? this.settings.get('outreach_banned') : [];
+    const hits = [...BANNED, ...extra.map((x) => String(x).toLowerCase())].filter((p) => p && low.includes(p));
+    if (hits.length) out.push(`remove banned phrases: ${hits.map((h) => `"${h}"`).join(', ')}`);
+    const greet = /^\s*(hi|hello|dear|hey)\s+([^,\n]+)[,\n]/i.exec(text);
+    if (greet && ROLE_ONLY_RE.test(greet[2].trim())) out.push(`greeting "${greet[2].trim()}" is a role, not a name: use the person's first name, or "Hi ${lead?.company ?? 'there'} team"`);
+    if (!m.follow_up) {
+      if (words(m.subject) > 6) out.push('subject too long: 2-5 words, lowercase, about their business');
+      if (CALL_ASK_RE.test(text)) out.push('a first email asks for one easy yes (e.g. "Want me to send the one-page plan?"), not a call');
+      if (words(text) > 170) out.push(`too long (${words(text)} words): keep the body to 90-150 words`);
+      if (sig && !body.includes(sig)) out.push(`end with the exact signature:\n${sig}`);
+      if (!/https?:\/\//.test(`${lead?.signal ?? ''} ${lead?.research ?? ''} ${lead?.source ?? ''}`)) out.push('no evidence link saved for this lead: study the company, then lead_save the gap with the URL where you saw it (signal)');
+    }
+    return out;
+  }
+
+  // Quality gate before a batch is staged for approval: the house-style lint (always), then JEV's review of each email
+  // against its lead when available (competitor? evidenced gap? offer fits? specific opener? invented claims?).
   async review(emails, { skipJudge = false } = {}) {
     const list = this.prepare(emails); // throws TypeError on invalid batches
-    if (skipJudge || !this.judge?.ready || this.settings.get('outreach_review', true) === false) return { ok: true, reviewed: false };
+    if (skipJudge) return { ok: true, reviewed: false, note: 'quality review skipped at your request' };
     const live = list.filter((m) => !m.blocked);
-    const offerOf = (l) => l?.offer ?? 'AI agents and automation that run a whole workflow end to end';
-    let verdicts;
-    try { verdicts = await this.judge.reviewOutreach(live.map((m) => { const lead = this.get(m.lead_id); return { to: m.to, lead, offer: offerOf(lead), subject: m.subject ?? '(follow-up)', body: m.body }; })); }
-    catch (e) { return { ok: true, reviewed: false, note: `quality review unavailable (${String(e.message ?? e).slice(0, 60)})` }; }
-    const bad = verdicts.filter((v) => !v.ok);
-    if (!bad.length) return { ok: true, reviewed: true };
-    return { ok: false, emails: bad.map((v) => ({ to: v.to, company: v.company, drop_lead: v.problems.some((p) => p.block), fix: v.problems.map((p) => p.why) })) };
+    const issues = new Map(live.map((m) => [m.to, { to: m.to, company: m.company, drop_lead: false, fix: this.lint(m) }]));
+    let note = null; let judged = false;
+    if (this.judge?.ready && this.settings.get('outreach_review', true) !== false) {
+      const offerOf = (l) => l?.offer ?? 'AI agents and automation that run a whole workflow end to end';
+      try {
+        const verdicts = await this.judge.reviewOutreach(live.map((m) => { const lead = this.get(m.lead_id); return { to: m.to, lead, offer: offerOf(lead), subject: m.subject ?? '(follow-up)', body: m.body }; }));
+        for (const v of verdicts) { const it = issues.get(v.to); it.fix.push(...v.problems.map((p) => p.why)); if (v.problems.some((p) => p.block)) it.drop_lead = true; }
+        judged = true;
+      } catch (e) { note = `quality review unavailable (${String(e.message ?? e).slice(0, 60)})`; }
+    }
+    const bad = [...issues.values()].filter((v) => v.fix.length);
+    if (!bad.length) return { ok: true, reviewed: judged, ...(note ? { note } : {}) };
+    return { ok: false, emails: bad };
   }
 
   summarize(emails) {
