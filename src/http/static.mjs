@@ -10,7 +10,7 @@ const TYPES = {
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json',
   '.glb': 'model/gltf-binary', '.json': 'application/json; charset=utf-8', '.ico': 'image/x-icon',
 };
-const ALIASES = new Map([['/', '/index.html'], ['/privacy', '/privacy.html'], ['/terms', '/terms.html'], ['/favicon.ico', '/favicon.svg'], ['/pet.glb', '/assets/pet.glb']]);
+const ALIASES = new Map([['/', '/index.html'], ['/privacy', '/privacy.html'], ['/terms', '/terms.html'], ['/outreach-privacy', '/outreach-privacy.html'], ['/favicon.ico', '/favicon.svg'], ['/pet.glb', '/assets/pet.glb']]);
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',

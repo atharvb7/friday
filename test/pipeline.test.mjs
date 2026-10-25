@@ -42,7 +42,7 @@ test('pipeline: leads upsert, outreach batch adds opt-out, schedules follow-ups 
     assert.match(s.p.summarize([{ lead_id: a.id, subject: 'evening calls', body }]), /Send 1 outreach email/);
     const r = await s.p.send([{ lead_id: a.id, subject: 'evening calls', body }]);
     assert.equal(r.queued, 1); assert.equal(s.sent.length, 1, 'due now, so it went out straight away');
-    assert.ok(s.sent[0].body.endsWith(DEFAULT_OPT_OUT));
+    assert.ok(s.sent[0].body.includes(DEFAULT_OPT_OUT)); assert.match(s.sent[0].body, /Privacy: https:\/\/fridayy\.site\/outreach-privacy$/);
     let l = s.p.get(a.id);
     assert.equal(l.stage, 'contacted'); assert.equal(l.touches, 1); assert.equal(l.last_message_id, 'm1');
     assert.equal(Date.parse(l.next_at) - s.now(), 3 * DAY);
@@ -56,7 +56,7 @@ test('pipeline: leads upsert, outreach batch adds opt-out, schedules follow-ups 
     await s.p.send([{ lead_id: a.id, follow_up: true, body: 'One idea: forward after-hours calls to the agent, keep your staff for the day. Want the 2-minute demo? Reply no and I won\'t follow up.' }]);
     assert.equal(s.sent[1].op, 'reply'); assert.equal(s.sent[1].message_id, 'm1'); assert.equal(s.sent[1].to, 'rao@acmedental.in');
     assert.ok(!s.sent[1].body.includes(DEFAULT_OPT_OUT), 'existing opt-out wording is kept, not duplicated');
-    l = s.p.get(a.id); assert.equal(l.touches, 2); assert.equal(Date.parse(l.next_at) - s.now(), 5 * DAY);
+    l = s.p.get(a.id); assert.equal(l.touches, 2); assert.equal(Date.parse(l.next_at) - s.now(), 4 * DAY, 'email 3 on day 7');
   } finally { s.close(); }
 });
 
@@ -248,7 +248,7 @@ test('email template: designed HTML + plain text, signature and opt-out added, s
     await s.p.send([{ lead_id: l.id, subject: 'quotes at falcon', body: `${body}\n\nBest,\nAtharv` }]);
     assert.ok(s.sent[0].html.includes('Atharv Bhosale') && s.sent[0].html.includes('AI Engineer'), 'signature from settings');
     assert.equal((s.sent[0].body.match(/Atharv/g) ?? []).length, 1, 'her own sign-off was replaced by the real signature');
-    assert.ok(s.sent[0].body.endsWith(DEFAULT_OPT_OUT));
+    assert.ok(s.sent[0].body.includes(DEFAULT_OPT_OUT));
   } finally { s.close(); }
 });
 
@@ -306,5 +306,54 @@ test('circuit breaker: >2% bounces over the recent sends pauses outreach and hol
     assert.equal(s.sent.length, before, 'nothing leaves while paused'); assert.equal(s.p.outbox().length, 5);
     s.p.resume(); await drain();
     assert.equal(s.sent.length, before + 5);
+  } finally { s.close(); }
+});
+
+test('deliverability guardrails: warm-up ramp, timed pauses, complaint and rate-limit stop-losses, plain style', async () => {
+  const s = setup();
+  try {
+    // ramp: weeks 1-2 = 0 cold emails, then 5, 8, 12 ...; the explicit cap stays an upper bound
+    s.settings.set('outreach_ramp', { start: '2026-10-25' });
+    assert.equal(s.p.capAt(Date.parse('2026-10-30T09:00Z')), 0);
+    assert.equal(s.p.capAt(Date.parse('2026-11-09T09:00Z')), 5);
+    assert.equal(s.p.capAt(Date.parse('2026-11-16T09:00Z')), 8);
+    assert.equal(s.p.capAt(Date.parse('2027-03-01T09:00Z')), 25, 'capped by outreach_daily_cap (25)');
+    // during week 1 nothing is scheduled before week 3
+    const l = s.p.save({ company: 'Ramp Co', email: 'a@ramp.example' });
+    await s.p.send([{ lead_id: l.id, subject: 'quick one', body: 'A specific, honest observation about your business. Want the plan?' }]);
+    assert.equal(s.sent.length, 0);
+    assert.ok(Date.parse(s.store.db.prepare("SELECT scheduled_at FROM outbox WHERE status='queued'").get().scheduled_at) >= Date.parse('2026-11-08T00:00Z'));
+    s.settings.set('outreach_ramp', null);
+    s.store.db.prepare('DELETE FROM outbox').run();
+
+    // timed pause lifts itself
+    s.p.pause('test', { hours: 1 }); assert.ok(s.p.paused());
+    s.advance(3600_000 + 1); assert.equal(s.p.paused(), null);
+
+    // a complaint pauses for 72 hours
+    const c = s.p.save({ company: 'Angry', email: 'x@angry.example' });
+    await s.p.send([{ lead_id: c.id, subject: 'quick one', body: 'A specific, honest observation about your business. Want the plan?' }]);
+    s.advance(1000);
+    s.inbox.push({ id: 'cmp', from: 'x@angry.example', subject: 'Re: quick one', date: new Date(s.now()).toUTCString(), snippet: 'Stop. How did you get my email? This is spam.' });
+    await s.p.tick();
+    assert.match(s.p.paused().reason, /complained/); assert.ok(Date.parse(s.p.paused().until) - s.now() > 71 * 3600_000);
+    assert.equal(s.p.byEmail('x@angry.example').stage, 'dnc');
+    s.p.resume();
+
+    // Gmail rate limit: 24h pause and the cap halves
+    const g = s.p.save({ company: 'Limited', email: 'y@limited.example' });
+    s.p.gmail = { ready: true, send: async () => { throw new Error('gmail_429: User-rate limit exceeded (Mail sending)'); } };
+    await s.p.send([{ lead_id: g.id, subject: 'quick one', body: 'A specific, honest observation about your business. Want the plan?' }]);
+    assert.match(s.p.paused().reason, /refused sending/); assert.equal(s.settings.get('outreach_daily_cap'), 12);
+    s.p.resume();
+
+    // plain style: Gmail-compose rendering and stricter writing rules
+    s.settings.set('outreach_style', 'plain');
+    const pl = s.p.save({ company: 'Plain Co', email: 'z@plain.example', signal: 'quotes by email (https://plain.example/contact)' });
+    const designed = `Hi Plain Co team,\n\nNoticed quotes go by email.\n\n**I'm a forward-deployed AI engineer building agentic systems.**\n\n### What I'd build\n- an agent\n\nWant the plan?`;
+    const fix = (await s.p.review([{ lead_id: pl.id, subject: 'quotes at plain', body: designed }])).emails[0].fix.join(' | ');
+    for (const re of [/no headings/, /no bullets/, /no jargon/]) assert.match(fix, re);
+    const html = s.p.render({ lead_id: pl.id, body: 'Hi,\n\nNoticed quotes go by email.\n\nWant the plan?', follow_up: false }).html;
+    assert.doesNotMatch(html, /border-top:4px|font-weight:700;color:#111827/); assert.match(html, /<div dir="ltr">/);
   } finally { s.close(); }
 });

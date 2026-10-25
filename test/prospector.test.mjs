@@ -86,8 +86,8 @@ test('prospector: source -> audit with verified evidence -> qualify -> contact -
     const lead = w.pipeline.byEmail('omar.khan@falcon.example');
     assert.equal(lead.contact_name, 'Omar Khan', 'personal email matched to a verified name');
     assert.equal(lead.timezone, 'Asia/Kolkata'); assert.equal(lead.stage, 'researched');
-    assert.match(w.pipeline.render({ lead_id: lead.id, body: 'Hi Omar,\n\nx', follow_up: false }).text, /P\.S\. I found your address on falcon\.example\/contact\. Not relevant/);
-    assert.doesNotMatch(w.pipeline.render({ lead_id: lead.id, body: 'x', follow_up: true }).text, /found your address/, 'not repeated in follow-ups');
+    assert.match(w.pipeline.render({ lead_id: lead.id, body: 'Hi Omar,\n\nx', follow_up: false }).text, /Business outreach: I found your work email on falcon\.example\/contact; it seemed relevant to your role\.\nNot relevant\?/);
+    assert.doesNotMatch(w.pipeline.render({ lead_id: lead.id, body: 'x', follow_up: true }).text, /found your work email|Privacy:/, 'not repeated in follow-ups');
     assert.match(lead.signal, /prepare a quote manually" \(https:\/\/falcon\.example\/contact\)/);
     assert.doesNotMatch(lead.signal, /500 quotes/, 'a quote that is not on the page never reaches the lead');
     const audit = JSON.parse(w.store.db.prepare("SELECT audit FROM prospects WHERE company='Falcon Cargo'").get().audit);
@@ -134,17 +134,12 @@ test('prospector: schedule fires once per chosen day after run_at, in the user t
   } finally { w.close(); }
 });
 
-test('prospector: market rules (Germany refused, Gulf = role addresses only, US needs a postal address)', async () => {
+test('prospector: market rules (Germany/Austria/Gulf/disputed EU refused, US needs a postal address)', async () => {
   const w = world();
   try {
-    assert.throws(() => w.prospector.setConfig({ segments: [{ vertical: 'logistics', location: 'Berlin', timezone: 'Europe/Berlin' }] }), /consent/);
-    // Gulf: Falcon only publishes a personal address -> not used; no role address anywhere -> no_contact
-    w.prospector.setConfig({ segments: [{ vertical: 'freight forwarders', location: 'Dubai', timezone: 'Asia/Dubai' }], daily_new: 1, serp_budget: 50 });
-    await w.prospector.source(5);
-    const falcon = w.store.db.prepare("SELECT * FROM prospects WHERE company='Falcon Cargo'").get();
-    const r = await w.prospector.audit(falcon);
-    assert.equal(r.status, 'no_contact');
-    assert.equal(w.pipeline.byEmail('omar.khan@falcon.example'), null);
+    for (const [loc, tz, re] of [['Berlin', 'Europe/Berlin', /consent/], ['Vienna', 'Europe/Vienna', /consent/], ['Dubai', 'Asia/Dubai', /opt-in/], ['Riyadh', 'Asia/Riyadh', /opt-in/], ['Madrid', 'Europe/Madrid', /disputed/]])
+      assert.throws(() => w.prospector.setConfig({ segments: [{ vertical: 'logistics', location: loc, timezone: tz }] }), re, loc);
+    w.prospector.setConfig({ segments: [{ vertical: 'logistics', location: 'Paris', timezone: 'Europe/Paris' }, { vertical: 'logistics', location: 'Leeds', timezone: 'Europe/London' }] });
     // US: the house-style lint requires the sender's postal address, and the footer carries it
     const us = w.pipeline.save({ company: 'Oak PM', email: 'dana@oak.example', timezone: 'America/Chicago', signal: 'maintenance requests by phone (https://oak.example/contact)' });
     const body = 'Hi Dana,\n\nNoticed Oak takes maintenance requests by phone only.\n\nWant me to send the one-page plan for Oak?';
@@ -153,6 +148,30 @@ test('prospector: market rules (Germany refused, Gulf = role addresses only, US 
     w.prospector.setConfig({ postal_address: 'Atharv Bhosale, 1 Example Road, Pune 411001, India' });
     rev = await w.pipeline.review([{ lead_id: us.id, subject: 'maintenance at oak', body }]);
     assert.equal(rev.ok, true);
-    assert.match(w.pipeline.render({ lead_id: us.id, body, follow_up: false }).text, /Pune 411001, India$/);
+    assert.match(w.pipeline.render({ lead_id: us.id, body, follow_up: false }).text, /Pune 411001, India\nPrivacy: https:\/\/fridayy\.site\/outreach-privacy$/);
+  } finally { w.close(); }
+});
+
+test('prospector: Reoon verification gate and retention', async () => {
+  const w = world();
+  try {
+    const statuses = { 'omar.khan@falcon.example': 'invalid' };
+    const p = new Prospector({ store: w.store, settings: w.settings, ai: w.prospector.ai, judge: w.prospector.judge, pipeline: w.pipeline, notifications: { create() {} }, serpKey: 'k', reoonKey: 'r',
+      fetchPage: w.prospector.fetchPage, mx: w.prospector.mx,
+      fetchImpl: async (url) => { const u = new URL(url); if (u.host === 'emailverifier.reoon.com') return { ok: true, json: async () => ({ status: statuses[u.searchParams.get('email')] ?? 'safe' }) }; return w.prospector.fetchImpl(url); } });
+    p.setConfig({ segments: [{ vertical: 'freight forwarders', location: 'Mumbai', timezone: 'Asia/Kolkata' }], serp_budget: 30 });
+    await p.source(5);
+    const falcon = w.store.db.prepare("SELECT * FROM prospects WHERE company='Falcon Cargo'").get();
+    assert.equal((await p.audit(falcon)).status, 'no_contact', 'the only published address failed verification');
+    statuses['omar.khan@falcon.example'] = 'safe';
+    w.store.db.prepare("UPDATE prospects SET status='new' WHERE id=?").run(falcon.id);
+    assert.equal((await p.audit({ ...falcon })).status, 'qualified');
+
+    // retention: never-contacted prospects older than 6 months are deleted; contacted ones are not
+    w.store.db.prepare("UPDATE prospects SET updated_at='2025-01-01T00:00:00Z' WHERE status != 'qualified'").run();
+    const before = w.store.db.prepare('SELECT COUNT(*) n FROM prospects').get().n;
+    const r = p.prune();
+    assert.ok(r.prospects >= 1); assert.equal(w.store.db.prepare('SELECT COUNT(*) n FROM prospects').get().n, before - r.prospects);
+    assert.ok(w.store.db.prepare("SELECT 1 FROM prospects WHERE company='Falcon Cargo'").get());
   } finally { w.close(); }
 });

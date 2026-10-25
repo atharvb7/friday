@@ -10,6 +10,7 @@ import { resolveMx } from 'node:dns/promises';
 import { safeFetch } from './web.mjs';
 import { partsInTz, isValidTimezone } from './time.mjs';
 import { jurisdictionOf, RULES } from './jurisdiction.mjs';
+import { MAX_TOUCHES } from './pipeline.mjs';
 
 export const PROSPECTING_DEFAULTS = Object.freeze({ enabled: false, segments: [], daily_new: 5, run_at: '08:30', days: [1, 2, 3, 4, 5], max_audits: 12, serp_budget: 150, reviews: true, followups: true, min_evidence: 2 });
 const OFFERS = { automation: 'Forward-deployed AI engineering: production agentic systems that run an operational workflow end to end', freelance: 'Product engineering: building or fixing their web/mobile product end to end', friday: 'Friday, a custom autonomous AI agent set up for their business (early access)' };
@@ -29,8 +30,8 @@ const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, '').t
 export class Prospector {
   #timer = null; #running = false;
   constructor({ store, settings, ai, judge = null, pipeline, approvals = null, notifications = null, bus = null, serpKey = null,
-    hunterKey = null, fetchImpl = globalThis.fetch, fetchPage = (u) => safeFetch(u, { maxBytes: 1_500_000, timeoutMs: 15_000 }), mx = resolveMx, now = () => Date.now() }) {
-    Object.assign(this, { store, settings, ai, judge, pipeline, approvals, notifications, bus, serpKey, hunterKey, fetchImpl, fetchPage, mx, now });
+    hunterKey = null, reoonKey = null, fetchImpl = globalThis.fetch, fetchPage = (u) => safeFetch(u, { maxBytes: 1_500_000, timeoutMs: 15_000 }), mx = resolveMx, now = () => Date.now() }) {
+    Object.assign(this, { store, settings, ai, judge, pipeline, approvals, notifications, bus, serpKey, hunterKey, reoonKey, fetchImpl, fetchPage, mx, now });
     this.db = store.db;
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS prospects (
@@ -64,6 +65,9 @@ export class Prospector {
     if (patch.serp_budget !== undefined) c.serp_budget = Math.max(0, Math.min(10_000, Math.round(Number(patch.serp_budget) || 0)));
     if (patch.reviews !== undefined) c.reviews = patch.reviews === true;
     if (patch.followups !== undefined) c.followups = patch.followups === true;
+    if (patch.style !== undefined) this.settings.set('outreach_style', patch.style === 'plain' ? 'plain' : 'designed');
+    if (patch.ramp_start !== undefined) { const t = patch.ramp_start === 'today' ? this.now() : Date.parse(String(patch.ramp_start)); if (Number.isNaN(t)) throw new TypeError('ramp_start: an ISO date or "today"'); this.settings.set('outreach_ramp', { start: new Date(t).toISOString().slice(0, 10) }); }
+    if (patch.daily_cap !== undefined) this.settings.set('outreach_daily_cap', Math.max(1, Math.min(40, Math.round(Number(patch.daily_cap) || 25))));
     if (patch.postal_address !== undefined) this.settings.set('outreach_postal_address', clip(String(patch.postal_address ?? '').trim(), 200) || null);
     if (patch.min_evidence !== undefined) c.min_evidence = Math.max(1, Math.min(4, Math.round(Number(patch.min_evidence) || 2)));
     if (c.enabled && !c.segments.length) throw new TypeError('add at least one segment before enabling');
@@ -177,6 +181,25 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
     return { ...audit, gaps: gaps.slice(0, 4), decision_makers: people.slice(0, 3), dropped: (audit?.gaps?.length ?? 0) - gaps.length };
   }
 
+  // Deliverability gate for an address: MX always; with REOON_API_KEY a real mailbox check (free ~600/month):
+  // safe passes, role_account passes for role addresses, at most one catch-all a day, everything else is dropped.
+  async #deliverable(email, { role = false } = {}) {
+    try { const mx = await this.mx(email.split('@')[1]); if (!mx?.length) return { ok: false, status: 'no_mx' }; } catch { return { ok: false, status: 'no_mx' }; }
+    if (!this.reoonKey) return { ok: true, status: 'mx_only' };
+    try {
+      const r = await this.fetchImpl(`https://emailverifier.reoon.com/api/v1/verify?${new URLSearchParams({ email, key: this.reoonKey, mode: 'power' })}`, { signal: AbortSignal.timeout(30_000) });
+      const st = String((await r.json().catch(() => ({})))?.status ?? 'unknown').toLowerCase();
+      if (st === 'safe' || st === 'valid' || (role && st === 'role_account')) return { ok: true, status: st };
+      if (st === 'catch_all') {
+        const day = new Date(this.now()).toISOString().slice(0, 10); const used = this.settings.get('catch_all_day', null);
+        if (used?.day === day && used.n >= 1) return { ok: false, status: 'catch_all (daily limit)' };
+        this.settings.set('catch_all_day', { day, n: (used?.day === day ? used.n : 0) + 1 });
+        return { ok: true, status: st };
+      }
+      return { ok: false, status: st };
+    } catch { return { ok: false, status: 'verify_failed' }; }
+  }
+
   async #pickEmail(found, domain, people, j = 'other') {
     const list = [...found.entries()].map(([email, url]) => ({ email, url, local: email.split('@')[0], dom: email.split('@')[1] })).filter((e) => !JUNK_EMAIL.test(e.email));
     const ours = list.filter((e) => e.dom === domain || e.dom.endsWith(`.${domain}`));
@@ -185,8 +208,9 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
     // Gulf: marketing email to named people is opt-in, so only the business's published role address.
     const pick = (RULES[j]?.roleOnly ? null : person) ?? ours.find((e) => ROLE_LOCAL.test(e.local)) ?? (RULES[j]?.roleOnly ? null : list.find((e) => /^(gmail|outlook|hotmail|yahoo|rediffmail)\./.test(e.dom)));
     if (!pick) return null;
-    try { const mx = await this.mx(pick.dom); if (!mx?.length) return null; } catch { return null; }
-    return { ...pick, personal: Boolean(person && pick === person) };
+    const v = await this.#deliverable(pick.email, { role: ROLE_LOCAL.test(pick.local) });
+    if (!v.ok) return null;
+    return { ...pick, personal: Boolean(person && pick === person), verified: v.status };
   }
 
   // Most small-business sites do not show an address. Fallbacks, for qualified companies only:
@@ -195,8 +219,8 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
   async #findEmail(p, people, j) {
     const take = async (email, url, personal) => {
       const dom = email.split('@')[1]; if (!dom || JUNK_EMAIL.test(email)) return null;
-      try { const mx = await this.mx(dom); if (!mx?.length) return null; } catch { return null; }
-      return { email, url, local: email.split('@')[0], dom, personal };
+      const v = await this.#deliverable(email, { role: ROLE_LOCAL.test(email.split('@')[0]) }); if (!v.ok) return null;
+      return { email, url, local: email.split('@')[0], dom, personal, verified: v.status };
     };
     if (this.config().serp_budget - this.serpUsed() >= 10) {
       try {
@@ -291,10 +315,11 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
       `Verified evidence (use only this about them):\n${lead.signal ?? ''}`, `Research:\n${lead.research ?? ''}`,
       ...(audit?.what_we_would_build?.length ? [`Ideas for what to build:\n- ${audit.what_we_would_build.join('\n- ')}`] : [])].join('\n');
     const task = followUp
-      ? `Write follow-up #${touch} in the same thread (no subject). Follow the Follow-ups rules in the Messaging section exactly: 50-90 words, add something new, no header formatting, no headings, at most 2 bullets.${touch >= 4 ? ' This is the last touch (close the loop).' : ''}`
+      ? `Write email #${touch} of ${MAX_TOUCHES}, a follow-up in the same thread (no subject). Follow the Follow-ups rules in the Messaging section exactly: 40-80 words, add something new, no headings, at most 2 bullets.${touch >= MAX_TOUCHES ? ' This is the LAST email: close the loop politely, no guilt, leave the door open ("reply plan and I will send it").' : ' Add one new, specific insight or question about their process.'}`
       : 'Write the first cold email. Follow the Messaging section, the Reference email and the matching Template exactly.';
+    const plain = this.pipeline.style?.() === 'plain' ? `\n\nPLAIN STYLE (overrides the format rules above, keep everything else): 60-110 words, 3-5 short paragraphs of 1-2 lines, no headings, no bold, no bullets. 1) one observation that fits only this company; 2) where their time goes, in their operational words; 3) what you would build as a mechanism (reads, pulls, drafts) and that their team approves; 4) ONE proof line; 5) one easy question (the one-page plan). No jargon in the body (forward-deployed, agentic, LLM, AI-powered); the signature carries the positioning. Reading level: simple, short sentences.` : '';
     const messages = [
-      { role: 'system', content: `You write cold emails for Atharv Bhosale. These rules override everything else:\n\n${messaging}\n\nProof you may use (nothing else about past work):\n${proof}\n\nOutput ONLY JSON: {"subject": "...", "body": "..."}. The body is light text (**bold**, ### headings, - bullets) WITHOUT a sign-off or signature.` },
+      { role: 'system', content: `You write cold emails for Atharv Bhosale. These rules override everything else:\n\n${messaging}${plain}\n\nProof you may use (nothing else about past work):\n${proof}\n\nOutput ONLY JSON: {"subject": "...", "body": "..."}. The body is light text (**bold**, ### headings, - bullets) WITHOUT a sign-off or signature.` },
       { role: 'user', content: `${task}\n\n${facts}` },
     ];
     let last = null;
@@ -319,6 +344,7 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
     if (this.#running) return { error: 'already_running' };
     this.#running = true;
     const c = this.config(); const runId = randomUUID(); const started = new Date(this.now()).toISOString();
+    this.prune();
     const report = { reason, found: 0, audited: 0, qualified: [], skipped: [], hold: [], no_contact: [], drafts: 0, followups: 0, not_drafted: [], serp_used_month: 0, approval: null };
     this.db.prepare('INSERT INTO prospect_runs (id, started_at) VALUES (?,?)').run(runId, started);
     try {
@@ -360,6 +386,16 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
       this.notifications?.create({ level: report.approval ? 'warning' : 'info', title: report.approval ? `🎯 Outreach ready: ${report.drafts} new + ${report.followups} follow-ups (approve in Inbox)` : `🎯 Prospecting run: ${report.qualified.length} qualified`, body: this.formatReport(report) });
       this.bus?.publish('prospecting.run', { approval: report.approval });
     }
+  }
+
+  // Retention promised in the outreach privacy notice: never-contacted companies go after 6 months, untouched
+  // research leads after 12. Do-not-contact entries stay (they are what keeps people from being emailed again).
+  prune() {
+    const six = new Date(this.now() - 182 * DAY).toISOString(); const twelve = new Date(this.now() - 365 * DAY).toISOString();
+    const gone = this.db.prepare("DELETE FROM prospects WHERE status IN ('new','skipped','hold','no_contact') AND updated_at < ?").run(six).changes;
+    const stale = this.db.prepare("SELECT id FROM leads WHERE touches = 0 AND stage IN ('new','researched','lost') AND updated_at < ?").all(twelve).map((r) => r.id);
+    for (const id of stale) { this.db.prepare('DELETE FROM lead_events WHERE lead_id=?').run(id); this.db.prepare('DELETE FROM outbox WHERE lead_id=?').run(id); this.db.prepare('DELETE FROM leads WHERE id=?').run(id); this.db.prepare('UPDATE prospects SET lead_id=NULL WHERE lead_id=?').run(id); }
+    return { prospects: gone, leads: stale.length };
   }
 
   formatReport(r) {
@@ -404,7 +440,8 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
 
   status() {
     const counts = Object.fromEntries(this.db.prepare('SELECT status, COUNT(*) n FROM prospects GROUP BY status').all().map((r) => [r.status, r.n]));
-    return { config: this.config(), prospects: counts, serp_used_month: this.serpUsed(), last_report: this.settings.get('prospecting_last_report', null), running: this.#running };
+    return { config: this.config(), style: this.pipeline.style?.() ?? 'designed', daily_cap_today: this.pipeline.capAt?.(), ramp: this.settings.get('outreach_ramp', null), postal_address_set: Boolean(this.settings.get('outreach_postal_address', null)),
+      email_verification: this.reoonKey ? 'reoon' : 'mail-server check only', hunter: Boolean(this.hunterKey), prospects: counts, serp_used_month: this.serpUsed(), last_report: this.settings.get('prospecting_last_report', null), running: this.#running };
   }
 
   // ---- schedule: once per chosen weekday at run_at (the user's time zone) ----

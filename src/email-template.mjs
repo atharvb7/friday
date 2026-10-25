@@ -29,9 +29,17 @@ export function plainText(body) {
   return parseBody(body).map((b) => (b.type === 'h' ? b.text.toUpperCase() : b.type === 'ul' ? b.items.map((i) => `- ${i.replace(/\*\*/g, '')}`).join('\n') : b.text.replace(/\*\*/g, ''))).join('\n\n');
 }
 
-export function renderEmail({ body, signature = '', optOut = '', brand = DEFAULT_BRAND, header = true }) {
+// What Gmail's own composer produces: default font, paragraphs, no header bar, no colours, no rules.
+function plainHtml({ body, signature, optOut }) {
+  const parts = parseBody(body).map((x) => (x.type === 'ul' ? `<ul>${x.items.map((i) => `<li>${inline(i)}</li>`).join('')}</ul>` : `<div>${inline(x.text)}</div><div><br></div>`)).join('');
+  const sig = String(signature).split('\n').filter(Boolean).map((l) => linkify(l).replace(/ style="[^"]*"/, '')).join('<br>');
+  return `<!doctype html><html><head><meta charset="utf-8"></head><body><div dir="ltr">${parts}<div>${sig}</div>${optOut ? `<div><br></div><div>${esc(optOut).replace(/\n/g, '<br>')}</div>` : ''}</div></body></html>`;
+}
+
+export function renderEmail({ body, signature = '', optOut = '', brand = DEFAULT_BRAND, header = true, style = 'designed' }) {
   const b = { ...DEFAULT_BRAND, ...(brand ?? {}) };
   const text = [plainText(body), signature, optOut].filter(Boolean).join('\n\n');
+  if (style === 'plain') return { text, html: plainHtml({ body, signature, optOut }) };
   const font = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
   const parts = parseBody(body).map((x) => {
     if (x.type === 'h') return `<p style="margin:22px 0 8px;font-size:15px;font-weight:700;color:#111827">${inline(x.text)}</p>`;

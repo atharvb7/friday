@@ -92,7 +92,10 @@ function prospectingTools(prospector) {
       name: 'prospecting_setup', risk: 'gated', category: 'system', riskClass: 'routine',
       description: 'Configure the autonomous client-hunting pipeline that runs on the server every chosen weekday: segments (vertical + location + timezone + offer), daily_new (qualified prospects per day, 1-15), run_at (HH:MM, user time), days (1-7, Mon=1), serp_budget (Google Maps searches per month), enabled. It finds companies, audits their sites for evidenced gaps, drafts emails and stages ONE approval a day; it never sends without approval. Needs approval.',
       parameters: obj({ enabled: { type: 'boolean' }, segments: { type: 'array', items: seg }, daily_new: { type: 'integer' }, run_at: { type: 'string' }, days: { type: 'array', items: { type: 'integer' } }, serp_budget: { type: 'integer' }, reviews: { type: 'boolean' }, followups: { type: 'boolean' },
-        min_evidence: { type: 'integer' }, postal_address: { type: 'string', description: 'sender postal address, required by US law (CAN-SPAM) for US prospects' } }, []),
+        min_evidence: { type: 'integer' }, postal_address: { type: 'string', description: 'sender postal address, shown in every outreach footer (required by US law for US prospects)' },
+        style: { type: 'string', enum: ['designed', 'plain'], description: 'designed = header bar + sections (approved look); plain = Gmail-compose look, 60-110 words (what cold-email data favours)' },
+        ramp_start: { type: 'string', description: '"today" or an ISO date: the day the outreach mailbox started; the daily cap then follows the warm-up ramp (2 weeks 0, then 5,8,12,15,20,25,30)' },
+        daily_cap: { type: 'integer', description: 'upper bound on cold emails per day (1-40)' } }, []),
       summarize: (a) => `Client-hunting pipeline: ${a.enabled === false ? 'OFF' : a.enabled ? 'ON' : 'settings'}${a.segments ? ` · ${a.segments.map((s) => `${s.vertical} in ${s.location} (${s.offer ?? 'automation'})`).join('; ')}` : ''}${a.daily_new ? ` · ${a.daily_new}/day` : ''}${a.run_at ? ` · at ${a.run_at}` : ''}${a.serp_budget !== undefined ? ` · ${a.serp_budget} searches/month` : ''}`,
       run: (a) => ({ saved: true, config: prospector.setConfig(a) }),
     },
@@ -427,7 +430,7 @@ export function buildFridayTools(ctx) {
         if (blocked.length) return { error: `do_not_contact: ${blocked.join(', ')} asked not to be contacted; nothing was sent` };
         // Outreach inbox: the designed template (header, signature, opt-out on first touches) for new mail and replies.
         if (a.account === 'outreach' && ['send', 'reply'].includes(a.op) && ctx.pipeline && a.body) {
-          const r = ctx.pipeline.render({ body: ctx.pipeline.stripSignoff(String(a.body).trim()), follow_up: a.op === 'reply', opt_out: a.op === 'send' });
+          const r = ctx.pipeline.render({ body: ctx.pipeline.stripSignoff(String(a.body).trim()), follow_up: a.op === 'reply', footer: a.op === 'send', lead_id: ctx.pipeline.byEmail(String(a.to ?? '').toLowerCase())?.id ?? null });
           a = { ...a, body: r.text, html: r.html };
         }
         const out = await ({ send: () => mail(a).send(a), reply: () => mail(a).reply(a), forward: () => mail(a).forward(a), send_draft: () => mail(a).sendDraft(a), trash: () => mail(a).trash(a) }[a.op] ?? (() => ({ error: 'unknown op' })))();

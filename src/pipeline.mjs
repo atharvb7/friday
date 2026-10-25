@@ -21,13 +21,16 @@ const EVENT_STAGES = new Set(['contacted', 'replied']);
 // "Operations Head" is a role, not a person; greeting a placeholder reads as a mail merge.
 const ROLE_ONLY_RE = /^(the\s+)?((head|director|manager|owner|founder|partner|ceo|coo|cto|team|admin|admissions|operations|ops|hr|sales|marketing|accounts|managing|general)\b[\s&,/-]*(of\s+)?)+$/i;
 const EMAIL_RE = /^[^\s@<>(),;:"]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
-const FOLLOW_UP_DAYS = [3, 5, 7]; // day 0, 3, 8, 15: touch 4 is the breakup, then the sequence ends (4+ touches raise complaints)
-const MAX_TOUCHES = 4;
+const FOLLOW_UP_DAYS = [3, 4]; // day 0, 3, 7: three emails in total performed best; 4+ touches raised complaints
+export const MAX_TOUCHES = 3;
 const MAX_BATCH = 15;
 const DEFAULT_CAP = 25;
-export const DEFAULT_OPT_OUT = 'P.S. Not relevant for you? Just reply "no" and I won\'t follow up.';
+const RAMP = [5, 8, 12, 15, 20, 25, 30];
+export const DEFAULT_OPT_OUT = 'Not relevant? Reply "no" and I won\'t email again.';
+export const DEFAULT_PRIVACY_URL = 'https://fridayy.site/outreach-privacy';
 const OPT_OUT_RE = /unsubscribe|opt[ -]?out|reply\s+["“']?(no|stop|remove)|won['’]t (follow up|email|reach out)|not relevant\?/i;
 const UNSUB_RE = /\b(unsubscribe|remove me|take me off|stop (emailing|contacting|sending)|do not (contact|email)|don['’]t (contact|email) me|opt me out)\b|^\s*(no|stop)[.!]?\s*$/i;
+const COMPLAINT_RE = /\bspam\b|report(ed|ing)? (you|this)|how did you get (my|this) (email|address)|\bgdpr\b|data protection|harass/i;
 const OOO_RE = /\b(out of (the )?office|on (annual |parental |sick )?leave|on vacation|automatic reply|auto-?reply|away until|currently away)\b/i;
 const DAY = 86_400_000;
 // House style, enforced in code (the model skips written rules when in a hurry). Extra phrases: setting outreach_banned.
@@ -178,7 +181,17 @@ export class Pipeline {
   }
 
   // ---- outreach ----
-  cap() { return Math.max(1, Math.min(200, Number(this.settings.get('outreach_daily_cap', DEFAULT_CAP)) || DEFAULT_CAP)); }
+  // Daily cap. With a warm-up ramp (outreach_ramp.start = the day the outreach mailbox started), the cap follows the
+  // practitioner schedule: weeks 1-2 only normal email (0 cold), then 5, 8, 12, 15, 20, 25, then 30. outreach_daily_cap
+  // stays an upper bound the user (or a rate-limit pause) can lower.
+  capAt(t = this.now()) {
+    const limit = Math.max(0, Math.min(200, Number(this.settings.get('outreach_daily_cap', DEFAULT_CAP)) || 0));
+    const start = Date.parse(this.settings.get('outreach_ramp', null)?.start ?? '');
+    if (Number.isNaN(start)) return limit;
+    const week = Math.floor((t - start) / (7 * DAY));
+    return Math.min(limit, week < 2 ? 0 : RAMP[Math.min(week - 2, RAMP.length - 1)]);
+  }
+  cap() { return this.capAt(); }
   sentToday() { return this.db.prepare("SELECT COUNT(*) n FROM lead_events WHERE kind='sent' AND at >= ?").get(this.#iso(this.now() - DAY)).n; }
   optOutLine() { return String(this.settings.get('outreach_opt_out_line', DEFAULT_OPT_OUT) ?? DEFAULT_OPT_OUT); }
 
@@ -232,6 +245,12 @@ export class Pipeline {
       const bullets = text.split('\n').filter((l) => /^\s*[-•*]\s+/.test(l)).length;
       if (bullets > 4) out.push(`${bullets} bullets: keep to at most 3-4, about their business`);
       if (text.split('\n').filter((l) => /^\s*#{2,3}\s/.test(l)).length > 2) out.push('at most two section headings');
+      if (this.style() === 'plain') {
+        if (/^\s*#{2,3}\s/m.test(text)) out.push('plain style: no headings');
+        if (/^\s*[-•*]\s+/m.test(text)) out.push('plain style: no bullets in a first email; write 1-2 short sentences instead');
+        if (words(text.replace(/[#*]/g, ' ')) > 120) out.push(`plain style: ${words(text)} words; keep the body to 60-110`);
+        if (/forward-deployed|agentic|\bLLM\b|AI-powered|streamline|transform/i.test(text)) out.push('plain style: no jargon (forward-deployed, agentic, LLM, AI-powered, streamline, transform) in the body; describe the mechanism in plain words');
+      }
       if (lead && !/https?:\/\//.test(`${lead.signal ?? ''} ${lead.research ?? ''} ${lead.source ?? ''}`)) out.push('no evidence link saved for this lead: study the company, then lead_save the gap with the URL where you saw it (signal)');
     }
     return out;
@@ -262,13 +281,20 @@ export class Pipeline {
   // The designed email (header + body + signature + opt-out) and its plain-text twin. Follow-ups/replies: no header.
   render(m) {
     const brand = { ...DEFAULT_BRAND, ...(this.settings.get('outreach_brand', null) ?? {}) };
-    // First touches say where the address came from (transparency the GDPR and India's DPDP expect, and it builds trust).
+    // Compliance footer (GDPR Art. 14 / DPDP transparency, CAN-SPAM/CASL identification): where the address came from
+    // (first email), the opt-out, the sender's postal address and the outreach privacy notice. Replies get none of it.
     const lead = m.lead_id ? this.get(m.lead_id) : null;
     const where = !m.follow_up && /email:\s*(https?:\/\/\S+)/.exec(lead?.source ?? '')?.[1]?.replace(/^https?:\/\/(www\.)?/, '').replace(/[;,]$/, '').replace(/\/$/, '');
-    const optOut = m.opt_out === false ? '' : `${where ? `P.S. I found your address on ${where}. ` : ''}${this.optOutLine().replace(/^P\.S\.\s*/, where ? '' : 'P.S. ')}`;
-    const postal = lead && RULES[jurisdictionOf(lead.timezone)]?.postalAddress ? this.settings.get('outreach_postal_address', null) : null;
-    return renderEmail({ body: m.body, signature: String(this.settings.get('outreach_signature', '') ?? '').trim(), optOut: postal ? `${optOut}\n${postal}` : optOut, brand, header: !m.follow_up });
+    const footer = m.footer === false ? [] : [
+      ...(where ? [`Business outreach: I found your work email on ${where}; it seemed relevant to your role.`] : []),
+      ...(m.opt_out === false ? [] : [this.optOutLine()]), // the body may already carry its own opt-out sentence
+      ...(this.settings.get('outreach_postal_address', null) ? [this.settings.get('outreach_postal_address')] : []),
+      ...(!m.follow_up && this.settings.get('outreach_privacy_url', DEFAULT_PRIVACY_URL) ? [`Privacy: ${this.settings.get('outreach_privacy_url', DEFAULT_PRIVACY_URL)}`] : []),
+    ];
+    return renderEmail({ body: m.body, signature: String(this.settings.get('outreach_signature', '') ?? '').trim(), optOut: footer.join('\n'), brand, header: !m.follow_up, style: this.style() });
   }
+  // 'designed' (header bar, sections; the user's approved look) or 'plain' (Gmail-compose look: what cold-email data favours).
+  style() { return this.settings.get('outreach_style', 'designed') === 'plain' ? 'plain' : 'designed'; }
   // Friday sometimes signs off itself ("Best,\nAtharv ..."); the template adds the real signature, so drop hers.
   stripSignoff(body) {
     const brand = { ...DEFAULT_BRAND, ...(this.settings.get('outreach_brand', null) ?? {}) };
@@ -309,7 +335,7 @@ export class Pipeline {
   // minutes apart, within the daily cap. The queue lives in the database, so a restart never cuts a batch in half.
   // Mornings in the prospect's own time zone performed best in the large send studies (8am-12pm local).
   window() { const w = this.settings.get('outreach_window', null) ?? {}; return { start: w.start ?? '09:00', end: w.end ?? '12:30', days: Array.isArray(w.days) && w.days.length ? w.days : [1, 2, 3, 4, 5] }; }
-  spacing() { const s = this.settings.get('outreach_spacing_min', null); return Array.isArray(s) && s.length === 2 ? s.map(Number) : [6, 14]; }
+  spacing() { const s = this.settings.get('outreach_spacing_min', null); return Array.isArray(s) && s.length === 2 ? s.map(Number) : [4, 11]; }
   #tzOf(lead) { return lead?.timezone ?? this.settings.get('timezone', null) ?? 'Asia/Kolkata'; }
 
   // First instant >= t that is inside the sending window in tz (jittered a little after the window opens).
@@ -338,7 +364,7 @@ export class Pipeline {
       if (this.db.prepare("SELECT 1 FROM outbox WHERE lead_id=? AND status='queued'").get(m.lead_id)) { skipped.push({ to: m.to, skipped: 'already queued' }); continue; }
       const lead = this.get(m.lead_id); const tz = this.#tzOf(lead);
       let at = this.#slot(cursor, tz);
-      for (let i = 0; i < 30 && this.#scheduledOn(at, tz) >= this.cap(); i++) at = this.#slot(at + DAY, tz); // daily cap per local day
+      for (let i = 0; i < 60 && this.#scheduledOn(at, tz) >= this.capAt(at); i++) at = this.#slot(at + DAY, tz); // daily cap per local day (ramp-aware)
       const id = randomUUID();
       this.db.prepare('INSERT INTO outbox (id,lead_id,to_addr,subject,body,follow_up,opt_out,scheduled_at,created_at) VALUES (?,?,?,?,?,?,?,?,?)')
         .run(id, m.lead_id, m.to, m.subject, m.body, m.follow_up ? 1 : 0, m.opt_out === false ? 0 : 1, this.#iso(at), this.#iso());
@@ -375,7 +401,7 @@ export class Pipeline {
       const lead = this.get(row.lead_id);
       const stop = !lead ? 'lead deleted' : this.isSuppressed(row.to_addr) ? 'do-not-contact' : ['dnc', 'won', 'lost', 'replied', 'meeting', 'proposal'].includes(lead.stage) ? `lead is ${lead.stage}` : row.follow_up && !lead.last_message_id ? 'no thread to follow up in' : null;
       if (stop) { this.db.prepare("UPDATE outbox SET status='cancelled', error=? WHERE id=?").run(stop, row.id); continue; }
-      if (this.sentToday() >= this.cap()) { this.db.prepare('UPDATE outbox SET scheduled_at=? WHERE id=?').run(this.#iso(this.#slot(this.now() + 6 * 3600_000, this.#tzOf(lead))), row.id); continue; }
+      if (this.sentToday() >= this.capAt()) { this.db.prepare('UPDATE outbox SET scheduled_at=? WHERE id=?').run(this.#iso(this.#slot(this.now() + 6 * 3600_000, this.#tzOf(lead))), row.id); continue; }
       const m = { to: row.to_addr, subject: row.subject, body: row.body, follow_up: Boolean(row.follow_up), opt_out: Boolean(row.opt_out), lead_id: row.lead_id };
       try {
         const { text, html } = this.render(m);
@@ -386,6 +412,13 @@ export class Pipeline {
         sent++;
       } catch (e) {
         const attempts = row.attempts + 1; const err = String(e.message ?? e).slice(0, 200);
+        // Google rate limit or a security block: stop for a day and halve the cap (deliverability stop-loss).
+        if (/429|rate.?limit|user-rate|too many|suspend|disabled/i.test(err)) {
+          this.settings.set('outreach_daily_cap', Math.max(1, Math.floor(this.capAt() / 2) || 1));
+          this.pause(`Gmail refused sending (${err.slice(0, 80)}): paused for 24 hours and the daily cap halved`, { hours: 24 });
+          this.db.prepare('UPDATE outbox SET error=? WHERE id=?').run(err, row.id);
+          break;
+        }
         if (attempts >= 3) { this.db.prepare("UPDATE outbox SET status='failed', attempts=?, error=? WHERE id=?").run(attempts, err, row.id); this.notifications?.create({ level: 'warning', title: `Outreach email to ${lead.company} failed`, body: err }); }
         else this.db.prepare('UPDATE outbox SET attempts=?, error=?, scheduled_at=? WHERE id=?').run(attempts, err, this.#iso(this.now() + 30 * 60_000), row.id);
       }
@@ -446,8 +479,8 @@ export class Pipeline {
   async #onReply(lead, m) {
     const text = `${m.subject ?? ''}\n${m.snippet ?? ''}`;
     const who = `${lead.contact_name ?? lead.email} (${lead.company})`;
-    // Fixed rule first: an explicit opt-out never depends on a model.
-    let verdict = UNSUB_RE.test(ownWords(m.snippet)) ? { action: 'stop' } : null;
+    // Fixed rules first: an explicit opt-out or a complaint never depends on a model.
+    let verdict = UNSUB_RE.test(ownWords(m.snippet)) || COMPLAINT_RE.test(ownWords(m.snippet)) ? { action: 'stop' } : null;
     if (!verdict && this.judge?.ready) {
       try {
         const full = await this.gmail.open?.(m.id).catch(() => null);
@@ -458,6 +491,9 @@ export class Pipeline {
     this.cancelQueued(lead.id, 'they replied');
     if (verdict.action === 'stop') {
       this.suppress(lead.email, 'replied asking not to be contacted');
+      // A complaint (spam, "how did you get my email", data-protection) is a targeting signal: stop and look.
+      if (COMPLAINT_RE.test(ownWords(m.snippet)))
+        this.pause(`${who} complained ("${clean(ownWords(m.snippet), 120)}"): review this segment's targeting`, { hours: 72 });
       this.notifications?.create({ level: 'info', title: `🚫 ${who} opted out`, body: 'Added to do-not-contact. No more emails will go to them.' });
       return;
     }
@@ -499,12 +535,16 @@ export class Pipeline {
     const bounced = this.db.prepare("SELECT DISTINCT lead_id FROM lead_events WHERE kind='bounce'").all().filter((r) => ids.has(r.lead_id)).length;
     if (bounced / sent.length > 0.02) this.pause(`${bounced} of the last ${sent.length} emails bounced (over 2%): the list needs checking before the account gets flagged`);
   }
-  paused() { return this.settings.get('outreach_paused', null); }
-  pause(reason) {
+  paused() {
+    const p = this.settings.get('outreach_paused', null);
+    if (p?.until && Date.parse(p.until) <= this.now()) { this.settings.set('outreach_paused', null); return null; } // timed pause is over
+    return p;
+  }
+  pause(reason, { hours = null } = {}) {
     if (this.paused()) return this.paused();
-    const p = { reason: clean(reason, 300), at: this.#iso() };
+    const p = { reason: clean(reason, 300), at: this.#iso(), ...(hours ? { until: this.#iso(this.now() + hours * 3600_000) } : {}) };
     this.settings.set('outreach_paused', p);
-    this.notifications?.create({ level: 'warning', title: '⏸ Outreach paused', body: `${p.reason}\nQueued emails are held. Ask me to resume outreach when it is fixed.` });
+    this.notifications?.create({ level: 'warning', title: '⏸ Outreach paused', body: `${p.reason}\nQueued emails are held${p.until ? ` until ${p.until.slice(0, 16).replace('T', ' ')} UTC` : '. Ask me to resume outreach when it is fixed'}.` });
     return p;
   }
   resume() { this.settings.set('outreach_paused', null); return { resumed: true }; }

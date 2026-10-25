@@ -264,7 +264,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.proactive.mood = ctx.mood;
   ctx.salesJudge = new SalesJudge({ jev: new JevClient({ apiKey: env.FRIDAY_JEV_KEY ?? null, timeoutMs: 20_000 }) });
   ctx.pipeline = new Pipeline({ store, settings, gmail: ctx.gmailOutreach, notifications: ctx.notifications, bus, judge: ctx.salesJudge });
-  ctx.prospector = new Prospector({ store, settings, ai, judge: ctx.salesJudge, pipeline: ctx.pipeline, approvals: ctx.approvals, notifications: ctx.notifications, bus, serpKey: env.SERPAPI_API_KEY ?? null, hunterKey: env.HUNTER_API_KEY ?? null });
+  ctx.prospector = new Prospector({ store, settings, ai, judge: ctx.salesJudge, pipeline: ctx.pipeline, approvals: ctx.approvals, notifications: ctx.notifications, bus, serpKey: env.SERPAPI_API_KEY ?? null, hunterKey: env.HUNTER_API_KEY ?? null, reoonKey: env.REOON_API_KEY ?? null });
   ctx.fridayTools = buildFridayTools(ctx);
   { // gated tools get their approved-execution path registered automatically
     const register = ctx.fridayTools.register;
