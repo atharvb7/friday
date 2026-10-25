@@ -77,6 +77,33 @@ function businessTools(pipeline) {
   ];
 }
 
+// The 24/7 client-hunting pipeline (src/prospector.mjs): configure it, run it now, see what it did.
+function prospectingTools(prospector) {
+  const seg = obj({ vertical: { type: 'string', description: 'what kind of business, e.g. "freight forwarders"' }, location: { type: 'string', description: 'city/region, e.g. "Dubai"' },
+    timezone: { type: 'string', description: 'IANA zone of that location, e.g. Asia/Dubai' }, offer: { type: 'string', enum: ['automation', 'freelance', 'friday'] } }, ['vertical', 'location', 'timezone']);
+  return [
+    {
+      name: 'prospecting_setup', risk: 'gated', category: 'system', riskClass: 'routine',
+      description: 'Configure the autonomous client-hunting pipeline that runs on the server every chosen weekday: segments (vertical + location + timezone + offer), daily_new (qualified prospects per day, 1-15), run_at (HH:MM, user time), days (1-7, Mon=1), serp_budget (Google Maps searches per month), enabled. It finds companies, audits their sites for evidenced gaps, drafts emails and stages ONE approval a day; it never sends without approval. Needs approval.',
+      parameters: obj({ enabled: { type: 'boolean' }, segments: { type: 'array', items: seg }, daily_new: { type: 'integer' }, run_at: { type: 'string' }, days: { type: 'array', items: { type: 'integer' } }, serp_budget: { type: 'integer' }, reviews: { type: 'boolean' }, followups: { type: 'boolean' } }, []),
+      summarize: (a) => `Client-hunting pipeline: ${a.enabled === false ? 'OFF' : a.enabled ? 'ON' : 'settings'}${a.segments ? ` · ${a.segments.map((s) => `${s.vertical} in ${s.location} (${s.offer ?? 'automation'})`).join('; ')}` : ''}${a.daily_new ? ` · ${a.daily_new}/day` : ''}${a.run_at ? ` · at ${a.run_at}` : ''}${a.serp_budget !== undefined ? ` · ${a.serp_budget} searches/month` : ''}`,
+      run: (a) => ({ saved: true, config: prospector.setConfig(a) }),
+    },
+    {
+      name: 'prospecting_run_now', risk: 'safe',
+      description: 'Run the client-hunting pipeline once now, in the background (takes several minutes). The report and, if there are drafts, one approval card arrive as notifications. Uses Google Maps searches from the monthly budget.',
+      parameters: obj({}, []),
+      run: () => { if (!prospector.config().segments.length) return { error: 'no segments configured: use prospecting_setup first' }; void prospector.runOnce({ reason: 'manual' }).catch(() => {}); return { started: true, note: 'Running in the background; the report arrives as a notification.' }; },
+    },
+    {
+      name: 'prospecting_status', risk: 'safe',
+      description: 'Client-hunting pipeline: configuration, prospect counts by status (new/qualified/skipped/hold/no_contact), searches used this month and the last run report (who qualified, who was skipped and why).',
+      parameters: obj({}, []),
+      run: () => prospector.status(),
+    },
+  ];
+}
+
 export function buildFridayTools(ctx) {
   const { memory, store, tools, indexer, skills, jobs, proactive, settings, researchMemory, nodes } = ctx;
   // Members (other people) may only touch files that live in their own conversations.
@@ -402,6 +429,7 @@ export function buildFridayTools(ctx) {
       },
     },
     ...(ctx.pipeline ? businessTools(ctx.pipeline) : []),
+    ...(ctx.prospector ? prospectingTools(ctx.prospector) : []),
     {
       name: 'app_deploy', risk: 'gated', category: 'system', riskClass: 'consequential',
       description: 'Host one of your coding projects on the user\'s server, reachable on his Tailscale at https://<server>.ts.net:<port> (tailnet only, not the public internet). project = the code_task workspace name that holds the finished app (Dockerfile, or package.json with a start script, or a static index.html). Re-deploying the same name updates it in place and keeps its address. Needs approval. Build first with code_task, then deploy.',

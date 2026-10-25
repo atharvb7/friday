@@ -107,7 +107,7 @@ export function safeFetch(urlStr, { allowPrivate = false, maxBytes = MAX_BYTES, 
       res.on('data', (c) => { size += c.length; if (size > maxBytes) { truncated = true; res.destroy(); } else chunks.push(c); });
       const finish = () => {
         const raw = Buffer.concat(chunks).toString('utf8');
-        resolve({ url: url.toString(), status: res.statusCode, contentType: type.split(';')[0], truncated, text: /html/i.test(type) ? htmlToText(raw) : raw });
+        resolve({ url: url.toString(), status: res.statusCode, contentType: type.split(';')[0], truncated, text: /html/i.test(type) ? htmlToText(raw) : raw, ...(/html/i.test(type) ? { html: raw } : {}) });
       };
       res.on('end', finish);
       res.on('close', () => { if (truncated) finish(); });

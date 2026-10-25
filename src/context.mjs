@@ -53,6 +53,7 @@ import { Learner } from './agent/learning.mjs';
 import { Watches } from './watches.mjs';
 import { Pipeline } from './pipeline.mjs';
 import { SalesJudge } from './sales-judge.mjs';
+import { Prospector } from './prospector.mjs';
 import { Composio } from './composio.mjs';
 import { Files } from './files.mjs';
 import { Documents } from './documents.mjs';
@@ -263,6 +264,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.proactive.mood = ctx.mood;
   ctx.salesJudge = new SalesJudge({ jev: new JevClient({ apiKey: env.FRIDAY_JEV_KEY ?? null, timeoutMs: 20_000 }) });
   ctx.pipeline = new Pipeline({ store, settings, gmail: ctx.gmailOutreach, notifications: ctx.notifications, bus, judge: ctx.salesJudge });
+  ctx.prospector = new Prospector({ store, settings, ai, judge: ctx.salesJudge, pipeline: ctx.pipeline, approvals: ctx.approvals, notifications: ctx.notifications, bus, serpKey: env.SERPAPI_API_KEY ?? null });
   ctx.fridayTools = buildFridayTools(ctx);
   { // gated tools get their approved-execution path registered automatically
     const register = ctx.fridayTools.register;
@@ -304,6 +306,7 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.hermes.start();
     ctx.watches.start();
     ctx.pipeline.start();
+    ctx.prospector.start();
     ctx.dmChats.start_timer();
     pruneTimer = setInterval(() => { try { prune(store.db); } catch { /* retention is best effort */ } }, 6 * 3600_000); pruneTimer.unref();
     try { prune(store.db); } catch {}
@@ -315,6 +318,7 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.hermes.stop();
     ctx.watches.stop();
     ctx.pipeline.stop();
+    ctx.prospector.stop();
     ctx.dmChats.stop_timer();
     ctx.nodes?.stopAll();
     ctx.voiceServer?.stop();

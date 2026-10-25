@@ -50,6 +50,25 @@ export function judgeOutreach(answers) {
   return { ok: problems.length === 0, problems };
 }
 
+// ---- qualification: should we pitch this company at all? (before any email is written) ----
+export const QUALIFY_QUESTIONS = {
+  sells_software: OUTREACH_QUESTIONS.sells_software,
+  gap_specific: OUTREACH_QUESTIONS.gap_specific,
+  offer_fits_gap: OUTREACH_QUESTIONS.offer_fits_gap,
+  operations_heavy: { type: 'noul', instructions: 'Does the business in `lead` handle a steady volume of repeated operational work (customer requests, orders, bookings, documents or quotes)?',
+    criteria: { true: 'The business processes many similar requests or transactions as part of daily operations', false: 'The business does few, bespoke engagements or has little repeated operational work' } },
+};
+// Truth table: hard disqualify, qualify, or hold (worth a look by a person / more research).
+export function judgeQualify(answers) {
+  const n = (k) => answers?.[k]?.noul; const gap = answers?.gap_specific?.score;
+  if (n('sells_software') >= YES) return { verdict: 'skip', why: 'sells software/AI/automation itself (competitor or in-house engineers)' };
+  if (typeof gap === 'number' && gap < 1.5) return { verdict: 'skip', why: 'no specific, evidenced operational gap found' };
+  if (n('offer_fits_gap') <= NO) return { verdict: 'skip', why: 'our offer does not fit the gap found' };
+  if (n('operations_heavy') <= NO) return { verdict: 'skip', why: 'little repeated operational work to automate' };
+  if (gap >= 2 && n('offer_fits_gap') >= YES) return { verdict: 'qualify', why: 'specific evidenced gap that our offer fits', gap };
+  return { verdict: 'hold', why: 'possible fit, evidence not strong enough yet', gap };
+}
+
 // ---- reply classification ----
 export const REPLY_CATEGORIES = {
   positive: 'They are interested and want to talk, see the plan, or move forward',
@@ -97,6 +116,11 @@ export class SalesJudge {
     const keys = ['fabricated_proof', 'sounds_low_level', 'lists_services', 'mentions_price', 'mixes_offers', ...(firstTouch ? ['asks_one_easy_thing'] : [])];
     const { answers } = await this.jev.decide({ state: { proof: clip(proof, 3000), email: { subject: clip(subject, 200), body: clip(body, 3000) } }, questions: Object.fromEntries(keys.map((k) => [k, OUTREACH_QUESTIONS[k]])) });
     return judgeOutreach(answers);
+  }
+
+  async qualify({ lead, offer }) {
+    const { answers } = await this.jev.decide({ state: { lead: { company: clip(lead.company, 200), website: clip(lead.website, 200), what_they_do: clip(lead.what_they_do, 1500), gap: clip(lead.gap, 2000) }, offer: clip(offer, 300) }, questions: QUALIFY_QUESTIONS });
+    return judgeQualify(answers);
   }
 
   async classifyReply({ ourSubject, replyText }) {
