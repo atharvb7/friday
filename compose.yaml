@@ -30,8 +30,9 @@ services:
     tmpfs: ["/tmp:size=512m,exec"]   # espeak (Kokoro) is extracted to /tmp and dlopen()ed
     ports: ["127.0.0.1:4317:4317"]
     networks: [agentnet, egress, deploynet]
-    mem_limit: 2g
-    memswap_limit: 2g
+    # Whisper (~0.5 GB) + Kokoro (~0.35 GB) + the expressive voice (~0.7 GB) can all be loaded while talking.
+    mem_limit: 2560m
+    memswap_limit: 2560m
     pids_limit: 256
     cpus: 4
 

@@ -20,7 +20,15 @@ THREADS = int(os.environ.get("FRIDAY_VOICE_THREADS", "4"))
 CBX_DIR = os.environ.get("FRIDAY_TTS_EXPRESSIVE", os.path.join(MODELS, "chatterbox-nano"))
 CBX_FILES = {"enc": "onnx/speech_encoder.onnx", "emb": "onnx/embed_tokens.onnx", "lm": "onnx/language_model_int8_mixed.onnx",
              "dec": "onnx/conditional_decoder_int8.onnx", "tok": "tokenizer.json"}
-CBX_THREADS = int(os.environ.get("FRIDAY_TTS_THREADS", "6"))
+def cpu_quota():
+    """CPUs this container may use (cgroup v2 cpu.max), else the machine's count."""
+    try:
+        q, p = open("/sys/fs/cgroup/cpu.max").read().split()[:2]
+        if q != "max": return max(1, int(int(q) // int(p)))
+    except Exception: pass
+    return os.cpu_count() or 4
+# More threads than the CPU quota makes ONNX Runtime stall under throttling (measured: 2.6x vs 0.68x real time).
+CBX_THREADS = int(os.environ.get("FRIDAY_TTS_THREADS") or min(6, cpu_quota()))
 # The reference the expressive voice is cloned from (rendered by Kokoro, so it is a synthetic voice).
 REF_TEXT = "Hey you! I was just thinking about you, you know? Come on, tell me everything, I want to hear all of it. You're kind of cute when you're nervous."
 
@@ -98,6 +106,7 @@ class Expressive:
         from tokenizers import Tokenizer
         self.ort = ort
         so = ort.SessionOptions(); so.intra_op_num_threads = CBX_THREADS; so.inter_op_num_threads = 1
+        so.add_session_config_entry("session.intra_op.allow_spinning", "0")  # spinning threads burn the CPU quota
         self.so = so
         mk = lambda key: ort.InferenceSession(os.path.join(CBX_DIR, CBX_FILES[key]), so, providers=["CPUExecutionProvider"])
         self.emb, self.lm, self.dec = mk("emb"), mk("lm"), mk("dec")
