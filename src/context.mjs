@@ -22,7 +22,7 @@ import { Audit } from './audit.mjs';
 import { EventBus } from './events.mjs';
 import { Auth } from './auth.mjs';
 import { OpenAICompatProvider } from './ai/openai-compat.mjs';
-import { ModelRouter, chainsFromEnv } from './ai/router.mjs';
+import { ModelRouter, chainsFromEnv, thinkingRolesFromEnv } from './ai/router.mjs';
 import { MemoryIndexer } from './ai/memory-indexer.mjs';
 import { Settings } from './settings.mjs';
 import { ContextBuilder } from './agent/context-builder.mjs';
@@ -139,8 +139,8 @@ export function createContext({ appRoot, env = process.env }) {
   try { mkdirSync(workspaceDir, { recursive: true, mode: 0o700 }); chmodSync(workspaceDir, 0o700); } catch {}
 
   // Model router: providers are interchangeable; nothing else names a vendor.
-  const ai = new ModelRouter({ db: store.db, bus, chains: chainsFromEnv(env) });
-  ai.register(new OpenAICompatProvider({ name: 'nvidia', baseUrl: env.FRIDAY_NEMOTRON_BASE_URL ?? 'https://integrate.api.nvidia.com/v1', apiKey: env.FRIDAY_NVIDIA_API_KEY ?? null }));
+  const ai = new ModelRouter({ db: store.db, bus, chains: chainsFromEnv(env), thinkingRoles: thinkingRolesFromEnv(env) });
+  ai.register(new OpenAICompatProvider({ name: 'nvidia', baseUrl: env.FRIDAY_NEMOTRON_BASE_URL ?? 'https://integrate.api.nvidia.com/v1', apiKey: env.FRIDAY_NVIDIA_API_KEY ?? null, noThinking: { chat_template_kwargs: { enable_thinking: false } } }));
   if (env.FRIDAY_FALLBACK_BASE_URL && env.FRIDAY_FALLBACK_API_KEY) {
     ai.register(new OpenAICompatProvider({ name: 'fallback', baseUrl: env.FRIDAY_FALLBACK_BASE_URL, apiKey: env.FRIDAY_FALLBACK_API_KEY }));
   }

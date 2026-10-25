@@ -22,8 +22,10 @@ function classify(status, text) {
 }
 
 export class OpenAICompatProvider {
-  constructor({ name, baseUrl, apiKey = null, fetchImpl = globalThis.fetch, timeoutMs = 120_000, headers = {} }) {
+  // noThinking: extra body fields that switch a reasoning model's thinking off (provider-specific; null = no switch).
+  constructor({ name, baseUrl, apiKey = null, fetchImpl = globalThis.fetch, timeoutMs = 120_000, headers = {}, noThinking = null }) {
     this.name = name;
+    this.noThinking = noThinking;
     this.baseUrl = String(baseUrl).replace(/\/+$/, '');
     this.apiKey = apiKey;
     this.fetchImpl = fetchImpl;
@@ -69,8 +71,8 @@ export class OpenAICompatProvider {
   // Returns { content, toolCalls, reasoning, usage, finishReason, model }.
   // onDelta(text) receives visible content only; onThinking(text) receives
   // reasoning deltas (never part of the reply).
-  async complete({ model, messages, tools = null, toolChoice = 'auto', maxTokens = 4096, temperature = 0.4, stream = false, onDelta = null, onThinking = null, signal = null, extra = {} }) {
-    const body = { model, messages, temperature, max_tokens: maxTokens, ...extra };
+  async complete({ model, messages, tools = null, toolChoice = 'auto', maxTokens = 4096, temperature = 0.4, stream = false, onDelta = null, onThinking = null, signal = null, thinking = true, extra = {} }) {
+    const body = { model, messages, temperature, max_tokens: maxTokens, ...(thinking === false && this.noThinking ? this.noThinking : {}), ...extra };
     if (tools?.length) { body.tools = tools; body.tool_choice = toolChoice; }
     if (stream) { body.stream = true; body.stream_options = { include_usage: true }; }
     const res = await this.#post('/chat/completions', body, signal);

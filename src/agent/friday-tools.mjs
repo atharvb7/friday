@@ -114,6 +114,14 @@ function prospectingTools(prospector) {
   ];
 }
 
+// Relative times are computed here, not by the model: clock arithmetic is where models slip.
+const whenFrom = (a) => {
+  if (a.in_minutes === undefined || a.in_minutes === null) return a.when ?? null;
+  const m = Number(a.in_minutes);
+  if (!Number.isFinite(m) || m < 0 || m > 366 * 24 * 60) throw new TypeError('in_minutes must be 0..527040');
+  return new Date(Date.now() + m * 60_000).toISOString();
+};
+
 export function buildFridayTools(ctx) {
   const { memory, store, tools, indexer, skills, jobs, proactive, settings, researchMemory, nodes } = ctx;
   // Members (other people) may only touch files that live in their own conversations.
@@ -609,24 +617,25 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
     },
     {
       name: 'reminder_create', risk: 'safe',
-      description: 'Create a reminder (optionally recurring). `when` is an ISO 8601 time: local wall-clock like 2026-10-12T09:30 (user timezone) or with an offset. Call time_now first if you need the current date. Omit `when` only for recurring reminders.',
+      description: 'Create a reminder (optionally recurring). For relative times ("in 2 hours", "in 20 min") pass in_minutes and no `when`. Otherwise `when` is an ISO 8601 time: local wall-clock like 2026-10-12T09:30 (user timezone) or with an offset. Omit both only for recurring reminders.',
       parameters: obj({
         text: { type: 'string', description: 'What to remind about' },
+        in_minutes: { type: 'number', description: 'Relative time from now in minutes, e.g. 120 for "in 2 hours"' },
         when: { type: 'string' },
         recurrence: { type: 'object', description: '{type:"interval",minutes} | {type:"daily",time:"HH:MM"} | {type:"weekdays",time} | {type:"weekly",days:[1..7 Mon=1],time} | {type:"monthly",day,time}' },
       }, ['text']),
       run: (a, { conversationId } = {}) => {
-        const j = jobs.create({ kind: 'reminder', title: str(a.text, 'text', 200), when: a.when ?? null, recurrence: a.recurrence ?? null, conversationId });
+        const j = jobs.create({ kind: 'reminder', title: str(a.text, 'text', 200), when: whenFrom(a), recurrence: a.recurrence ?? null, conversationId });
         return { created: true, id: j.id.slice(0, 8), next_fire_local: formatLocal(new Date(j.due_at), j.timezone), next_fire_utc: j.due_at };
       },
     },
     {
       name: 'schedule_task', risk: 'gated', category: 'system', riskClass: 'routine',
       description: 'Schedule a background agent task to run later or repeatedly (e.g. "every Monday 8am research X and write a report"). Same time rules as reminder_create.',
-      parameters: obj({ title: { type: 'string' }, instruction: { type: 'string', description: 'Self-contained instructions for the agent' }, when: { type: 'string' }, recurrence: { type: 'object' } }, ['title', 'instruction']),
+      parameters: obj({ title: { type: 'string' }, instruction: { type: 'string', description: 'Self-contained instructions for the agent' }, in_minutes: { type: 'number' }, when: { type: 'string' }, recurrence: { type: 'object' } }, ['title', 'instruction']),
       summarize: (a) => `Schedule agent task “${clip(a.title, 100)}”${a.recurrence ? ` (${JSON.stringify(a.recurrence)})` : a.when ? ` at ${a.when}` : ''}: ${clip(a.instruction, 300)}`,
       run: (a, { conversationId } = {}) => {
-        const j = jobs.create({ kind: 'task', title: str(a.title, 'title', 200), body: str(a.instruction, 'instruction', 20000), when: a.when ?? null, recurrence: a.recurrence ?? null, conversationId });
+        const j = jobs.create({ kind: 'task', title: str(a.title, 'title', 200), body: str(a.instruction, 'instruction', 20000), when: whenFrom(a), recurrence: a.recurrence ?? null, conversationId });
         return { scheduled: true, id: j.id.slice(0, 8), next_fire_local: formatLocal(new Date(j.due_at), j.timezone), next_fire_utc: j.due_at };
       },
     },

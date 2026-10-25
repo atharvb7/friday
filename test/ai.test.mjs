@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OpenAICompatProvider, ProviderError } from '../src/ai/openai-compat.mjs';
-import { ModelRouter, AllModelsFailed } from '../src/ai/router.mjs';
+import { ModelRouter, AllModelsFailed, thinkingRolesFromEnv } from '../src/ai/router.mjs';
 import { Store } from '../src/store.mjs';
 import { Memory } from '../src/memory.mjs';
 import { Settings } from '../src/settings.mjs';
@@ -94,6 +94,50 @@ test('router: all-failed raises AllModelsFailed; abort never falls through; unco
   const none = new ModelRouter({ chains: { chat: [{ provider: 'ghost', model: 'a' }] } });
   assert.equal(none.hasProvider, false);
   await assert.rejects(() => none.chat([]), /no_provider_configured/);
+});
+
+test('thinking: conversational roles switch the reasoning pass off; deep roles keep it; env override', async () => {
+  const bodies = [];
+  const p = new OpenAICompatProvider({ name: 'nvidia', baseUrl: 'http://x', apiKey: KEY, noThinking: { chat_template_kwargs: { enable_thinking: false } },
+    fetchImpl: async (_u, init) => { bodies.push(JSON.parse(init.body)); return jsonRes({ choices: [{ message: { content: 'hi' } }] }); } });
+  const plain = new OpenAICompatProvider({ name: 'other', baseUrl: 'http://y', apiKey: KEY,
+    fetchImpl: async (_u, init) => { bodies.push(JSON.parse(init.body)); return jsonRes({ choices: [{ message: { content: 'hi' } }] }); } });
+  const r = new ModelRouter({ chains: { execute: [{ provider: 'nvidia', model: 'm' }], chat: [{ provider: 'nvidia', model: 'm' }], reason: [{ provider: 'nvidia', model: 'm' }], extract: [{ provider: 'other', model: 'o' }] } });
+  r.register(p).register(plain);
+  await r.execute([{ role: 'user', content: 'x' }]);
+  await r.chat([{ role: 'user', content: 'x' }]);
+  await r.reason([{ role: 'user', content: 'x' }]);
+  await r.run('extract', { messages: [{ role: 'user', content: 'x' }] });
+  assert.deepEqual(bodies.map((b) => b.chat_template_kwargs?.enable_thinking ?? 'default'), [false, false, 'default', 'default']); // a provider without a switch gets nothing extra
+  bodies.length = 0;
+  await r.run('execute', { messages: [{ role: 'user', content: 'x' }], thinking: true }); // a caller can still ask for it
+  assert.equal(bodies[0].chat_template_kwargs, undefined);
+  assert.deepEqual(thinkingRolesFromEnv({}), ['reason', 'plan', 'computer', 'vision']);
+  assert.deepEqual(thinkingRolesFromEnv({ FRIDAY_THINKING_ROLES: 'execute, reason' }), ['execute', 'reason']);
+  assert.deepEqual(thinkingRolesFromEnv({ FRIDAY_THINKING_ROLES: '' }), []);
+});
+
+test('system prompt: current time is given in his local timezone (reminders stay right without a reasoning pass)', () => {
+  const s = buildSystemPrompt({ personality: normalizePersonality({}), now: new Date('2026-10-25T16:39:00Z'), timezone: 'Asia/Kolkata' });
+  assert.match(s, /Current time: Sun 25 Oct 2026, 22:09 \(Asia\/Kolkata\) \(his local time; UTC 2026-10-25T16:39:00.000Z\)/);
+  assert.match(buildSystemPrompt({ personality: normalizePersonality({}), now: new Date('2026-10-25T16:39:00Z'), timezone: 'Not/AZone' }), /Current time: 2026-10-25T16:39:00.000Z \(his timezone: Not\/AZone\)/);
+});
+
+test('reminders: relative times use in_minutes and are computed in code, not by the model', () => {
+  const seen = [];
+  const jobs = { create: (o) => { seen.push(o); return { id: 'abcdef1234', due_at: o.when ?? '2026-10-26T03:30:00.000Z', timezone: 'Asia/Kolkata' }; } };
+  const t = buildFridayTools({ jobs, settings: { get: () => null } });
+  const before = Date.now();
+  t.get('reminder_create').run({ text: 'call mom', in_minutes: 120 });
+  const due = Date.parse(seen[0].when);
+  assert.ok(due >= before + 120 * 60_000 && due <= Date.now() + 120 * 60_000);
+  t.get('reminder_create').run({ text: 'invoice', when: '2026-10-26T09:00' });
+  assert.equal(seen[1].when, '2026-10-26T09:00');
+  assert.throws(() => t.get('reminder_create').run({ text: 'x', in_minutes: -5 }), /in_minutes/);
+  assert.throws(() => t.get('reminder_create').run({ text: 'x', in_minutes: 'soon' }), /in_minutes/);
+  t.get('schedule_task').run({ title: 'report', instruction: 'write it', in_minutes: 30 });
+  assert.ok(Math.abs(Date.parse(seen[2].when) - (Date.now() + 30 * 60_000)) < 5000);
+  assert.ok(t.schemas().find((x) => x.function.name === 'reminder_create').function.parameters.properties.in_minutes);
 });
 
 test('memory: hybrid retrieval, edit invalidates embedding, pin, sensitive excluded from auto-context', () => {

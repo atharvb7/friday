@@ -18,14 +18,19 @@ export class AllModelsFailed extends Error {
   }
 }
 
+// Roles that keep the model's reasoning pass. Conversational turns skip it: on Nemotron it added 3-8 s
+// to a one-line reply and the turn quality was the same.
+export const DEFAULT_THINKING_ROLES = Object.freeze(['reason', 'plan', 'computer', 'vision']);
+
 export class ModelRouter {
   #providers = new Map();
   #breakers = new Map();
   #lastModel = null;
 
   // chains: { chat: [{provider:'nvidia', model:'...'}], reason: [...], embed: [...] }
-  constructor({ db = null, bus = null, chains = {}, now = () => Date.now() } = {}) {
+  constructor({ db = null, bus = null, chains = {}, now = () => Date.now(), thinkingRoles = DEFAULT_THINKING_ROLES } = {}) {
     this.db = db;
+    this.thinkingRoles = new Set(thinkingRoles);
     this.bus = bus;
     this.chains = chains;
     this.now = now;
@@ -68,7 +73,7 @@ export class ModelRouter {
       if (this.#open(key)) { attempts.push({ key, error: 'circuit_open' }); continue; }
       const t0 = this.now();
       try {
-        const out = await this.#providers.get(entry.provider).complete({ ...opts, model: entry.model });
+        const out = await this.#providers.get(entry.provider).complete({ thinking: this.thinkingRoles.has(role), ...opts, model: entry.model });
         this.#ok(key);
         this.#record(role, entry, this.now() - t0, out.usage, true);
         if (this.#lastModel !== key) { this.bus?.publish('model.changed', { role, provider: entry.provider, model: entry.model, from: this.#lastModel }); this.#lastModel = key; }
@@ -133,6 +138,10 @@ export class ModelRouter {
       COALESCE(SUM(prompt_tokens),0) AS prompt_tokens, COALESCE(SUM(completion_tokens),0) AS completion_tokens
       FROM model_calls WHERE ts >= ? GROUP BY role, provider, model ORDER BY calls DESC`).all(since);
   }
+}
+
+export function thinkingRolesFromEnv(env) {
+  return env.FRIDAY_THINKING_ROLES !== undefined ? String(env.FRIDAY_THINKING_ROLES).split(',').map((x) => x.trim()).filter(Boolean) : DEFAULT_THINKING_ROLES;
 }
 
 // Env-driven wiring. Defaults: fast model for turns, biggest model for deep thinking.
