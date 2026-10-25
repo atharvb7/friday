@@ -118,6 +118,16 @@ export class SalesJudge {
     return judgeOutreach(answers);
   }
 
+  // Per-quote evidence check (one question per quote, as TypeSafe recommends): keep only quotes that show a task the
+  // business repeatedly does by hand, not a description of a service it sells, praise or a general complaint.
+  async manualEvidence({ company, gaps }) {
+    if (!gaps.length) return [];
+    const questions = Object.fromEntries(gaps.map((g, i) => [`q${i}`, { type: 'noul', instructions: `Does this quote from ${clip(company, 120)}'s own website or reviews show a task the business repeatedly does by hand? Quote: "${clip(g.evidence_quote, 400)}"`,
+      criteria: { true: 'It shows a manual, repeated step in how they handle customers, requests, bookings, quotes, payments, orders or documents (for example "fill this form and we will call you back", "email us your documents", "pay to confirm, then we apply the discount")', false: 'It only describes a service they sell, praises them, complains about honesty or quality in general, or is a heading or slogan' } }]));
+    const { answers } = await this.jev.decide({ state: { company: clip(company, 120) }, questions });
+    return gaps.filter((g, i) => (answers[`q${i}`]?.noul ?? 0) >= YES);
+  }
+
   async qualify({ lead, offer }) {
     const { answers } = await this.jev.decide({ state: { lead: { company: clip(lead.company, 200), website: clip(lead.website, 200), what_they_do: clip(lead.what_they_do, 1500), gap: clip(lead.gap, 2000) }, offer: clip(offer, 300) }, questions: QUALIFY_QUESTIONS });
     return judgeQualify(answers);
