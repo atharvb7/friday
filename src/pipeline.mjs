@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { renderEmail, DEFAULT_BRAND } from './email-template.mjs';
 import { partsInTz, zonedToUtc, isValidTimezone, formatLocal } from './time.mjs';
+import { jurisdictionOf, RULES } from './jurisdiction.mjs';
 
 export const STAGES = ['new', 'researched', 'contacted', 'replied', 'meeting', 'proposal', 'won', 'lost', 'nurture', 'dnc'];
 const OPEN = new Set(['new', 'researched', 'contacted', 'nurture']);
@@ -215,6 +216,7 @@ export class Pipeline {
     const text = m.body;
     const low = text.toLowerCase();
     if (CLIENT_CLAIM_RE.test(text)) out.push(`it claims client work ("${CLIENT_CLAIM_RE.exec(text)[0].slice(0, 80)}"): only projects listed in the profile's Proof section may be mentioned`);
+    if (lead && RULES[jurisdictionOf(lead.timezone)]?.postalAddress && !this.settings.get('outreach_postal_address', null)) out.push('US recipient: CAN-SPAM requires your postal address in the email; set it first (prospecting_setup postal_address)');
     if (RESULT_CLAIM_RE.test(text)) out.push(`it claims a past result ("${RESULT_CLAIM_RE.exec(text)[0].slice(0, 80)}"): only results listed in the profile's Proof section may be used, never invented ones`);
     if (/→|->|=>/.test(text)) out.push('no arrow chains (a → b → c): describe the end result in one plain sentence');
     if (/[—–]/.test(text) || /[—–]/.test(m.subject ?? '')) out.push('no em/en dashes: use a full stop or comma');
@@ -264,7 +266,8 @@ export class Pipeline {
     const lead = m.lead_id ? this.get(m.lead_id) : null;
     const where = !m.follow_up && /email:\s*(https?:\/\/\S+)/.exec(lead?.source ?? '')?.[1]?.replace(/^https?:\/\/(www\.)?/, '').replace(/[;,]$/, '').replace(/\/$/, '');
     const optOut = m.opt_out === false ? '' : `${where ? `P.S. I found your address on ${where}. ` : ''}${this.optOutLine().replace(/^P\.S\.\s*/, where ? '' : 'P.S. ')}`;
-    return renderEmail({ body: m.body, signature: String(this.settings.get('outreach_signature', '') ?? '').trim(), optOut, brand, header: !m.follow_up });
+    const postal = lead && RULES[jurisdictionOf(lead.timezone)]?.postalAddress ? this.settings.get('outreach_postal_address', null) : null;
+    return renderEmail({ body: m.body, signature: String(this.settings.get('outreach_signature', '') ?? '').trim(), optOut: postal ? `${optOut}\n${postal}` : optOut, brand, header: !m.follow_up });
   }
   // Friday sometimes signs off itself ("Best,\nAtharv ..."); the template adds the real signature, so drop hers.
   stripSignoff(body) {

@@ -73,11 +73,11 @@ test('prospector: source -> audit with verified evidence -> qualify -> contact -
   try {
     assert.throws(() => w.prospector.setConfig({ enabled: true }), /at least one segment/);
     assert.throws(() => w.prospector.setConfig({ segments: [{ vertical: 'freight forwarders', location: 'Dubai', timezone: 'Mars/Base' }] }), /IANA/);
-    w.prospector.setConfig({ enabled: true, segments: [{ vertical: 'freight forwarders', location: 'Dubai', timezone: 'Asia/Dubai' }], daily_new: 2, serp_budget: 20 });
+    w.prospector.setConfig({ enabled: true, segments: [{ vertical: 'freight forwarders', location: 'Mumbai', timezone: 'Asia/Kolkata' }], daily_new: 2, serp_budget: 20 });
     const r = await w.prospector.runOnce({ reason: 'test' });
 
     assert.equal(r.found, 3, 'social-only listing ignored');
-    assert.equal(w.serpCalls[0].engine, 'google_maps'); assert.equal(w.serpCalls[0].q, 'freight forwarders in Dubai');
+    assert.equal(w.serpCalls[0].engine, 'google_maps'); assert.equal(w.serpCalls[0].q, 'freight forwarders in Mumbai');
     assert.deepEqual(r.skipped.map((s) => s.company), ['AgentAI']);
     assert.match(r.skipped[0].why, /engineering team/);
     assert.deepEqual(r.hold.map((s) => s.company), ['Quiet Movers']);
@@ -85,7 +85,7 @@ test('prospector: source -> audit with verified evidence -> qualify -> contact -
 
     const lead = w.pipeline.byEmail('omar.khan@falcon.example');
     assert.equal(lead.contact_name, 'Omar Khan', 'personal email matched to a verified name');
-    assert.equal(lead.timezone, 'Asia/Dubai'); assert.equal(lead.stage, 'researched');
+    assert.equal(lead.timezone, 'Asia/Kolkata'); assert.equal(lead.stage, 'researched');
     assert.match(w.pipeline.render({ lead_id: lead.id, body: 'Hi Omar,\n\nx', follow_up: false }).text, /P\.S\. I found your address on falcon\.example\/contact\. Not relevant/);
     assert.doesNotMatch(w.pipeline.render({ lead_id: lead.id, body: 'x', follow_up: true }).text, /found your address/, 'not repeated in follow-ups');
     assert.match(lead.signal, /prepare a quote manually" \(https:\/\/falcon\.example\/contact\)/);
@@ -126,5 +126,28 @@ test('prospector: schedule fires once per chosen day after run_at, in the user t
     assert.equal(await p.tick(), null, 'only once that day');
     now = Date.parse('2026-11-01T04:00:00Z'); // Sunday
     assert.equal(await p.tick(), null, 'not on Sunday');
+  } finally { w.close(); }
+});
+
+test('prospector: market rules (Germany refused, Gulf = role addresses only, US needs a postal address)', async () => {
+  const w = world();
+  try {
+    assert.throws(() => w.prospector.setConfig({ segments: [{ vertical: 'logistics', location: 'Berlin', timezone: 'Europe/Berlin' }] }), /consent/);
+    // Gulf: Falcon only publishes a personal address -> not used; no role address anywhere -> no_contact
+    w.prospector.setConfig({ segments: [{ vertical: 'freight forwarders', location: 'Dubai', timezone: 'Asia/Dubai' }], daily_new: 1, serp_budget: 50 });
+    await w.prospector.source(5);
+    const falcon = w.store.db.prepare("SELECT * FROM prospects WHERE company='Falcon Cargo'").get();
+    const r = await w.prospector.audit(falcon);
+    assert.equal(r.status, 'no_contact');
+    assert.equal(w.pipeline.byEmail('omar.khan@falcon.example'), null);
+    // US: the house-style lint requires the sender's postal address, and the footer carries it
+    const us = w.pipeline.save({ company: 'Oak PM', email: 'dana@oak.example', timezone: 'America/Chicago', signal: 'maintenance requests by phone (https://oak.example/contact)' });
+    const body = 'Hi Dana,\n\nNoticed Oak takes maintenance requests by phone only.\n\nWant me to send the one-page plan for Oak?';
+    let rev = await w.pipeline.review([{ lead_id: us.id, subject: 'maintenance at oak', body }]);
+    assert.match(rev.emails[0].fix.join(' '), /CAN-SPAM requires your postal address/);
+    w.prospector.setConfig({ postal_address: 'Atharv Bhosale, 1 Example Road, Pune 411001, India' });
+    rev = await w.pipeline.review([{ lead_id: us.id, subject: 'maintenance at oak', body }]);
+    assert.equal(rev.ok, true);
+    assert.match(w.pipeline.render({ lead_id: us.id, body, follow_up: false }).text, /Pune 411001, India$/);
   } finally { w.close(); }
 });

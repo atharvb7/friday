@@ -91,7 +91,8 @@ function prospectingTools(prospector) {
     {
       name: 'prospecting_setup', risk: 'gated', category: 'system', riskClass: 'routine',
       description: 'Configure the autonomous client-hunting pipeline that runs on the server every chosen weekday: segments (vertical + location + timezone + offer), daily_new (qualified prospects per day, 1-15), run_at (HH:MM, user time), days (1-7, Mon=1), serp_budget (Google Maps searches per month), enabled. It finds companies, audits their sites for evidenced gaps, drafts emails and stages ONE approval a day; it never sends without approval. Needs approval.',
-      parameters: obj({ enabled: { type: 'boolean' }, segments: { type: 'array', items: seg }, daily_new: { type: 'integer' }, run_at: { type: 'string' }, days: { type: 'array', items: { type: 'integer' } }, serp_budget: { type: 'integer' }, reviews: { type: 'boolean' }, followups: { type: 'boolean' } }, []),
+      parameters: obj({ enabled: { type: 'boolean' }, segments: { type: 'array', items: seg }, daily_new: { type: 'integer' }, run_at: { type: 'string' }, days: { type: 'array', items: { type: 'integer' } }, serp_budget: { type: 'integer' }, reviews: { type: 'boolean' }, followups: { type: 'boolean' },
+        min_evidence: { type: 'integer' }, postal_address: { type: 'string', description: 'sender postal address, required by US law (CAN-SPAM) for US prospects' } }, []),
       summarize: (a) => `Client-hunting pipeline: ${a.enabled === false ? 'OFF' : a.enabled ? 'ON' : 'settings'}${a.segments ? ` · ${a.segments.map((s) => `${s.vertical} in ${s.location} (${s.offer ?? 'automation'})`).join('; ')}` : ''}${a.daily_new ? ` · ${a.daily_new}/day` : ''}${a.run_at ? ` · at ${a.run_at}` : ''}${a.serp_budget !== undefined ? ` · ${a.serp_budget} searches/month` : ''}`,
       run: (a) => ({ saved: true, config: prospector.setConfig(a) }),
     },
