@@ -63,13 +63,20 @@ Score fit (`lead-triage`). DQ anything that doesn't fit; don't force it.
 
 ## Step 4 - Write
 
-Load `cold-email` (and its references when useful: frameworks, personalization, follow-up-sequences).
+FIRST read the **Messaging** section of the business profile: its positioning, rules and templates override
+everything below and any generic advice in `cold-email`. Follow its template for the offer you are pitching, one offer
+per email, and copy the signature exactly. Then load `cold-email` for craft (frameworks, personalization).
 House rules on top of it:
-- 50-110 words, plain text, no links in the first touch except at most one, no attachments, no images.
+- Length and format as the profile's Messaging section says (default 90-150 words), plain text, no bullet lists,
+  no links in the first touch, no attachments, no images.
 - Subject 2-4 words, lowercase, looks internal. No fake "Re:".
 - Line 1 = the specific observation. Then the cost of that problem. Then one proof line from the profile. Then a
   low-friction interest ask ("worth a look?", "want me to send the 3 ideas?"). Signature from the profile.
 - Write in the user's voice from the profile. Read it aloud; if it sounds like AI or marketing, rewrite.
+- Before sending, check the draft against the profile's "Never write" list and fix every hit. Name only tools and
+  projects the profile says are ours; tools we use (e.g. Hermes, OpenClaw, n8n) are never presented as our products.
+- Test emails to the user follow exactly the same template (use a realistic example company), so the user sees the
+  real thing.
 - Each email is for ONE person. If removing their name and company leaves a sensible email, it's not personal enough.
 
 ## Step 5 - Send (one approval per batch)
