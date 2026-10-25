@@ -8,6 +8,12 @@ import { join, resolve, basename } from 'node:path';
 
 const MAX_SKILL_BYTES = 256 * 1024;
 const NAME_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
+const REF_RE = /^[a-z0-9][a-z0-9._-]{0,80}\.(md|txt|json|csv)$/i;
+const MAX_REF_CHARS = 40_000;
+const BRIEF_MAX = 120;
+const refDir = (p) => ['references', 'reference'].map((d) => join(p, d)).find((d) => existsSync(d) && !lstatSync(d).isSymbolicLink() && statSync(d).isDirectory()) ?? null;
+// "When the user wants X. Also use when..." -> "When the user wants X"
+const brief = (d) => { const first = String(d).split(/(?<=[.!?])\s+|\s+Use (?:when|this|for)\b/)[0].replace(/[.!?]$/, ''); return first.length > BRIEF_MAX ? `${first.slice(0, BRIEF_MAX - 1).replace(/\s+\S*$/, '')}…` : first; };
 
 export function parseSkill(text) {
   const m = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text);
@@ -42,18 +48,32 @@ export class Skills {
     const s = this.list().find((x) => x.name === name);
     if (!s) return null;
     const parsed = parseSkill(readFileSync(join(s.path, 'SKILL.md'), 'utf8'));
-    const refs = existsSync(join(s.path, 'references')) ? readdirSync(join(s.path, 'references')).slice(0, 20) : [];
-    return { name, description: s.description, instructions: parsed.body, references: refs };
+    const dir = refDir(s.path);
+    const refs = dir ? readdirSync(dir).filter((f) => REF_RE.test(f)).slice(0, 30) : [];
+    return { name, description: s.description, instructions: parsed.body, references: refs, ...(refs.length ? { references_hint: 'Open one with skill_load {name, reference}.' } : {}) };
+  }
+
+  // One reference file of a skill (references/ or reference/), by bare file name only.
+  reference(name, file) {
+    const s = this.list().find((x) => x.name === name);
+    if (!s) return null;
+    const dir = refDir(s.path); const f = String(file ?? '').trim();
+    if (!dir || !REF_RE.test(f)) return { error: 'reference_not_found' };
+    const p = join(dir, f);
+    if (!existsSync(p) || lstatSync(p).isSymbolicLink() || !statSync(p).isFile()) return { error: 'reference_not_found', available: readdirSync(dir).filter((x) => REF_RE.test(x)).slice(0, 30) };
+    const text = readFileSync(p, 'utf8');
+    return { name, reference: f, text: text.slice(0, MAX_REF_CHARS), ...(text.length > MAX_REF_CHARS ? { truncated: true } : {}) };
   }
 
   // Transport helpers (used to ship skills to the isolated agent container). Never follow symlinks.
   readDir(dir) { return readdirSync(dir, { withFileTypes: true }).filter((e) => !e.isSymbolicLink() && !e.name.startsWith('.')).map((e) => ({ name: e.name, path: join(dir, e.name), isDirectory: e.isDirectory(), size: e.isFile() ? statSync(join(dir, e.name)).size : 0 })); }
   readFile(p) { return readFileSync(p); }
 
-  // One compact line per skill for the system prompt.
-  index(maxChars = 1400) {
-    let out = ''; 
-    for (const s of this.list()) { const line = `- ${s.name}: ${s.description}\n`; if (out.length + line.length > maxChars) break; out += line; }
+  // One compact line per skill for the system prompt: the description's first sentence, clipped, so every
+  // skill stays visible (the full description and body arrive with skill_load).
+  index(maxChars = 5000) {
+    let out = '';
+    for (const s of this.list()) { const line = `- ${s.name}: ${brief(s.description)}\n`; if (out.length + line.length > maxChars) break; out += line; }
     return out.trim();
   }
 

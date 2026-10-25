@@ -17,7 +17,8 @@ test('skills: shipped set parses, index is compact, install rejects symlinks and
   const shipped = new Skills({ roots: [new URL('../skills', import.meta.url).pathname] });
   const names = shipped.list().map((s) => s.name);
   for (const n of ['research', 'coding', 'report-writing', 'daily-briefing', 'competitive-analysis']) assert.ok(names.includes(n), n);
-  assert.ok(shipped.index().length < 1400);
+  assert.ok(shipped.index().length < 5000);
+  assert.equal(shipped.index().split('\n').length, names.length, 'every shipped skill is visible in the index');
   assert.match(shipped.load('research').instructions, /contradictions/i);
   assert.equal(shipped.load('nope'), null);
   assert.equal(parseSkill('no frontmatter'), null);

@@ -51,6 +51,7 @@ import { HermesAdapter } from './hermes.mjs';
 import { TeamOrchestrator } from './agent/team.mjs';
 import { Learner } from './agent/learning.mjs';
 import { Watches } from './watches.mjs';
+import { Pipeline } from './pipeline.mjs';
 import { Composio } from './composio.mjs';
 import { Files } from './files.mjs';
 import { Documents } from './documents.mjs';
@@ -253,6 +254,7 @@ export function createContext({ appRoot, env = process.env }) {
   kindRouter.byKind.team = new TeamOrchestrator({ store, router: kindRouter, ai });
   ctx.rules.proactive = ctx.proactive;
   ctx.proactive.mood = ctx.mood;
+  ctx.pipeline = new Pipeline({ store, settings, gmail: ctx.gmail, notifications: ctx.notifications, bus });
   ctx.fridayTools = buildFridayTools(ctx);
   { // gated tools get their approved-execution path registered automatically
     const register = ctx.fridayTools.register;
@@ -293,6 +295,7 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.jobs.start();
     ctx.hermes.start();
     ctx.watches.start();
+    ctx.pipeline.start();
     ctx.dmChats.start_timer();
     pruneTimer = setInterval(() => { try { prune(store.db); } catch { /* retention is best effort */ } }, 6 * 3600_000); pruneTimer.unref();
     try { prune(store.db); } catch {}
@@ -303,6 +306,7 @@ export function createContext({ appRoot, env = process.env }) {
     worker.stop();
     ctx.hermes.stop();
     ctx.watches.stop();
+    ctx.pipeline.stop();
     ctx.dmChats.stop_timer();
     ctx.nodes?.stopAll();
     ctx.voiceServer?.stop();

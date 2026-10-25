@@ -13,3 +13,12 @@ test material and maintainer files removed). Each folder keeps its upstream lice
 | api-design-principles | github.com/wshobson/agents @ 46891e7e60da0e52baf1050b7b6391b64e84c6d9 | MIT (insecure example template removed) |
 
 Friday's own skills (coding, research, report-writing, competitive-analysis, daily-briefing, friday-deploy) are part of this repo.
+
+## Business development (added 2026-10-25)
+
+| Skill | Source (commit) | License |
+|---|---|---|
+| cold-email, prospecting, copywriting, marketing-psychology, offers, pricing, sales-enablement, product-marketing, competitor-profiling, revops | github.com/coreyhaines31/marketingskills @ e85f3cbc2e4a79bf33b2a12e9bdd9087d414735b | MIT (LICENSE in each folder). Edited: evals removed; the `.agents/product-marketing.md` context file is replaced by Friday's `business_profile` tool. |
+| account-research, stakeholder-map, call-prep, call-summary, handle-objection, lead-triage | github.com/anthropics/knowledge-work-plugins (sales plugin) @ 33d3dea41a341b341d4f5da2e8801ae0c89be2b8 | Apache-2.0 (LICENSE in each folder). Modified: the generic connector/rendering rules block and "How it adapts" section removed; a Friday adaptation note maps CRM/email/enrichment to Friday's tools. |
+
+`business-development` (the orchestrating skill, with references/plays.md and references/discovery-and-proposal.md) is Friday's own.

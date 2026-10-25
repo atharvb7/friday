@@ -30,7 +30,7 @@ export function render({ app, api, toast, refresh }) {
       for (const x of a.approvals) {
         body.append(h('div', { class: 'card stack' },
           h('div', { class: 'row wrap' }, h('strong', { class: 'grow' }, x.summary), h('span', { class: `chip ${x.risk === 'critical' ? 'bad' : 'warn'}` }, x.risk), h('span', { class: 'chip' }, x.category), h('span', { class: 'faint' }, timeAgo(x.created_at))),
-          h('pre', { class: 'mono bubble' }, JSON.stringify(x.payload, null, 2).slice(0, 900)),
+          h('pre', { class: 'mono bubble', style: 'max-height:60vh;overflow:auto;white-space:pre-wrap' }, JSON.stringify(x.payload, null, 2).slice(0, 40000)),
           h('div', { class: 'row' }, h('button', { class: 'btn good', onclick: () => decide(x, true) }, 'Approve'), h('button', { class: 'btn bad', onclick: () => decide(x, false) }, 'Deny'),
             h('span', { class: 'faint small' }, 'Approving runs exactly what is shown above.'))));
       }

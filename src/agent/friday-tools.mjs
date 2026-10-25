@@ -6,6 +6,7 @@ import { CREATE_FORMATS, DOCS_HELP, EDIT_HELP } from '../documents.mjs';
 //   gated — never runs directly; the brain stages it for explicit approval
 // Results are small JSON objects; text from external sources is data only.
 import { formatLocal, systemTimezone } from '../time.mjs';
+import { STAGES } from '../pipeline.mjs';
 import { safeFetch, serpSearch, countryForTimezone } from '../web.mjs';
 const clip = (s, n) => String(s ?? '').slice(0, n);
 const str = (v, name, max = 2000) => {
@@ -13,6 +14,53 @@ const str = (v, name, max = 2000) => {
   return v.trim();
 };
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
+
+// Business development: the pipeline (leads, do-not-contact, business profile) and batched outreach.
+function businessTools(pipeline) {
+  const leadFields = { company: { type: 'string' }, website: { type: 'string' }, contact_name: { type: 'string' }, role: { type: 'string' }, email: { type: 'string', description: 'only an address you found published or the user gave; never guess patterns' },
+    offer: { type: 'string', description: 'what we pitch them: a service (automation, AI agents, voice agents, freelance dev) or one of our products' }, source: { type: 'string', description: 'where you found them (URL)' },
+    signal: { type: 'string', description: 'why now: the specific trigger you found (hiring, launch, funding, a complaint, a slow manual process)' }, fit: { type: 'string', enum: ['P0', 'P1', 'P2', 'DQ'] },
+    research: { type: 'string', description: 'short brief: what they do, pains, who decides, hooks — with sources' }, next_action: { type: 'string' }, stage: { type: 'string', enum: STAGES } };
+  return [
+    {
+      name: 'business_profile', risk: 'safe',
+      description: 'The user\'s business profile (markdown): who we are, services and products with prices, ideal clients, proof/case studies, voice, signature, booking link. Read it (op get) before ANY sales work; save the whole document (op set) after interviewing the user or when they correct it.',
+      parameters: obj({ op: { type: 'string', enum: ['get', 'set'] }, text: { type: 'string' } }, ['op']),
+      run: (a) => (a.op === 'set' ? pipeline.setProfile(a.text) : pipeline.profile()),
+    },
+    {
+      name: 'lead_save', risk: 'safe',
+      description: 'Add or update prospects in your sales pipeline (matched by email, else company domain + contact). Save every qualified prospect you find with its source and signal. Up to 50 per call.',
+      parameters: obj({ leads: { type: 'array', items: obj(leadFields, ['company']) } }, ['leads']),
+      run: (a) => { const out = []; for (const l of (a.leads ?? []).slice(0, 50)) { try { const r = pipeline.save(l); out.push({ id: r.id.slice(0, 8), company: r.company, stage: r.stage, ...(r.created ? { created: true } : { updated: true }), ...(r.warning ? { warning: r.warning } : {}) }); } catch (e) { out.push({ company: l?.company ?? null, error: e.message }); } } return { saved: out.filter((x) => !x.error).length, results: out }; },
+    },
+    {
+      name: 'lead_find', risk: 'safe',
+      description: 'Look at the pipeline: filter by stage, due=true for follow-ups due now, q to search; id = one lead with its full history; stats=true for the overview (counts by stage, due, sent today vs cap).',
+      parameters: obj({ stage: { type: 'string', enum: STAGES }, due: { type: 'boolean' }, q: { type: 'string' }, id: { type: 'string' }, stats: { type: 'boolean' }, limit: { type: 'integer' } }, []),
+      run: (a) => (a.id ? (pipeline.history(a.id) ?? { error: 'lead not found' }) : a.stats ? pipeline.stats() : pipeline.find(a)),
+    },
+    {
+      name: 'lead_update', risk: 'safe',
+      description: 'Move a lead (stage), log a note (call notes, what they said), set the next step and when (next_at ISO date). Stages replied/meeting/proposal/won/lost stop automatic follow-ups.',
+      parameters: obj({ id: { type: 'string' }, stage: { type: 'string', enum: STAGES }, note: { type: 'string' }, fit: { type: 'string' }, offer: { type: 'string' }, research: { type: 'string' }, next_action: { type: 'string' }, next_at: { type: 'string' } }, ['id']),
+      run: (a) => { const { id, ...rest } = a; const l = pipeline.update(str(id, 'id', 60), rest); return { id: l.id.slice(0, 8), company: l.company, stage: l.stage, next_action: l.next_action, next_at: l.next_at }; },
+    },
+    {
+      name: 'do_not_contact', risk: 'safe',
+      description: 'Put an email address or a whole domain on the do-not-contact list (they asked to stop, hostile reply, competitor, existing client the user handles personally). Sending to them is then refused.',
+      parameters: obj({ value: { type: 'string' }, reason: { type: 'string' } }, ['value']),
+      run: (a) => pipeline.suppress(str(a.value, 'value', 300), a.reason ?? 'user request'),
+    },
+    {
+      name: 'outreach_send', risk: 'gated', category: 'messaging', riskClass: 'consequential',
+      description: `Send a batch of personalised outreach emails (cold first touches or follow-ups) from the user's Gmail — ONE approval for the whole batch (max 15). Recipients must already be leads (lead_save first). Each item: lead_id (preferred) or to, subject, body (plain text, short, written for that one person); follow_up=true replies inside the earlier thread (no subject needed). An opt-out line is appended when missing; do-not-contact, replied/closed leads and the daily cap are enforced. Draft in chat first only if the user asked to see drafts.`,
+      parameters: obj({ emails: { type: 'array', items: obj({ lead_id: { type: 'string' }, to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' }, follow_up: { type: 'boolean' } }, ['body']) } }, ['emails']),
+      summarize: (a) => pipeline.summarize(a.emails),
+      run: (a) => pipeline.send(a.emails),
+    },
+  ];
+}
 
 export function buildFridayTools(ctx) {
   const { memory, store, tools, indexer, skills, jobs, proactive, settings, researchMemory, nodes } = ctx;
@@ -317,8 +365,15 @@ export function buildFridayTools(ctx) {
         if (a.op === 'send_draft') return `Send Gmail draft ${a.draft_id}`;
         return `Email ${a.op}${a.to ? ` to ${clip(a.to, 160)}` : a.message_id ? ` (reply in thread of ${a.message_id})` : ''}${a.cc ? ` cc ${clip(a.cc, 100)}` : ''}${a.subject ? ` — “${clip(a.subject, 160)}”` : ''}${files ? ` 📎 ${clip(files, 200)}` : ''}\n${clip(a.body ?? a.note ?? '', 1500)}`;
       },
-      run: (a) => ({ send: () => ctx.gmail.send(a), reply: () => ctx.gmail.reply(a), forward: () => ctx.gmail.forward(a), send_draft: () => ctx.gmail.sendDraft(a), trash: () => ctx.gmail.trash(a) }[a.op] ?? (() => ({ error: 'unknown op' })))(),
+      run: async (a) => {
+        const blocked = ['send', 'forward'].includes(a.op) ? ctx.pipeline?.blockedRecipients(a.to, a.cc, a.bcc) ?? [] : [];
+        if (blocked.length) return { error: `do_not_contact: ${blocked.join(', ')} asked not to be contacted; nothing was sent` };
+        const out = await ({ send: () => ctx.gmail.send(a), reply: () => ctx.gmail.reply(a), forward: () => ctx.gmail.forward(a), send_draft: () => ctx.gmail.sendDraft(a), trash: () => ctx.gmail.trash(a) }[a.op] ?? (() => ({ error: 'unknown op' })))();
+        if (out?.sent && a.op === 'send') { try { ctx.pipeline?.recordSend({ to: a.to, subject: a.subject, message_id: out.id, thread_id: out.thread_id }); } catch {} }
+        return out;
+      },
     },
+    ...(ctx.pipeline ? businessTools(ctx.pipeline) : []),
     {
       name: 'app_deploy', risk: 'gated', category: 'system', riskClass: 'consequential',
       description: 'Host one of your coding projects on the user\'s server, reachable on his Tailscale at https://<server>.ts.net:<port> (tailnet only, not the public internet). project = the code_task workspace name that holds the finished app (Dockerfile, or package.json with a start script, or a static index.html). Re-deploying the same name updates it in place and keeps its address. Needs approval. Build first with code_task, then deploy.',
@@ -541,9 +596,9 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
     },
     {
       name: 'skill_load', risk: 'safe',
-      description: 'Load the full instructions of a skill by name (see the skills index in your context).',
-      parameters: obj({ name: { type: 'string' } }, ['name']),
-      run: (a) => { const s = skills?.load(str(a.name, 'name', 60)); return s ?? { error: 'skill_not_found' }; },
+      description: 'Load the full instructions of a skill by name (see the skills index in your context). Skills list reference files (deeper playbooks, data); open one by also passing reference = its file name.',
+      parameters: obj({ name: { type: 'string' }, reference: { type: 'string', description: 'optional: a file name from the skill\'s references list' } }, ['name']),
+      run: (a) => { const n = str(a.name, 'name', 60); const s = a.reference ? skills?.reference(n, a.reference) : skills?.load(n); return s ?? { error: 'skill_not_found' }; },
     },
     {
       name: 'time_now', risk: 'safe',
