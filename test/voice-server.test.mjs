@@ -124,7 +124,7 @@ test('voice tags: hidden from text, prompt teaches them only on the voice channe
   const { buildSystemPrompt, normalizePersonality } = await import('../src/personality.mjs');
   const voice = buildSystemPrompt({ personality: normalizePersonality({}), channel: 'voice' });
   const text = buildSystemPrompt({ personality: normalizePersonality({}), channel: 'chat' });
-  assert.match(voice, /\[whispering\]/); assert.match(voice, /\[laugh\]/); assert.match(voice, /Never write "haha"/);
+  assert.match(voice, /\[whispering\]/); assert.match(voice, /\[laugh\]/); assert.match(voice, /no "haha"/); assert.match(voice, /no other bracketed stage directions/);
   assert.ok(!text.includes('[whispering]'));
 });
 
@@ -133,11 +133,15 @@ test('engine.py text handling: unknown tags and emoji are never read out, senten
 import sys, json, types
 sys.path.insert(0, ${JSON.stringify(join(process.cwd(), 'voice'))})
 import engine
-fake = types.SimpleNamespace(tags={'[laugh]', '[whispering]', '[sigh]'})
+fake = types.SimpleNamespace(tags={'[laugh]', '[whispering]', '[sigh]', '[chuckle]'})
 out = {
   'plain': engine.plain('[whispering] Hey 😘 you [laugh]!'),
   'clean': engine.Expressive.clean(fake, '[Whispering] Hey 😘 [poke] you [laugh]!'),
   'chunks': engine.Expressive.chunks(fake, 'One. Two! ' + 'x' * 250 + '. [sigh]', 240),
+  'stage': engine.Expressive.clean(fake, '[moves closer, voice dropping] Right here \\U0001F60F'),
+  'emoji': engine.Expressive.clean(fake, 'So proud \\U0001F979 \\U0001F602\\U0001F602'),
+  'star': engine.Expressive.clean(fake, '*giggles* stop *pokes you*'),
+  'link': engine.plain('see [the doc](https://x.y/z) ok'),
 }
 print(json.dumps(out))`;
   const r = spawnSync('python3', ['-c', code], { encoding: 'utf8' });
@@ -146,4 +150,8 @@ print(json.dumps(out))`;
   assert.equal(o.plain, 'Hey you !');
   assert.equal(o.clean, '[whispering] Hey you [laugh] !');
   assert.equal(o.chunks.length, 2); assert.equal(o.chunks[0], 'One. Two!'); assert.match(o.chunks[1], /\[sigh\]$/);
+  assert.equal(o.stage, 'Right here [chuckle]', 'made-up stage directions are dropped; a smirk emoji becomes a chuckle');
+  assert.equal(o.emoji, 'So proud [laugh]');
+  assert.equal(o.star, '[laugh] stop', '*actions* become sounds or disappear, never read out');
+  assert.equal(o.link, 'see the doc ok');
 });

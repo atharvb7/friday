@@ -105,7 +105,7 @@ test('text chat has no stage directions: *actions* are stripped, **bold** and no
   const chat = buildSystemPrompt({ personality: normalizePersonality({}), channel: 'chat' });
   const voice = buildSystemPrompt({ personality: normalizePersonality({}), channel: 'voice' });
   assert.match(chat, /NEVER write stage directions/); assert.match(voice, /VOICE — your words are spoken aloud/);
-  assert.match(voice, /No emoji, no markdown/);
+  assert.match(voice, /no emoji \(they cannot be heard\)/); assert.match(voice, /No markdown, no lists/);
 });
 
 test('habits: a check-in (water/food/sleep) cools down so she does not nag every message', () => {

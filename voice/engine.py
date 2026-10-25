@@ -84,10 +84,29 @@ def voice_style(k, spec):
 import re
 TAG_RE = re.compile(r"\[([A-Za-z][A-Za-z ]{1,20})\]")
 EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D]")
+BRACKETS_RE = re.compile(r"\[[^\[\]]{1,80}\]")   # any bracketed aside, e.g. a stage direction
+LINK_RE = re.compile(r"\[([^\[\]]{1,80})\]\([^)\s]{1,300}\)")  # markdown link -> just its text
+STAR_RE = re.compile(r"\*([^*\n]{1,60})\*")
+# Feelings written as emoji or *actions* become sounds she can perform; everything else is dropped, never read.
+EMOJI_TAGS = {"[laugh]": "😂🤣😆😹", "[chuckle]": "😏😜😝😛😉",
+              "[sigh]": "😩😔🙄", "[gasp]": "😱😲😮😳"}
+ACTION_TAGS = [(re.compile(r"\b(laugh|giggl|cackl|snort)", re.I), "[laugh]"), (re.compile(r"\b(chuckl|smirk|grin)", re.I), "[chuckle]"),
+               (re.compile(r"\bsigh", re.I), "[sigh]"), (re.compile(r"\bgasp", re.I), "[gasp]"), (re.compile(r"\bgroan", re.I), "[groan]"),
+               (re.compile(r"\bwhisper", re.I), "[whispering]")]
+
+def feelings_to_tags(text):
+    def action(m):
+        for rx, tag in ACTION_TAGS:
+            if rx.search(m.group(1)): return f" {tag} "
+        return " "
+    text = STAR_RE.sub(action, LINK_RE.sub(r"\1", text))
+    for tag, chars in EMOJI_TAGS.items():  # one sound per kind is plenty; the rest of the emoji are dropped
+        text = re.sub("[" + chars + "]+", f" {tag} ", text, count=1)
+    return text
 
 def plain(text):
     """Text for an engine without tags: drop [tags] and emoji."""
-    return re.sub(r"\s+", " ", EMOJI_RE.sub("", TAG_RE.sub(" ", text))).strip()
+    return re.sub(r"\s+", " ", EMOJI_RE.sub("", BRACKETS_RE.sub(" ", STAR_RE.sub(" ", LINK_RE.sub(r"\1", text))))).strip()
 
 def kokoro_tts(text, voice, speed):
     k = kokoro()
@@ -143,7 +162,9 @@ class Expressive:
 
     def clean(self, text):
         # Known tags stay (the model performs them); anything else in brackets and emoji would be read out.
-        text = TAG_RE.sub(lambda m: f" {m.group(0).lower()} " if m.group(0).lower() in self.tags else " ", EMOJI_RE.sub("", text))
+        text = feelings_to_tags(text)
+        text = BRACKETS_RE.sub(lambda m: f" {m.group(0).lower()} " if m.group(0).lower() in self.tags else " ", text)
+        text = EMOJI_RE.sub("", text)
         return re.sub(r"\s+", " ", text).strip()
 
     def chunks(self, text, limit=240):
