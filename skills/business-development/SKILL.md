@@ -70,6 +70,11 @@ up to 15 emails; the approval card shows every email in full. The tool appends t
 do-not-contact addresses, skips leads that already replied or closed, and enforces the daily cap. Tell the user what
 was sent and what was skipped, and why.
 
+Before the approval card appears, a quality review (JEV) checks every email against its lead. If `outreach_send`
+returns `outreach_needs_work`, nothing was staged: rewrite each listed email to fix every point, drop leads marked
+`drop_lead` (record why with `lead_update` stage lost and a note), tell the user briefly what you dropped, and call
+`outreach_send` again. Use `skip_review` only when the user explicitly says to send anyway.
+
 ## Step 6 - Follow up
 
 The pipeline schedules follow-ups automatically (+3, +4, +7 days; 4 touches max, the 4th is a short breakup) and

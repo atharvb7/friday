@@ -124,6 +124,7 @@ test('business tools: email_send refuses do-not-contact and logs touches; outrea
       gmailOutreach: { async search() { return { from: 'outreach' }; } } };
     const tools = buildFridayTools(ctx);
     assert.equal(tools.get('outreach_send').risk, 'gated');
+    await assert.rejects(() => tools.get('outreach_send').validate({ emails: [{ to: 'stranger@nowhere.io', subject: 's', body: 'A specific observation about your business here.' }] }), /not in the pipeline/);
     for (const n of ['business_profile', 'lead_save', 'lead_find', 'lead_update', 'do_not_contact']) assert.equal(tools.get(n).risk, 'safe', n);
 
     assert.equal((await tools.get('lead_save').run({ leads: [{ company: 'Delta', email: 'cto@delta.dev' }, { company: 'Bad', email: 'nope' }] })).saved, 1);
@@ -145,5 +146,56 @@ test('business tools: email_send refuses do-not-contact and logs touches; outrea
     assert.match(tools.get('skill_load').run({ name: 'business-development', reference: 'plays.md' }).text, /Voice agents/);
     assert.equal(tools.get('skill_load').run({ name: 'cold-email', reference: '../SKILL.md' }).error, 'reference_not_found');
     assert.match(tools.get('skill_load').run({ name: 'cold-email', reference: 'reply-handling.md' }).text, /Unsubscribe/);
+  } finally { s.close(); }
+});
+
+test('sales judge: outreach review gates the batch before approval; replies are classified with fixed rules first', async () => {
+  const { judgeOutreach, judgeReply, SalesJudge } = await import('../src/sales-judge.mjs');
+  // truth tables
+  assert.deepEqual(judgeOutreach({ sells_software: { noul: 0.1 }, gap_specific: { score: 2.8 }, offer_fits_gap: { noul: 0.9 }, opener_specific: { noul: 0.9 }, lists_services: { noul: 0.1 }, mentions_price: { noul: 0.05 }, mixes_offers: { noul: 0.1 }, asks_one_easy_thing: { noul: 0.9 } }), { ok: true, problems: [] });
+  const bad = judgeOutreach({ sells_software: { noul: 0.95 }, gap_specific: { score: 0.4 }, offer_fits_gap: { noul: 0.5 }, opener_specific: { noul: 0.5 }, lists_services: { noul: 0.5 } });
+  assert.equal(bad.ok, false); assert.equal(bad.problems.filter((p) => p.block).length, 2, 'unsettled answers (0.5) do not block');
+  assert.equal(judgeReply({ asks_to_stop: { noul: 0.9 }, category: { choice: 'objection' } }).action, 'stop');
+  assert.equal(judgeReply({ asks_to_stop: { noul: 0.1 }, out_of_office: { noul: 0.95 } }).action, 'pause');
+  assert.deepEqual(judgeReply({ asks_to_stop: { noul: 0.05 }, out_of_office: { noul: 0.02 }, wants_meeting: { noul: 0.9 }, category: { choice: 'positive' } }), { action: 'human', category: 'positive', meeting: true, unsettled: false });
+
+  const s = setup();
+  try {
+    const calls = [];
+    const jev = { configured: true, async decide({ state, questions }) {
+      calls.push({ state, questions: Object.keys(questions) });
+      if (questions.category) return { answers: { category: { choice: /plan/.test(state.reply.text) ? 'positive' : 'objection' }, asks_to_stop: { noul: 0.02 }, out_of_office: { noul: 0.01 }, wants_meeting: { noul: /call/.test(state.reply.text) ? 0.9 : 0.1 } } };
+      const generic = /reaching out/.test(state.email.body);
+      return { answers: { sells_software: { noul: /AI/.test(state.lead.company) ? 0.95 : 0.05 }, gap_specific: { score: 2.7 }, offer_fits_gap: { noul: 0.9 }, opener_specific: { noul: generic ? 0.1 : 0.9 }, lists_services: { noul: 0.1 }, mentions_price: { noul: 0.05 }, mixes_offers: { noul: 0.1 }, asks_one_easy_thing: { noul: 0.9 } } };
+    } };
+    s.p.judge = new SalesJudge({ jev });
+    const good = s.p.save({ company: 'Falcon Cargo', email: 'omar@falcon.example', signal: 'quotes by email, reviews say 3-day wait', offer: 'automation' });
+    const comp = s.p.save({ company: 'AgentFlow AI', email: 'ceo@agentflow.example', signal: 'hiring ops' });
+    const okBody = 'Noticed Falcon asks for every quote by email and reviews mention waiting days. Want the one-page plan?';
+    assert.deepEqual(await s.p.review([{ lead_id: good.id, subject: 'quotes at falcon', body: okBody }]), { ok: true, reviewed: true });
+    const r = await s.p.review([{ lead_id: good.id, subject: 'hi', body: 'I am reaching out because I help companies automate work. Interested?' }, { lead_id: comp.id, subject: 'hi', body: okBody }]);
+    assert.equal(r.ok, false);
+    assert.equal(r.emails.find((e) => e.company === 'AgentFlow AI').drop_lead, true);
+    assert.match(r.emails.find((e) => e.company === 'Falcon Cargo').fix.join(' '), /first sentence is generic/);
+    assert.equal(calls[0].state.lead.company, 'Falcon Cargo'); assert.ok(calls[0].state.email.body.includes(DEFAULT_OPT_OUT), 'reviews the exact text that would be sent');
+    assert.deepEqual(await s.p.review([{ lead_id: comp.id, subject: 'hi', body: okBody }], { skipJudge: true }), { ok: true, reviewed: false });
+    s.p.judge = new SalesJudge({ jev: { configured: true, decide: async () => { throw new Error('jev_http_503'); } } });
+    assert.match((await s.p.review([{ lead_id: good.id, subject: 'x', body: okBody }])).note, /unavailable/, 'JEV down: the batch still goes to the user, who approves it');
+
+    // replies: JEV classification; an explicit opt-out never depends on the model
+    s.p.judge = new SalesJudge({ jev });
+    const leads = ['a', 'b', 'c'].map((x) => s.p.save({ company: `Co ${x}`, contact_name: x.toUpperCase(), email: `${x}@co${x}.com` }).id);
+    await s.p.send(leads.map((id) => ({ lead_id: id, subject: 'idea', body: okBody })));
+    s.advance(86_400_000); const date = new Date(s.now()).toUTCString();
+    s.inbox.push({ id: 'p1', from: 'a@coa.com', subject: 'Re: idea', date, snippet: 'Yes please send the plan, free for a call Thursday' },
+      { id: 'p2', from: 'b@cob.com', subject: 'Re: idea', date, snippet: 'We already use Zapier for this' },
+      { id: 'p3', from: 'c@coc.com', subject: 'Re: idea', date, snippet: 'Please remove me' });
+    const before = calls.length;
+    await s.p.tick();
+    assert.ok(s.notes.some((n) => /🔥 A \(Co a\) interested and wants a call/.test(n.title)));
+    assert.ok(s.notes.some((n) => /B \(Co b\) pushed back/.test(n.title)));
+    assert.equal(s.p.byEmail('c@coc.com').stage, 'dnc');
+    assert.equal(calls.length - before, 2, 'the explicit opt-out was handled by the fixed rule, not the model');
+    assert.match(s.p.history(leads[0]).events.find((e) => e.kind === 'reply').summary, /^\[positive, wants a meeting\]/);
   } finally { s.close(); }
 });

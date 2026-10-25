@@ -52,6 +52,7 @@ import { TeamOrchestrator } from './agent/team.mjs';
 import { Learner } from './agent/learning.mjs';
 import { Watches } from './watches.mjs';
 import { Pipeline } from './pipeline.mjs';
+import { SalesJudge } from './sales-judge.mjs';
 import { Composio } from './composio.mjs';
 import { Files } from './files.mjs';
 import { Documents } from './documents.mjs';
@@ -260,7 +261,8 @@ export function createContext({ appRoot, env = process.env }) {
   kindRouter.byKind.team = new TeamOrchestrator({ store, router: kindRouter, ai });
   ctx.rules.proactive = ctx.proactive;
   ctx.proactive.mood = ctx.mood;
-  ctx.pipeline = new Pipeline({ store, settings, gmail: ctx.gmailOutreach, notifications: ctx.notifications, bus });
+  ctx.salesJudge = new SalesJudge({ jev: new JevClient({ apiKey: env.FRIDAY_JEV_KEY ?? null, timeoutMs: 20_000 }) });
+  ctx.pipeline = new Pipeline({ store, settings, gmail: ctx.gmailOutreach, notifications: ctx.notifications, bus, judge: ctx.salesJudge });
   ctx.fridayTools = buildFridayTools(ctx);
   { // gated tools get their approved-execution path registered automatically
     const register = ctx.fridayTools.register;

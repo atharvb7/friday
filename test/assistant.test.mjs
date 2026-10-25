@@ -218,6 +218,14 @@ test('brain: gated tool is staged for approval, never executed; allowed tier exe
     assert.equal(out.reply, 'Sent it.');
     assert.equal(sent.length, 1, 'autonomous tier executes directly');
 
+    tool.validate = async (a) => (a.text === 'hi' ? { error: 'outreach_needs_work', emails: [] } : null);
+    out = await brain.respond({ conversationId: convo.id, text: 'again' });
+    assert.equal(sent.length, 1, 'a failed validate() stops the tool even on the autonomous tier');
+    policy.set('messaging', 'ask');
+    out = await brain.respond({ conversationId: convo.id, text: 'again' });
+    assert.equal(approvals.list().length, 1, 'and nothing is staged for approval');
+    delete tool.validate;
+
     tool.forbidden = true;
     out = await brain.respond({ conversationId: convo.id, text: 'again' });
     assert.equal(sent.length, 1, 'forbidden never runs');

@@ -6,6 +6,8 @@
 //    carries an opt-out line.
 //  - tick(): replies from contacted leads stop their follow-ups (unsubscribe -> do-not-contact, out-of-office
 //    -> pause, bounce -> lost), and once a day due follow-ups become one nudge. Friday drafts; the user approves.
+//  - With JEV configured (sales-judge.mjs), batches are quality-reviewed before approval and replies are classified
+//    (interest, question, objection, not now, referral, stop, out of office); fixed rules still run first.
 import { randomUUID } from 'node:crypto';
 
 export const STAGES = ['new', 'researched', 'contacted', 'replied', 'meeting', 'proposal', 'won', 'lost', 'nurture', 'dnc'];
@@ -30,8 +32,8 @@ const addrs = (v) => String(v ?? '').split(/[,;]/).map((x) => lower(/<([^>]+)>/.
 
 export class Pipeline {
   #timer = null;
-  constructor({ store, settings, gmail = null, notifications = null, bus = null, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
-    Object.assign(this, { store, settings, gmail, notifications, bus, now, sleep });
+  constructor({ store, settings, gmail = null, notifications = null, bus = null, judge = null, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+    Object.assign(this, { store, settings, gmail, notifications, bus, judge, now, sleep });
     this.db = store.db;
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS leads (
@@ -175,6 +177,21 @@ export class Pipeline {
     return out;
   }
 
+  // Quality gate before a batch is staged for approval: deterministic checks, then JEV's review of each email against
+  // its lead (competitor? evidenced gap? offer fits? specific opener? no service lists, prices or mixed offers?).
+  async review(emails, { skipJudge = false } = {}) {
+    const list = this.prepare(emails); // throws TypeError on invalid batches
+    if (skipJudge || !this.judge?.ready || this.settings.get('outreach_review', true) === false) return { ok: true, reviewed: false };
+    const live = list.filter((m) => !m.blocked);
+    const offerOf = (l) => l?.offer ?? 'AI agents and automation that run a whole workflow end to end';
+    let verdicts;
+    try { verdicts = await this.judge.reviewOutreach(live.map((m) => { const lead = this.get(m.lead_id); return { to: m.to, lead, offer: offerOf(lead), subject: m.subject ?? '(follow-up)', body: m.body }; })); }
+    catch (e) { return { ok: true, reviewed: false, note: `quality review unavailable (${String(e.message ?? e).slice(0, 60)})` }; }
+    const bad = verdicts.filter((v) => !v.ok);
+    if (!bad.length) return { ok: true, reviewed: true };
+    return { ok: false, emails: bad.map((v) => ({ to: v.to, company: v.company, drop_lead: v.problems.some((p) => p.block), fix: v.problems.map((p) => p.why) })) };
+  }
+
   summarize(emails) {
     let list; try { list = this.prepare(emails); } catch (e) { return `Outreach batch (invalid: ${e.message})`; }
     const ok = list.filter((m) => !m.blocked).length;
@@ -241,29 +258,40 @@ export class Pipeline {
         if (!lead || lead.last_reply_id === m.id) continue;
         if (Date.parse(m.date ?? '') < Date.parse(lead.last_touch_at)) continue; // older than our last email
         this.db.prepare('UPDATE leads SET last_reply_id=? WHERE id=?').run(m.id, lead.id);
-        this.#onReply(lead, m); n++;
+        await this.#onReply(lead, m); n++;
       }
     }
     return n;
   }
 
-  #onReply(lead, m) {
+  async #onReply(lead, m) {
     const text = `${m.subject ?? ''}\n${m.snippet ?? ''}`;
     const who = `${lead.contact_name ?? lead.email} (${lead.company})`;
-    if (UNSUB_RE.test(ownWords(m.snippet))) {
+    // Fixed rule first: an explicit opt-out never depends on a model.
+    let verdict = UNSUB_RE.test(ownWords(m.snippet)) ? { action: 'stop' } : null;
+    if (!verdict && this.judge?.ready) {
+      try {
+        const full = await this.gmail.open?.(m.id).catch(() => null);
+        verdict = await this.judge.classifyReply({ ourSubject: m.subject ?? '', replyText: ownWords(full?.body ?? m.snippet) || m.snippet });
+      } catch { verdict = null; } // fall back to the rules below
+    }
+    if (!verdict) verdict = OOO_RE.test(text) ? { action: 'pause' } : { action: 'human' };
+    if (verdict.action === 'stop') {
       this.suppress(lead.email, 'replied asking not to be contacted');
       this.notifications?.create({ level: 'info', title: `🚫 ${who} opted out`, body: 'Added to do-not-contact. No more emails will go to them.' });
       return;
     }
-    if (OOO_RE.test(text)) {
+    if (verdict.action === 'pause') {
       this.db.prepare('UPDATE leads SET next_at=?, updated_at=? WHERE id=?').run(this.#iso(this.now() + 7 * DAY), this.#iso(), lead.id);
       this.#event(lead.id, 'ooo', `out of office: ${clean(m.snippet, 200)}`);
       return;
     }
-    this.db.prepare("UPDATE leads SET stage='replied', next_at=NULL, next_action='answer their reply', updated_at=? WHERE id=?").run(this.#iso(), lead.id);
-    this.#event(lead.id, 'reply', clean(m.snippet, 500));
-    this.bus?.publish('lead.replied', { id: lead.id });
-    this.notifications?.create({ level: 'warning', title: `💬 ${who} replied`, body: `“${clean(m.snippet, 300)}”\nFollow-ups stopped. Ask me to draft the answer (outreach inbox, lead ${lead.id.slice(0, 8)}, message ${m.id}).` });
+    const LABEL = { positive: 'interested', question: 'has a question', objection: 'pushed back', not_now: 'said not now', referral: 'referred you to someone' };
+    const kind = LABEL[verdict.category] ?? 'replied';
+    this.db.prepare("UPDATE leads SET stage='replied', next_at=NULL, next_action=?, updated_at=? WHERE id=?").run(`answer their reply${verdict.category ? ` (${verdict.category})` : ''}`, this.#iso(), lead.id);
+    this.#event(lead.id, 'reply', `${verdict.category ? `[${verdict.category}${verdict.meeting ? ', wants a meeting' : ''}] ` : ''}${clean(m.snippet, 480)}`);
+    this.bus?.publish('lead.replied', { id: lead.id, category: verdict.category ?? null });
+    this.notifications?.create({ level: 'warning', title: `${verdict.category === 'positive' || verdict.meeting ? '🔥' : '💬'} ${who} ${kind}${verdict.meeting ? ' and wants a call' : ''}`, body: `“${clean(m.snippet, 300)}”\nFollow-ups stopped. Ask me to draft the answer (outreach inbox, lead ${lead.id.slice(0, 8)}, message ${m.id}).` });
   }
 
   async #checkBounces() {

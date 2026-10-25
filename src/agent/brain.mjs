@@ -120,6 +120,9 @@ export class Brain {
       const riskClass = (typeof tool.riskClass === 'function' ? tool.riskClass(call.args) : tool.riskClass) ?? 'consequential';
       const decision = this.policy ? this.policy.decide({ category, risk: riskClass, forbidden: tool.forbidden }) : 'ask';
       if (decision === 'deny') return { error: 'forbidden_action' };
+      // A gated tool may check its arguments first (e.g. the outreach quality review), whatever the autonomy tier,
+      // so nothing that would be refused or is not ready is staged for approval or run.
+      if (tool.validate) { try { const v = await tool.validate(call.args); if (v?.error) return v; } catch (e) { return { error: e instanceof TypeError ? e.message : 'validation_failed' }; } }
       if (decision === 'ask') {
         if (!this.approvals) return { error: 'requires_approval', note: 'This action needs approval and no approval flow is available; it was NOT performed.' };
         const a = this.approvals.request({ category, risk: riskClass, tool: tool.name, summary: tool.summarize ? tool.summarize(call.args) : `${tool.name}`, payload: call.args, conversationId });

@@ -22,7 +22,7 @@ test('routeInstruction uses local fallback when unconfigured', async () => {
 test('routeInstruction uses JEV when configured (mocked fetch), fails closed on low confidence', async () => {
   const good = new JevClient({ apiKey: 'jv_live_test', fetchImpl: async () => ({
     ok: true,
-    json: async () => ({ answers: { intent: { choice: 'file_search' }, risk: { score: 1 }, needsApproval: { probability: 0.1 }, urgency: { score: 1 } }, confidence: { intent: 0.92 }, model: 'jev-1.13.0' }),
+    json: async () => ({ answers: { intent: { type: 'choice', choice: 'file_search', confidence: 0.92 }, risk: { type: 'score', score: 1 }, needsApproval: { type: 'noul', noul: 0.1 }, urgency: { type: 'score', score: 1 } }, model: 'jev-1.14.0' }),
   }) });
   const out = await good.routeInstruction('find xyz.pdf');
   assert.equal(out.source, 'jev');
@@ -31,7 +31,7 @@ test('routeInstruction uses JEV when configured (mocked fetch), fails closed on 
 
   const unsure = new JevClient({ apiKey: 'jv_live_test', fetchImpl: async () => ({
     ok: true,
-    json: async () => ({ answers: { intent: { choice: 'browser' }, risk: { score: 2 }, needsApproval: { probability: 0.2 }, urgency: { score: 2 } }, confidence: { intent: 0.3 }, model: 'jev-1.13.0' }),
+    json: async () => ({ answers: { intent: { type: 'choice', choice: 'browser', confidence: 0.3 }, risk: { type: 'score', score: 2 }, needsApproval: { type: 'noul', noul: 0.2 }, urgency: { type: 'score', score: 2 } }, model: 'jev-1.14.0' }),
   }) });
   const out2 = await unsure.routeInstruction('do something vague');
   assert.equal(out2.intent, 'unknown');

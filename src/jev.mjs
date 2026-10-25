@@ -8,10 +8,11 @@
 //
 // Endpoints (same shape): POST https://jevtypesafeai.com/api/v1/decide (jv_live_)
 // or POST https://api.typesafe.ai/v1/systemone (official). Pinned default
-// model jev-1.13.0 so thresholds don't drift. Key from FRIDAY_JEV_KEY only,
+// model jev-1.14.0 so thresholds don't drift. Request/response shape per https://api.typesafe.ai/openapi.json:
+// questions are {type: noul|choice|score, instructions, criteria}; answers carry noul / choice / score (+ probabilities). Key from FRIDAY_JEV_KEY only,
 // never logged. Offline/no-key → local keyword fallback with LOW confidence
 // that fails closed (unknown / needs review).
-const PINNED_MODEL = 'jev-1.13.0';
+const PINNED_MODEL = 'jev-1.14.0';
 const HOSTED_URL = 'https://jevtypesafeai.com/api/v1/decide';
 const OFFICIAL_URL = 'https://api.typesafe.ai/v1/systemone';
 
@@ -72,7 +73,7 @@ function questionsFor(text) {
       type: 'score', instructions: 'How consequential/risky is acting on this now?',
       criteria: ['harmless read-only', 'minor local change', 'reversible share', 'hard-to-reverse send/post', 'destructive or financial'],
     },
-    needsApproval: { type: 'boolean', instructions: 'Would a careful assistant ask for explicit approval before acting?' },
+    needsApproval: { type: 'noul', instructions: 'Would a careful assistant ask for explicit approval before acting?' },
     urgency: {
       type: 'score', instructions: 'How urgent is this?',
       criteria: ['whenever', 'today', 'soon', 'now'],
@@ -103,7 +104,9 @@ export class JevClient {
       });
       if (!res.ok) throw new Error(`jev_http_${res.status}`);
       const data = await res.json();
-      return { answers: data.answers ?? {}, confidence: data.confidence ?? {}, model: data.model ?? this.model, source: 'jev' };
+      const answers = data.answers ?? {};
+      const confidence = Object.fromEntries(Object.entries(answers).map(([k, a]) => [k, a?.confidence ?? null]));
+      return { answers, confidence, model: data.model ?? this.model, usage: data.usage ?? null, source: 'jev' };
     } finally { clearTimeout(timer); }
   }
 
@@ -126,7 +129,7 @@ export class JevClient {
       const intent = answers.intent?.choice && INTENT_LABELS[answers.intent.choice] ? answers.intent.choice : 'unknown';
       const intentConfidence = confidence.intent ?? answers.intent?.confidence ?? 0.5;
       const riskScore = Math.round(answers.risk?.score ?? 1);
-      const needsApproval = (answers.needsApproval?.probability ?? 0) >= 0.5 || intent === 'unknown' || riskScore >= 3;
+      const needsApproval = (answers.needsApproval?.noul ?? 1) >= 0.5 || intent === 'unknown' || riskScore >= 3;
       // Fail closed on low confidence: unknown + approval.
       if (intentConfidence < 0.6) return { intent: 'unknown', intentConfidence, riskScore, needsApproval: true, urgency: 1, source: 'jev', tool: null };
       return { intent, intentConfidence, riskScore, needsApproval, urgency: Math.round(answers.urgency?.score ?? 1), source: 'jev', tool: TOOL_FOR_INTENT[intent] ?? null };

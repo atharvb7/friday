@@ -55,8 +55,12 @@ function businessTools(pipeline) {
     {
       name: 'outreach_send', risk: 'gated', category: 'messaging', riskClass: 'consequential',
       description: `Send a batch of personalised outreach emails (cold first touches or follow-ups) from the user's Gmail — ONE approval for the whole batch (max 15). Recipients must already be leads (lead_save first). Each item: lead_id (preferred) or to, subject, body (plain text, short, written for that one person); follow_up=true replies inside the earlier thread (no subject needed). An opt-out line is appended when missing; do-not-contact, replied/closed leads and the daily cap are enforced. Draft in chat first only if the user asked to see drafts.`,
-      parameters: obj({ emails: { type: 'array', items: obj({ lead_id: { type: 'string' }, to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' }, follow_up: { type: 'boolean' } }, ['body']) } }, ['emails']),
-      summarize: (a) => pipeline.summarize(a.emails),
+      parameters: obj({ emails: { type: 'array', items: obj({ lead_id: { type: 'string' }, to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' }, follow_up: { type: 'boolean' } }, ['body']) },
+        skip_review: { type: 'boolean', description: 'ONLY when the user explicitly told you to send despite the quality review' } }, ['emails']),
+      // Before the approval card: a quality review (JEV) refuses batches that pitch competitors, lack an evidenced gap,
+      // or read generic; Friday fixes them (or drops the lead) and calls again.
+      validate: async (a) => { const r = await pipeline.review(a.emails, { skipJudge: a.skip_review === true }); return r.ok ? null : { error: 'outreach_needs_work', note: 'Nothing was staged. Fix each email (or drop leads marked drop_lead and tell the user why), then call outreach_send again.', emails: r.emails }; },
+      summarize: (a) => `${pipeline.summarize(a.emails)}${a.skip_review ? ' (quality review skipped at your request)' : ''}`,
       run: (a) => pipeline.send(a.emails),
     },
   ];
