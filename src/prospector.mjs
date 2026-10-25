@@ -22,6 +22,9 @@ const SKIP_HOSTS = /(^|\.)(facebook|instagram|linkedin|twitter|x|youtube|justdia
 const TECH_CATEGORY = /software|\bit (company|services|consult)|web (design|develop)|website design|app develop|mobile app|computer (consult|service)|artificial intelligence|\bai\b|saas|digital transformation/i;
 const LINK_HINT = /contact|about|team|people|leadership|management|founder|careers|jobs|join|services|quote|enquir|inquir|book|appointment|faq|process/i;
 const DAY = 86_400_000;
+const TITLE_RE = /^(ca|cs|cma|dr|mr|mrs|ms|miss|er|adv|advocate|prof|sir|madam|shri|smt|sri|capt|col|eng)$/i;
+// Mechanical style fixes are made in code, not by asking the writer again: dashes and arrows become plain punctuation.
+const tidy = (s) => String(s ?? '').replace(/\s*[—–]\s*/g, ', ').replace(/\s*(→|->|=>)\s*/g, ', then ').replace(/,\s*,/g, ',').replace(/ ,/g, ',');
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim();
 const jsonIn = (s) => { try { return JSON.parse(/\{[\s\S]*\}/.exec(String(s ?? ''))?.[0] ?? 'null'); } catch { return null; } };
 const clip = (s, n) => String(s ?? '').slice(0, n);
@@ -316,7 +319,8 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
 
   async draft(lead, { audit = null, followUp = false, touch = 1 } = {}) {
     const { messaging, proof } = this.#messaging();
-    const first = lead.contact_name ? String(lead.contact_name).split(/\s+/)[0] : null;
+    // "CA Laxmikant Alai" -> "Laxmikant": professional titles and honorifics are not first names.
+    const first = lead.contact_name ? (String(lead.contact_name).split(/\s+/).find((w) => !TITLE_RE.test(w.replace(/[.,]/g, ''))) ?? null) : null;
     const facts = [`Company: ${lead.company} (${lead.website ?? ''})`, `Greeting: ${first ? `Hi ${first},` : `Hi ${lead.company} team,`}`, `Offer: ${OFFERS[lead.offer] ?? lead.offer}`,
       `Verified evidence (use only this about them):\n${lead.signal ?? ''}`, `Research:\n${lead.research ?? ''}`,
       ...(audit?.what_we_would_build?.length ? [`Ideas for what to build:\n- ${audit.what_we_would_build.join('\n- ')}`] : [])].join('\n');
@@ -329,11 +333,11 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
       { role: 'user', content: `${task}\n\n${facts}` },
     ];
     let last = null;
-    for (let round = 0; round < 3; round++) {
+    for (let round = 0; round < 4; round++) {
       let out;
       try { out = jsonIn((await this.ai.run('reason', { maxTokens: 1400, temperature: round ? 0.3 : 0.5, messages })).content); } catch { return { ok: false, why: 'writer model unavailable' }; }
       if (!out?.body) { messages.push({ role: 'user', content: 'Output ONLY the JSON object {"subject": "...", "body": "..."}.' }); continue; }
-      const email = { lead_id: lead.id, to: lead.email, company: lead.company, ...(followUp ? {} : { subject: clip(out.subject, 120) }), body: String(out.body), follow_up: followUp };
+      const email = { lead_id: lead.id, to: lead.email, company: lead.company, ...(followUp ? {} : { subject: tidy(clip(out.subject, 120)) }), body: tidy(out.body), follow_up: followUp };
       let r;
       try { r = await this.pipeline.review([email]); } catch (e) { return { ok: false, why: clip(e.message, 200) }; }
       if (r.ok) return { ok: true, email, rounds: round + 1 };
@@ -342,7 +346,7 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
       last = issue?.fix ?? [];
       messages.push({ role: 'assistant', content: JSON.stringify(out) }, { role: 'user', content: `Rewrite it. Fix every point:\n- ${last.join('\n- ')}\nOutput ONLY the JSON object.` });
     }
-    return { ok: false, why: `did not pass review after 3 drafts: ${last?.join('; ') ?? 'no valid draft'}` };
+    return { ok: false, why: `did not pass review after 4 drafts: ${last?.join('; ') ?? 'no valid draft'}` };
   }
 
   // ---- the daily run ----

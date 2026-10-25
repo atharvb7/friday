@@ -237,6 +237,7 @@ export class Pipeline {
     const hits = [...BANNED, ...extra.map((x) => String(x).toLowerCase())].filter((p) => p && low.includes(p));
     if (hits.length) out.push(`remove banned phrases: ${hits.map((h) => `"${h}"`).join(', ')}`);
     const greet = /^\s*(hi|hello|dear|hey)\s+([^,\n]+)[,\n]/i.exec(text);
+    if (greet && /^(ca|cs|dr|mr|mrs|ms|er|adv|prof|sir|madam|shri|smt)\.?$/i.test(greet[2].trim())) out.push(`greeting "${greet[2].trim()}" is a title, not a name: use the first name (e.g. "Hi Laxmikant,")`);
     if (greet && ROLE_ONLY_RE.test(greet[2].trim())) out.push(`greeting "${greet[2].trim()}" is a role, not a name: use the person's first name, or "Hi ${lead?.company ?? 'there'} team"`);
     if (!m.follow_up) {
       if (m.subject && words(m.subject) > 6) out.push('subject too long: 2-5 words, lowercase, about their business');

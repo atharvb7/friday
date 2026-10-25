@@ -113,6 +113,15 @@ test('prospector: source -> audit with verified evidence -> qualify -> contact -
     assert.equal(held.status, 'hold'); assert.match(held.reason, /only 2 piece/);
     w.prospector.setConfig({ min_evidence: 2 });
 
+    // titles are not names, and dashes/arrows are fixed in code
+    const ca = w.pipeline.save({ company: 'Alai & Co', email: 'office@alai.example', contact_name: 'CA Laxmikant Alai', signal: 'form says we will call you (https://alai.example/contact)' });
+    const seen = [];
+    const p2 = new Prospector({ store: w.store, settings: w.settings, pipeline: w.pipeline, ai: { run: async (role, { messages }) => { seen.push(messages[1].content); return { content: JSON.stringify({ subject: 'enquiries — at alai', body: 'Hi Laxmikant,\n\nNoticed your form says the team will call back — every time.\n\nWant me to send the one-page architecture plan for Alai & Co?' }) }; } } });
+    const d = await p2.draft(w.pipeline.get(ca.id));
+    assert.match(seen[0], /Greeting: Hi Laxmikant,/);
+    assert.equal(d.ok, true, JSON.stringify(d)); assert.doesNotMatch(d.email.body + d.email.subject, /[—–]/);
+    assert.match((await w.pipeline.review([{ lead_id: ca.id, subject: 'x', body: 'Hi CA,\n\nNoticed the form. Want the plan?' }])).emails[0].fix.join(' '), /is a title, not a name/);
+
     // budget: once spent, no more searches
     w.prospector.setConfig({ serp_budget: w.prospector.serpUsed() });
     assert.equal(await w.prospector.source(5), 0);
