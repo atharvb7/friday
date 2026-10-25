@@ -18,9 +18,10 @@ export class AllModelsFailed extends Error {
   }
 }
 
-// Roles that keep the model's reasoning pass. Conversational turns skip it: on Nemotron it added 3-8 s
-// to a one-line reply and the turn quality was the same.
-export const DEFAULT_THINKING_ROLES = Object.freeze(['reason', 'plan', 'computer', 'vision']);
+// Roles that keep the model's reasoning pass. Tool turns (execute) MUST keep it: without it
+// nemotron-3.5-super answered "remind me in 2 hours" with "Done!" and no tool call 6/6 times
+// (6/6 correct with it, at 1.2-2.7 s). Tool-less chat and JSON extraction skip it.
+export const DEFAULT_THINKING_ROLES = Object.freeze(['execute', 'reason', 'plan', 'computer', 'vision']);
 
 export class ModelRouter {
   #providers = new Map();

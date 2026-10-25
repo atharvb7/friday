@@ -172,8 +172,8 @@ import { Notifications } from '../src/notifications.mjs';
 
 test('claim guard: detects "queued/sent for approval" claims without a tool call', () => {
   const none = [];
-  for (const t of ['I’ve queued the task to open salexnow.com in your laptop browser.', 'I’ve sent another request for approval to open it.', 'Please check your inbox and confirm it.', 'The reminder has been created.', 'Your task is queued and waiting on your approval.']) assert.equal(claimsActionWithoutTool(t, none), true, t);
-  for (const t of ['I can do that — want me to?', 'Sure, what is the site?', 'Haha no, I wouldn’t queue that for you.']) assert.equal(claimsActionWithoutTool(t, none), false, t);
+  for (const t of ['I’ve queued the task to open salexnow.com in your laptop browser.', 'I’ve sent another request for approval to open it.', 'Please check your inbox and confirm it.', 'The reminder has been created.', 'Your task is queued and waiting on your approval.', 'Done. I’ll remind you at 00:16 to call your mom.', 'Done! Reminder set for tomorrow at 9:00 AM to send the invoice.', 'Got it, baby. I\'ll remind you to call your mom in 2 hours.']) assert.equal(claimsActionWithoutTool(t, none), true, t);
+  for (const t of ['I can do that — want me to?', 'Sure, what is the site?', 'Haha no, I wouldn’t queue that for you.', 'Want me to set a reminder for 9?', 'Should I remind you later?']) assert.equal(claimsActionWithoutTool(t, none), false, t);
   assert.equal(claimsActionWithoutTool('I’ve queued the task', [{ name: 'computer_task', ok: true }]), false, 'backed by a real tool call');
   assert.equal(claimsActionWithoutTool('I’ve queued the task', [{ name: 'memory_search', ok: true }]), true, 'an unrelated tool does not back the claim');
 });

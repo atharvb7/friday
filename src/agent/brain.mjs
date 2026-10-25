@@ -22,7 +22,7 @@ export function stripStageDirections(text) {
 // Claim guard: a reply that says an action was queued/sent/created must be backed by a tool call THIS turn.
 // Tools that only READ never back an "I queued/sent/created it" claim; any other tool (incl. gated ones) can.
 const READ_ONLY_TOOLS = new Set(['memory_search', 'file_search', 'file_read', 'time_now', 'web_search', 'web_fetch', 'research_search', 'task_list', 'task_trace', 'laptop_status', 'reminder_list', 'skill_load', 'briefing_now']);
-const CLAIM_RE = /\b(i['’]?ve|i have|i just|i['’]?ll go ahead and|i went ahead and)\s+(queued|queue|sent|send|created|set|scheduled|started|opened|kicked off|added|submitted|requested|put in)\b|\b(queued (the|your|that|it|up)|task (is |has been )?queued|waiting (for|on) your approval|approval (request|prompt)\b|check your (inbox|notification)|sent .{0,40}for approval|(is|has been|have been) (queued|scheduled|created))\b/i;
+const CLAIM_RE = /\b(i['’]?ve|i have|i just|i['’]?ll go ahead and|i went ahead and)\s+(queued|queue|sent|send|created|set|scheduled|started|opened|kicked off|added|submitted|requested|put in)\b|\b(queued (the|your|that|it|up)|task (is |has been )?queued|waiting (for|on) your approval|approval (request|prompt)\b|check your (inbox|notification)|sent .{0,40}for approval|(is|has been|have been) (queued|scheduled|created)|i['’]?ll remind you|reminder(['’]s| is)? (set|created|added|scheduled))\b/i;
 export function claimsActionWithoutTool(text, toolsUsed) {
   return CLAIM_RE.test(String(text ?? '')) && !toolsUsed.some((t) => !READ_ONLY_TOOLS.has(t.name));
 }

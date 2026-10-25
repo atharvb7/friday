@@ -96,7 +96,7 @@ test('router: all-failed raises AllModelsFailed; abort never falls through; unco
   await assert.rejects(() => none.chat([]), /no_provider_configured/);
 });
 
-test('thinking: conversational roles switch the reasoning pass off; deep roles keep it; env override', async () => {
+test('thinking: tool-less chat/extract switch the reasoning pass off; tool turns and deep roles keep it; env override', async () => {
   const bodies = [];
   const p = new OpenAICompatProvider({ name: 'nvidia', baseUrl: 'http://x', apiKey: KEY, noThinking: { chat_template_kwargs: { enable_thinking: false } },
     fetchImpl: async (_u, init) => { bodies.push(JSON.parse(init.body)); return jsonRes({ choices: [{ message: { content: 'hi' } }] }); } });
@@ -108,11 +108,11 @@ test('thinking: conversational roles switch the reasoning pass off; deep roles k
   await r.chat([{ role: 'user', content: 'x' }]);
   await r.reason([{ role: 'user', content: 'x' }]);
   await r.run('extract', { messages: [{ role: 'user', content: 'x' }] });
-  assert.deepEqual(bodies.map((b) => b.chat_template_kwargs?.enable_thinking ?? 'default'), [false, false, 'default', 'default']); // a provider without a switch gets nothing extra
+  assert.deepEqual(bodies.map((b) => b.chat_template_kwargs?.enable_thinking ?? 'default'), ['default', false, 'default', 'default']); // a provider without a switch gets nothing extra
   bodies.length = 0;
-  await r.run('execute', { messages: [{ role: 'user', content: 'x' }], thinking: true }); // a caller can still ask for it
+  await r.run('chat', { messages: [{ role: 'user', content: 'x' }], thinking: true }); // a caller can still ask for it
   assert.equal(bodies[0].chat_template_kwargs, undefined);
-  assert.deepEqual(thinkingRolesFromEnv({}), ['reason', 'plan', 'computer', 'vision']);
+  assert.deepEqual(thinkingRolesFromEnv({}), ['execute', 'reason', 'plan', 'computer', 'vision']);
   assert.deepEqual(thinkingRolesFromEnv({ FRIDAY_THINKING_ROLES: 'execute, reason' }), ['execute', 'reason']);
   assert.deepEqual(thinkingRolesFromEnv({ FRIDAY_THINKING_ROLES: '' }), []);
 });
