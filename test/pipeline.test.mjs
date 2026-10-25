@@ -233,7 +233,7 @@ test('email template: designed HTML + plain text, signature and opt-out added, s
   const body = 'Hi Omar,\n\nNoticed **Falcon** takes quotes by email.\n\n### What I\'d build for Falcon\n- An agent that drafts every quote from your rate sheet\n- Approval before anything goes out\n\nWant the one-page architecture plan?';
   assert.deepEqual(parseBody(body).map((b) => b.type), ['p', 'p', 'h', 'ul', 'p']);
   const { text, html } = renderEmail({ body, signature: 'Atharv Bhosale\nAI Engineer\nlinkedin.com/in/x', optOut: 'P.S. reply no' });
-  assert.match(html, /<strong>Falcon<\/strong>/); assert.match(html, /<li[^>]*>An agent that drafts/); assert.match(html, /border-top:4px solid/);
+  assert.match(html, /<strong>Falcon<\/strong>/); assert.match(html, /<td align="center"[^>]*>\n<table role="presentation" align="center"[^>]*margin:0 auto;text-align:left/, 'centred column, left-aligned text'); assert.match(html, /<li[^>]*>An agent that drafts/); assert.match(html, /border-top:4px solid/);
   assert.match(html, /href="https:\/\/linkedin.com\/in\/x"/); assert.doesNotMatch(html, /<img|<script|https?:\/\/(?!linkedin)/);
   assert.ok(text.endsWith('P.S. reply no')); assert.match(text, /WHAT I'D BUILD FOR FALCON\n\n- An agent/); assert.doesNotMatch(text, /\*\*/);
   assert.doesNotMatch(renderEmail({ body: '<script>x</script> hi', signature: '' }).html, /<script>x/, 'escaped');

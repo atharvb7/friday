@@ -49,8 +49,8 @@ export function renderEmail({ body, signature = '', optOut = '', brand = DEFAULT
   const sigLines = String(signature).split('\n').filter(Boolean);
   const sig = sigLines.length ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:22px;border-top:1px solid #e5e7eb;padding-top:14px;width:100%"><tr><td style="font-size:13px;line-height:1.55;color:#4b5563">${sigLines.map((l, i) => (i === 0 ? `<strong style="color:#111827;font-size:14px">${esc(l)}</strong>` : linkify(l))).join('<br>')}</td></tr></table>` : '';
   const head = header ? `<tr><td style="border-top:4px solid ${esc(b.accent)};padding:18px 0 16px;border-bottom:1px solid #f1f1f4"><div style="font-size:16px;font-weight:700;color:#111827;letter-spacing:.2px">${esc(b.name)}</div><div style="font-size:12px;color:#6b7280;margin-top:2px">${esc(b.title)}</div></td></tr>` : '';
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;padding:0;background:#ffffff"><table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#ffffff"><tr><td align="left" style="padding:8px 12px">
-<table role="presentation" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%;${font};font-size:14.5px;line-height:1.6;color:#1f2937">
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;padding:0;background:#ffffff"><table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#ffffff"><tr><td align="center" style="padding:8px 12px">
+<table role="presentation" align="center" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%;margin:0 auto;text-align:left;${font};font-size:14.5px;line-height:1.6;color:#1f2937">
 ${head}
 <tr><td style="padding-top:${header ? 18 : 0}px">
 ${parts}
