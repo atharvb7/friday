@@ -23,6 +23,8 @@ function setup() {
     async search({ query }) { return { messages: inbox.filter((m) => (query.includes('mailer-daemon') ? m.from.includes('mailer-daemon') : !m.from.includes('mailer-daemon'))) }; },
   };
   const notes = [];
+  // Tests send "now": an always-open window and no spacing (the scheduling itself has its own test).
+  settings.set('outreach_window', { start: '00:00', end: '23:59', days: [1, 2, 3, 4, 5, 6, 7] }); settings.set('outreach_spacing_min', [0, 0]);
   const p = new Pipeline({ store, settings, gmail, notifications: { create: (n) => notes.push(n) }, now: () => t, sleep: async () => {} });
   return { dir, store, settings, p, sent, inbox, notes, advance: (ms) => { t += ms; }, now: () => t, close: () => { store.db.close?.(); rmSync(dir, { recursive: true, force: true }); } };
 }
@@ -39,7 +41,7 @@ test('pipeline: leads upsert, outreach batch adds opt-out, schedules follow-ups 
     const body = 'Saw you only take bookings by phone. Most clinics lose evening calls; we answer them with a voice agent. Worth a look?';
     assert.match(s.p.summarize([{ lead_id: a.id, subject: 'evening calls', body }]), /Send 1 outreach email/);
     const r = await s.p.send([{ lead_id: a.id, subject: 'evening calls', body }]);
-    assert.equal(r.sent, 1);
+    assert.equal(r.queued, 1); assert.equal(s.sent.length, 1, 'due now, so it went out straight away');
     assert.ok(s.sent[0].body.endsWith(DEFAULT_OPT_OUT));
     let l = s.p.get(a.id);
     assert.equal(l.stage, 'contacted'); assert.equal(l.touches, 1); assert.equal(l.last_message_id, 'm1');
@@ -68,7 +70,7 @@ test('pipeline: do-not-contact, cap and batch validation are enforced in code', 
     assert.deepEqual(s.p.blockedRecipients('X <ceo@beta.io>, ok@gamma.io'), ['ceo@beta.io']);
     const body = 'A specific, honest observation about your business and one question for you.';
     const r = await s.p.send([{ to: 'ceo@beta.io', subject: 'hi', body }]);
-    assert.equal(r.sent, 0); assert.equal(r.results[0].skipped, 'do-not-contact'); assert.equal(s.sent.length, 0);
+    assert.equal(r.queued, 0); assert.equal(r.skipped[0].skipped, 'do-not-contact'); assert.equal(s.sent.length, 0);
     assert.equal(s.p.save({ company: 'Beta again', email: 'cto@beta.io' }).stage, 'dnc');
     assert.throws(() => s.p.update(a.id, { stage: 'contacted' }), /do-not-contact/);
 
@@ -81,7 +83,8 @@ test('pipeline: do-not-contact, cap and batch validation are enforced in code', 
     assert.throws(() => s.p.prepare([{ to: 'stranger@gamma.io', subject: 'quick idea', body }]), /not in the pipeline/);
     for (const i of [1, 2, 3]) s.p.save({ company: `G${i}`, email: `q${i}@gamma.io` });
     const out2 = await s.p.send([1, 2, 3].map((i) => ({ to: `q${i}@gamma.io`, subject: 'quick idea', body })));
-    assert.equal(out2.sent, 2); assert.match(out2.results[2].skipped, /daily cap/);
+    assert.equal(out2.queued, 3); assert.equal(s.sent.length, 2, 'two today (cap)');
+    const third = s.p.outbox()[0]; assert.equal(third.to, 'q3@gamma.io'); assert.ok(Date.parse(s.store.db.prepare("SELECT scheduled_at FROM outbox WHERE status='queued'").get().scheduled_at) >= s.now() + 12 * 3600_000, 'third waits for the next day');
   } finally { s.close(); }
 });
 
@@ -246,5 +249,34 @@ test('email template: designed HTML + plain text, signature and opt-out added, s
     assert.ok(s.sent[0].html.includes('Atharv Bhosale') && s.sent[0].html.includes('AI Engineer'), 'signature from settings');
     assert.equal((s.sent[0].body.match(/Atharv/g) ?? []).length, 1, 'her own sign-off was replaced by the real signature');
     assert.ok(s.sent[0].body.endsWith(DEFAULT_OPT_OUT));
+  } finally { s.close(); }
+});
+
+test('send queue: slots inside the prospect\'s business hours, spaced, restart-safe, cancelled by replies', async () => {
+  const s = setup();
+  try {
+    s.settings.set('outreach_window', { start: '09:30', end: '16:30', days: [1, 2, 3, 4, 5] }); s.settings.set('outreach_spacing_min', [6, 6]);
+    // now = Sunday 25 Oct 09:00 UTC. Dubai prospects: Monday 09:30-10:00 local (+0..24 min jitter), 6 minutes apart.
+    const body = 'Noticed your quote form. A specific, honest observation. Want the one-page plan?';
+    const ids = [1, 2, 3].map((i) => s.p.save({ company: `Dubai ${i}`, email: `d${i}@dubai${i}.example`, timezone: 'Asia/Dubai' }).id);
+    const r = await s.p.send(ids.map((id) => ({ lead_id: id, subject: 'quotes at dubai', body })));
+    assert.equal(r.queued, 3); assert.equal(s.sent.length, 0, 'nothing on a Sunday');
+    const rows = s.store.db.prepare("SELECT scheduled_at FROM outbox WHERE status='queued' ORDER BY scheduled_at").all().map((x) => Date.parse(x.scheduled_at));
+    const monday0930Dubai = Date.parse('2026-10-26T05:30:00Z');
+    assert.ok(rows[0] >= monday0930Dubai && rows[0] < monday0930Dubai + 25 * 60_000, new Date(rows[0]).toISOString());
+    assert.equal(rows[1] - rows[0], 6 * 60_000); assert.equal(rows[2] - rows[1], 6 * 60_000);
+    assert.match(r.schedule[0].at_local, /Mon/);
+
+    // a "restart": a new Pipeline on the same database still owns the queue
+    const { Pipeline } = await import('../src/pipeline.mjs');
+    const p2 = new Pipeline({ store: s.store, settings: s.settings, gmail: { ready: true, send: async (m) => { s.sent.push(m); return { sent: true, id: 'x', thread_id: 'y' }; } }, now: () => rows[0] + 1000 });
+    assert.equal(await p2.flushOutbox(), 1); assert.equal(s.sent[0].to, 'd1@dubai1.example');
+
+    // a reply cancels what is still queued for that lead
+    assert.equal(s.p.cancelQueued(ids[1], 'they replied'), 1);
+    assert.deepEqual(s.p.outbox().map((o) => o.company), ['Dubai 3']);
+    assert.equal(s.p.outbox({ status: 'cancelled' })[0].note, 'they replied');
+    s.p.suppress('dubai3.example', 'asked to stop');
+    assert.equal(s.p.outbox().length, 0, 'do-not-contact cancels too');
   } finally { s.close(); }
 });

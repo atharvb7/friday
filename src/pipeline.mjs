@@ -10,6 +10,7 @@
 //    (interest, question, objection, not now, referral, stop, out of office); fixed rules still run first.
 import { randomUUID } from 'node:crypto';
 import { renderEmail, DEFAULT_BRAND } from './email-template.mjs';
+import { partsInTz, zonedToUtc, isValidTimezone, formatLocal } from './time.mjs';
 
 export const STAGES = ['new', 'researched', 'contacted', 'replied', 'meeting', 'proposal', 'won', 'lost', 'nurture', 'dnc'];
 const OPEN = new Set(['new', 'researched', 'contacted', 'nurture']);
@@ -62,7 +63,14 @@ export class Pipeline {
       CREATE INDEX IF NOT EXISTS leads_stage ON leads(stage, next_at);
       CREATE TABLE IF NOT EXISTS lead_events (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, kind TEXT NOT NULL, summary TEXT, at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS lead_events_lead ON lead_events(lead_id, at);
-      CREATE TABLE IF NOT EXISTS suppressions (value TEXT PRIMARY KEY, reason TEXT, at TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS suppressions (value TEXT PRIMARY KEY, reason TEXT, at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS outbox (
+        id TEXT PRIMARY KEY, lead_id TEXT NOT NULL, to_addr TEXT NOT NULL, subject TEXT, body TEXT NOT NULL, follow_up INTEGER NOT NULL DEFAULT 0,
+        opt_out INTEGER NOT NULL DEFAULT 1, scheduled_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0,
+        sent_at TEXT, error TEXT, created_at TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS outbox_due ON outbox(status, scheduled_at);`);
+    // The prospect's own time zone decides when their email goes out (added after the first release).
+    if (!this.db.prepare('PRAGMA table_info(leads)').all().some((c) => c.name === 'timezone')) this.db.exec('ALTER TABLE leads ADD COLUMN timezone TEXT');
   }
 
   #iso(t = this.now()) { return new Date(t).toISOString(); }
@@ -84,7 +92,7 @@ export class Pipeline {
     if (!key || !/\./.test(key)) throw new TypeError('value must be an email address or a domain');
     this.db.prepare('INSERT OR REPLACE INTO suppressions (value,reason,at) VALUES (?,?,?)').run(key, clean(reason, 200), this.#iso());
     const hit = key.includes('@') ? this.db.prepare('SELECT id FROM leads WHERE email=?').all(key) : this.db.prepare('SELECT id FROM leads WHERE domain=? OR email LIKE ?').all(key, `%@${key}`);
-    for (const l of hit) { this.db.prepare("UPDATE leads SET stage='dnc', next_at=NULL, next_action=NULL, updated_at=? WHERE id=?").run(this.#iso(), l.id); this.#event(l.id, 'dnc', `do not contact: ${reason}`); }
+    for (const l of hit) { this.db.prepare("UPDATE leads SET stage='dnc', next_at=NULL, next_action=NULL, updated_at=? WHERE id=?").run(this.#iso(), l.id); this.#event(l.id, 'dnc', `do not contact: ${reason}`); this.cancelQueued(l.id, 'do not contact'); }
     return { suppressed: key, leads_updated: hit.length };
   }
   isSuppressed(email) {
@@ -110,7 +118,8 @@ export class Pipeline {
     let contactName = clean(input.contact_name, 120); let role = clean(input.role, 160);
     if (contactName && ROLE_ONLY_RE.test(contactName)) { role = role ?? contactName; contactName = null; }
     const fields = { company, domain, website: clean(input.website, 300), contact_name: contactName, role, email,
-      offer: clean(input.offer, 160), source: clean(input.source, 300), signal: clean(input.signal, 600), fit: clean(input.fit, 20), research: clean(input.research, 4000), next_action: clean(input.next_action, 300) };
+      offer: clean(input.offer, 160), source: clean(input.source, 300), signal: clean(input.signal, 600), fit: clean(input.fit, 20), research: clean(input.research, 4000), next_action: clean(input.next_action, 300),
+      timezone: input.timezone && isValidTimezone(String(input.timezone)) ? String(input.timezone) : null };
     const existing = (email && this.byEmail(email)) ?? (input.id ? this.get(input.id) : null)
       ?? (!email && domain && fields.contact_name ? this.#row(this.db.prepare('SELECT * FROM leads WHERE domain=? AND contact_name=?').get(domain, fields.contact_name)) : null)
       ?? (!email && domain && !fields.contact_name ? this.#row(this.db.prepare('SELECT * FROM leads WHERE domain=? AND email IS NULL AND contact_name IS NULL').get(domain)) : null);
@@ -126,8 +135,8 @@ export class Pipeline {
     }
     const id = randomUUID();
     const stage = suppressed ? 'dnc' : (input.stage ?? (fields.research ? 'researched' : 'new'));
-    this.db.prepare(`INSERT INTO leads (id,company,domain,website,contact_name,role,email,offer,source,signal,fit,stage,research,next_action,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, company, domain, fields.website, fields.contact_name, fields.role, email, fields.offer, fields.source, fields.signal, fields.fit, stage, fields.research, fields.next_action, now, now);
+    this.db.prepare(`INSERT INTO leads (id,company,domain,website,contact_name,role,email,offer,source,signal,fit,stage,research,next_action,timezone,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, company, domain, fields.website, fields.contact_name, fields.role, email, fields.offer, fields.source, fields.signal, fields.fit, stage, fields.research, fields.next_action, fields.timezone, now, now);
     this.#event(id, 'created', `${company}${fields.source ? ` (source: ${fields.source})` : ''}`);
     this.bus?.publish('lead.created', { id });
     return { ...this.get(id), created: true, ...(suppressed ? { warning: 'on the do-not-contact list' } : {}) };
@@ -164,7 +173,7 @@ export class Pipeline {
   history(id) { const l = this.get(id); if (!l) return null; return { lead: l, events: this.db.prepare('SELECT kind, summary, at FROM lead_events WHERE lead_id=? ORDER BY at DESC LIMIT 40').all(l.id) }; }
   stats() {
     const by = Object.fromEntries(this.db.prepare('SELECT stage, COUNT(*) n FROM leads GROUP BY stage').all().map((r) => [r.stage, r.n]));
-    return { by_stage: by, due_follow_ups: this.find({ due: true, limit: 100 }).count, sent_today: this.sentToday(), daily_cap: this.cap(), suppressed: this.db.prepare('SELECT COUNT(*) n FROM suppressions').get().n };
+    return { by_stage: by, due_follow_ups: this.find({ due: true, limit: 100 }).count, sent_today: this.sentToday(), daily_cap: this.cap(), queued: this.outbox({ limit: 15 }), suppressed: this.db.prepare('SELECT COUNT(*) n FROM suppressions').get().n };
   }
 
   // ---- outreach ----
@@ -288,24 +297,92 @@ export class Pipeline {
     return `Send ${ok} outreach email${ok === 1 ? '' : 's'} from Gmail (${left} left in today's cap of ${this.cap()})${list.length - ok ? `, skip ${list.length - ok} blocked` : ''}: ${list.map((m) => `${m.company ?? m.to}${m.follow_up ? ' (follow-up)' : ''}${m.blocked ? ' [blocked]' : ''}`).join(', ')}`;
   }
 
-  async send(emails, { spacingMs = [8_000, 20_000] } = {}) {
+  // ---- send queue ----
+  // An approved batch is queued, not blasted: each email gets a slot inside the PROSPECT's business hours, spaced
+  // minutes apart, within the daily cap. The queue lives in the database, so a restart never cuts a batch in half.
+  window() { const w = this.settings.get('outreach_window', null) ?? {}; return { start: w.start ?? '09:30', end: w.end ?? '16:30', days: Array.isArray(w.days) && w.days.length ? w.days : [1, 2, 3, 4, 5] }; }
+  spacing() { const s = this.settings.get('outreach_spacing_min', null); return Array.isArray(s) && s.length === 2 ? s.map(Number) : [6, 14]; }
+  #tzOf(lead) { return lead?.timezone ?? this.settings.get('timezone', null) ?? 'Asia/Kolkata'; }
+
+  // First instant >= t that is inside the sending window in tz (jittered a little after the window opens).
+  #slot(t, tz) {
+    const w = this.window(); const [sh, sm] = w.start.split(':').map(Number); const [eh, em] = w.end.split(':').map(Number);
+    let at = t;
+    for (let i = 0; i < 15; i++) {
+      const p = partsInTz(new Date(at), tz); const mins = p.h * 60 + p.mi;
+      if (w.days.includes(p.dow) && mins >= sh * 60 + sm && mins < eh * 60 + em) return at;
+      const day = w.days.includes(p.dow) && mins < sh * 60 + sm ? p.d : p.d + 1;
+      at = zonedToUtc({ y: p.y, m: p.m, d: day, h: sh, mi: sm }, tz).getTime() + Math.floor(Math.random() * 25) * 60_000;
+    }
+    return at;
+  }
+
+  async send(emails) {
     if (!this.gmail?.ready) return { error: 'outreach_gmail_not_connected: connect Gmail (outreach) in Settings → Connected apps; nothing was sent' };
     const list = this.prepare(emails);
-    const results = [];
+    const [lo, hi] = this.spacing();
+    const gap = () => (lo + Math.random() * Math.max(0, hi - lo)) * 60_000;
+    const last = this.db.prepare("SELECT MAX(scheduled_at) t FROM outbox WHERE status='queued'").get().t;
+    let cursor = Math.max(this.now(), last ? Date.parse(last) + gap() : this.now());
+    const queued = []; const skipped = [];
     for (const m of list) {
-      if (m.blocked) { results.push({ to: m.to, skipped: m.blocked }); continue; }
-      if (this.sentToday() >= this.cap()) { results.push({ to: m.to, skipped: `daily cap ${this.cap()} reached — send tomorrow` }); continue; }
-      if (results.some((r) => r.sent)) await this.sleep(spacingMs[0] + Math.floor(Math.random() * (spacingMs[1] - spacingMs[0])));
+      if (m.blocked) { skipped.push({ to: m.to, skipped: m.blocked }); continue; }
+      if (this.db.prepare("SELECT 1 FROM outbox WHERE lead_id=? AND status='queued'").get(m.lead_id)) { skipped.push({ to: m.to, skipped: 'already queued' }); continue; }
+      const lead = this.get(m.lead_id); const tz = this.#tzOf(lead);
+      let at = this.#slot(cursor, tz);
+      for (let i = 0; i < 30 && this.#scheduledOn(at, tz) >= this.cap(); i++) at = this.#slot(at + DAY, tz); // daily cap per local day
+      const id = randomUUID();
+      this.db.prepare('INSERT INTO outbox (id,lead_id,to_addr,subject,body,follow_up,opt_out,scheduled_at,created_at) VALUES (?,?,?,?,?,?,?,?,?)')
+        .run(id, m.lead_id, m.to, m.subject, m.body, m.follow_up ? 1 : 0, m.opt_out === false ? 0 : 1, this.#iso(at), this.#iso());
+      this.#event(m.lead_id, 'queued', `${m.follow_up ? 'follow-up' : 'first email'} scheduled ${formatLocal(new Date(at), tz)} (${tz})`);
+      queued.push({ to: m.to, company: m.company, at_local: formatLocal(new Date(at), tz), timezone: tz });
+      cursor = at + gap();
+    }
+    if (queued.length) await this.flushOutbox();
+    return { queued: queued.length, schedule: queued, skipped, note: 'Emails go out one by one inside each prospect\'s business hours; replies cancel anything still queued for that lead.' };
+  }
+
+  // Emails (sent + queued) on the local calendar day of instant t in tz.
+  #scheduledOn(t, tz) {
+    const p = partsInTz(new Date(t), tz);
+    const from = zonedToUtc({ y: p.y, m: p.m, d: p.d, h: 0, mi: 0 }, tz).toISOString(); const to = zonedToUtc({ y: p.y, m: p.m, d: p.d + 1, h: 0, mi: 0 }, tz).toISOString();
+    return this.db.prepare("SELECT COUNT(*) n FROM outbox WHERE status IN ('queued','sent') AND COALESCE(sent_at, scheduled_at) >= ? AND COALESCE(sent_at, scheduled_at) < ?").get(from, to).n;
+  }
+
+  cancelQueued(leadId, reason) {
+    const n = this.db.prepare("UPDATE outbox SET status='cancelled', error=? WHERE lead_id=? AND status='queued'").run(clean(reason, 200), leadId).changes;
+    if (n) this.#event(leadId, 'cancelled', `${n} queued email(s) cancelled: ${reason}`);
+    return n;
+  }
+  outbox({ status = 'queued', limit = 30 } = {}) {
+    return this.db.prepare('SELECT o.id, o.to_addr, o.subject, o.follow_up, o.scheduled_at, o.status, o.error, l.company, l.timezone FROM outbox o LEFT JOIN leads l ON l.id=o.lead_id WHERE o.status=? ORDER BY o.scheduled_at LIMIT ?').all(status, limit)
+      .map((r) => ({ id: r.id.slice(0, 8), company: r.company, to: r.to_addr, subject: r.subject, follow_up: Boolean(r.follow_up), at_local: formatLocal(new Date(r.scheduled_at), r.timezone ?? this.#tzOf(null)), status: r.status, ...(r.error ? { note: r.error } : {}) }));
+  }
+
+  // Send every queued email whose slot has come (normally one per minute-tick, because slots are spaced).
+  async flushOutbox() {
+    if (!this.gmail?.ready) return 0;
+    let sent = 0;
+    for (const row of this.db.prepare("SELECT * FROM outbox WHERE status='queued' AND scheduled_at <= ? ORDER BY scheduled_at LIMIT 5").all(this.#iso())) {
+      const lead = this.get(row.lead_id);
+      const stop = !lead ? 'lead deleted' : this.isSuppressed(row.to_addr) ? 'do-not-contact' : ['dnc', 'won', 'lost', 'replied', 'meeting', 'proposal'].includes(lead.stage) ? `lead is ${lead.stage}` : row.follow_up && !lead.last_message_id ? 'no thread to follow up in' : null;
+      if (stop) { this.db.prepare("UPDATE outbox SET status='cancelled', error=? WHERE id=?").run(stop, row.id); continue; }
+      if (this.sentToday() >= this.cap()) { this.db.prepare('UPDATE outbox SET scheduled_at=? WHERE id=?').run(this.#iso(this.#slot(this.now() + 6 * 3600_000, this.#tzOf(lead))), row.id); continue; }
+      const m = { to: row.to_addr, subject: row.subject, body: row.body, follow_up: Boolean(row.follow_up), opt_out: Boolean(row.opt_out), lead_id: row.lead_id };
       try {
-        const lead = this.get(m.lead_id);
         const { text, html } = this.render(m);
         const r = m.follow_up ? await this.gmail.reply({ message_id: lead.last_message_id, to: m.to, body: text, html }) : await this.gmail.send({ to: m.to, subject: m.subject, body: text, html });
-        if (r?.error) { results.push({ to: m.to, error: r.error }); continue; }
-        this.recordSend({ to: m.to, subject: m.subject ?? '(follow-up)', message_id: r.id, thread_id: r.thread_id, leadId: m.lead_id });
-        results.push({ to: m.to, sent: true, thread_id: r.thread_id });
-      } catch (e) { results.push({ to: m.to, error: String(e.message ?? e).slice(0, 200) }); }
+        if (r?.error) throw new Error(r.error);
+        this.db.prepare("UPDATE outbox SET status='sent', sent_at=? WHERE id=?").run(this.#iso(), row.id);
+        this.recordSend({ to: m.to, subject: m.subject ?? '(follow-up)', message_id: r.id, thread_id: r.thread_id, leadId: row.lead_id });
+        sent++;
+      } catch (e) {
+        const attempts = row.attempts + 1; const err = String(e.message ?? e).slice(0, 200);
+        if (attempts >= 3) { this.db.prepare("UPDATE outbox SET status='failed', attempts=?, error=? WHERE id=?").run(attempts, err, row.id); this.notifications?.create({ level: 'warning', title: `Outreach email to ${lead.company} failed`, body: err }); }
+        else this.db.prepare('UPDATE outbox SET attempts=?, error=?, scheduled_at=? WHERE id=?').run(attempts, err, this.#iso(this.now() + 30 * 60_000), row.id);
+      }
     }
-    return { sent: results.filter((r) => r.sent).length, results, sent_today: this.sentToday(), daily_cap: this.cap() };
+    return sent;
   }
 
   // Any email that reached a lead (outreach_send or a normal email_send) advances the sequence.
@@ -323,8 +400,12 @@ export class Pipeline {
   }
 
   // ---- background: replies, bounces, due follow-ups ----
-  start(intervalMs = 10 * 60_000) { if (!this.#timer) { this.#timer = setInterval(() => void this.tick().catch(() => {}), intervalMs); this.#timer.unref?.(); } }
-  stop() { clearInterval(this.#timer); this.#timer = null; }
+  #outboxTimer = null;
+  start(intervalMs = 10 * 60_000) {
+    if (!this.#timer) { this.#timer = setInterval(() => void this.tick().catch(() => {}), intervalMs); this.#timer.unref?.(); }
+    if (!this.#outboxTimer) { this.#outboxTimer = setInterval(() => void this.flushOutbox().catch(() => {}), 60_000); this.#outboxTimer.unref?.(); }
+  }
+  stop() { clearInterval(this.#timer); clearInterval(this.#outboxTimer); this.#timer = null; this.#outboxTimer = null; }
 
   async tick() {
     const out = { replies: 0, bounces: 0, nudged: false };
@@ -366,6 +447,7 @@ export class Pipeline {
       } catch { verdict = null; } // fall back to the rules below
     }
     if (!verdict) verdict = OOO_RE.test(text) ? { action: 'pause' } : { action: 'human' };
+    this.cancelQueued(lead.id, 'they replied');
     if (verdict.action === 'stop') {
       this.suppress(lead.email, 'replied asking not to be contacted');
       this.notifications?.create({ level: 'info', title: `🚫 ${who} opted out`, body: 'Added to do-not-contact. No more emails will go to them.' });

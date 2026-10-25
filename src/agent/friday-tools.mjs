@@ -19,6 +19,7 @@ const obj = (properties, required = []) => ({ type: 'object', properties, requir
 function businessTools(pipeline) {
   const leadFields = { company: { type: 'string' }, website: { type: 'string' }, contact_name: { type: 'string' }, role: { type: 'string' }, email: { type: 'string', description: 'only an address you found published or the user gave; never guess patterns' },
     offer: { type: 'string', description: 'what we pitch them: a service (automation, AI agents, voice agents, freelance dev) or one of our products' }, source: { type: 'string', description: 'where you found them (URL)' },
+    timezone: { type: 'string', description: 'IANA time zone of the prospect, e.g. Asia/Dubai, Europe/London, Asia/Kolkata (emails go out in their business hours)' },
     signal: { type: 'string', description: 'why now: the specific trigger you found (hiring, launch, funding, a complaint, a slow manual process)' }, fit: { type: 'string', enum: ['P0', 'P1', 'P2', 'DQ'] },
     research: { type: 'string', description: 'short brief: what they do, pains, who decides, hooks — with sources' }, next_action: { type: 'string' }, stage: { type: 'string', enum: STAGES } };
   return [
@@ -47,6 +48,16 @@ function businessTools(pipeline) {
       run: (a) => { const { id, ...rest } = a; const l = pipeline.update(str(id, 'id', 60), rest); return { id: l.id.slice(0, 8), company: l.company, stage: l.stage, next_action: l.next_action, next_at: l.next_at }; },
     },
     {
+      name: 'outreach_cancel', risk: 'safe',
+      description: 'Cancel queued (not yet sent) outreach emails for a lead (lead_id) or all of them (all=true). Sent mail cannot be unsent. See the queue with lead_find stats=true.',
+      parameters: obj({ lead_id: { type: 'string' }, all: { type: 'boolean' } }, []),
+      run: (a) => {
+        if (a.all) { const ids = pipeline.db.prepare("SELECT DISTINCT lead_id FROM outbox WHERE status='queued'").all().map((r) => r.lead_id); return { cancelled: ids.reduce((n, id) => n + pipeline.cancelQueued(id, 'cancelled by the user'), 0) }; }
+        const l = a.lead_id ? pipeline.get(a.lead_id) : null; if (!l) return { error: 'lead_id or all=true required' };
+        return { cancelled: pipeline.cancelQueued(l.id, 'cancelled by the user'), company: l.company };
+      },
+    },
+    {
       name: 'do_not_contact', risk: 'safe',
       description: 'Put an email address or a whole domain on the do-not-contact list (they asked to stop, hostile reply, competitor, existing client the user handles personally). Sending to them is then refused.',
       parameters: obj({ value: { type: 'string' }, reason: { type: 'string' } }, ['value']),
@@ -54,7 +65,7 @@ function businessTools(pipeline) {
     },
     {
       name: 'outreach_send', risk: 'gated', category: 'messaging', riskClass: 'consequential',
-      description: `Send a batch of personalised outreach emails (cold first touches or follow-ups) from the user's Gmail — ONE approval for the whole batch (max 15). Recipients must already be leads (lead_save first). Each item: lead_id (preferred) or to, subject, body (plain text, short, written for that one person); follow_up=true replies inside the earlier thread (no subject needed). An opt-out line is appended when missing; do-not-contact, replied/closed leads and the daily cap are enforced. Draft in chat first only if the user asked to see drafts.`,
+      description: `Queue a batch of personalised outreach emails (cold first touches or follow-ups) from the outreach Gmail, ONE approval for the whole batch (max 15). After approval they go out one by one inside each prospect's business hours (lead timezone), spaced minutes apart; replies cancel anything still queued. Recipients must already be leads (lead_save first). Each item: lead_id (preferred) or to, subject, body (plain text, short, written for that one person); follow_up=true replies inside the earlier thread (no subject needed). An opt-out line is appended when missing; do-not-contact, replied/closed leads and the daily cap are enforced. Draft in chat first only if the user asked to see drafts.`,
       parameters: obj({ emails: { type: 'array', items: obj({ lead_id: { type: 'string' }, to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' }, follow_up: { type: 'boolean' } }, ['body']) },
         skip_review: { type: 'boolean', description: 'ONLY when the user explicitly told you to send despite the quality review' } }, ['emails']),
       // Before the approval card: a quality review (JEV) refuses batches that pitch competitors, lack an evidenced gap,
