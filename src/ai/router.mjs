@@ -139,7 +139,7 @@ export class ModelRouter {
 export function chainsFromEnv(env) {
   const parse = (s) => String(s).split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const i = x.indexOf(':'); return { provider: x.slice(0, i), model: x.slice(i + 1) }; });
   const ULTRA = 'nvidia/nemotron-3-ultra-550b-a55b';
-  const SUPER = 'nvidia/nemotron-3-super-120b-a12b';
+  const SUPER = 'nvidia/nemotron-3.5-super-vl-120b-a12b'; // nemotron-3-super's hosted endpoint returns 404 since Oct 2026
   const LIGHT = 'nvidia/nemotron-3.5-lightning-30b-a3b';
   const fb = env.FRIDAY_FALLBACK_MODEL ? [{ provider: 'fallback', model: env.FRIDAY_FALLBACK_MODEL }] : [];
   const n = (m) => ({ provider: 'nvidia', model: m });

@@ -120,7 +120,7 @@ export function createContext({ appRoot, env = process.env }) {
       homeDir: resolve(dataDir, 'dsh-home'),
       workRoot: resolve(dataDir, 'dsh-workspaces'),
       bin: dshBin,
-      model: env.FRIDAY_DSH_MODEL ?? 'nvidia/nemotron-3-super-120b-a12b',
+      model: env.FRIDAY_DSH_MODEL ?? 'nvidia/nemotron-3.5-super-vl-120b-a12b',
       apiKey: env.FRIDAY_NVIDIA_API_KEY ?? null,
       enabled: env.FRIDAY_DSH_ENABLED !== '0',
       sandbox: env.FRIDAY_DSH_SANDBOX === 'off' ? 'off' : 'bwrap',

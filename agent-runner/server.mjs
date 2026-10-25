@@ -24,7 +24,7 @@ const MAX_BODY = 4 * 1024 * 1024;
 for (const d of [HOME, WORK, STATE]) ensureRealDir(d);
 const adapter = new DshAdapter({
   homeDir: HOME, workRoot: WORK, agentsHome: join(STATE, 'agents'), bin: env.DSH_BIN, apiKey: env.FRIDAY_NVIDIA_API_KEY ?? null,
-  model: env.FRIDAY_DSH_MODEL ?? 'nvidia/nemotron-3-super-120b-a12b', sandbox: 'off', enabled: env.FRIDAY_DSH_ENABLED !== '0',
+  model: env.FRIDAY_DSH_MODEL ?? 'nvidia/nemotron-3.5-super-vl-120b-a12b', sandbox: 'off', enabled: env.FRIDAY_DSH_ENABLED !== '0',
   timeoutMs: env.FRIDAY_DSH_TIMEOUT_MS ? Number(env.FRIDAY_DSH_TIMEOUT_MS) : undefined,
   // the agent's own network plumbing: all egress goes through the filtering proxy
   passEnv: Object.fromEntries(['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy', 'NODE_USE_ENV_PROXY', 'GIT_TERMINAL_PROMPT'].filter((k) => env[k]).map((k) => [k, env[k]])

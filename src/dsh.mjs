@@ -39,7 +39,7 @@ TASK:
 
 export class DshAdapter {
   constructor({
-    homeDir, workRoot = null, bin = null, nodePath = process.execPath, model = 'nvidia/nemotron-3-super-120b-a12b', provider = 'nvidia',
+    homeDir, workRoot = null, bin = null, nodePath = process.execPath, model = 'nvidia/nemotron-3.5-super-vl-120b-a12b', provider = 'nvidia',
     apiKey = null, timeoutMs = DEFAULT_TIMEOUT_MS, maxOutputBytes = DEFAULT_MAX_OUTPUT, sandbox = 'bwrap', enabled = true,
     appRoot = null, dataDir = null, home = process.env.HOME ?? null, permissionMode = 'danger-full-access', overlayPath = null, prepare = null, agentsHome = null, passEnv = {},
   } = {}) {
