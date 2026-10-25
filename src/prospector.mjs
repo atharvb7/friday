@@ -373,6 +373,35 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
     return lines.join('\n');
   }
 
+  // ---- weekly learning loop: which segment x offer gets replies (at solo volume only big changes are testable) ----
+  weeklyReport({ days = 7 } = {}) {
+    const since = new Date(this.now() - days * DAY).toISOString();
+    const rows = this.db.prepare('SELECT segment, status, reason, lead_id, updated_at FROM prospects').all();
+    const segs = new Map();
+    const seg = (r) => { const s = JSON.parse(r.segment ?? '{}'); const k = `${s.vertical} · ${s.location} · ${s.offer ?? 'automation'}`; if (!segs.has(k)) segs.set(k, { segment: k, audited: 0, qualified: 0, skipped: 0, sent: 0, replies: 0, positive: 0, meetings: 0, stops: 0, bounces: 0, sent_all_time: 0, positive_all_time: 0, skip_reasons: {} }); return segs.get(k); };
+    for (const r of rows) {
+      const g = seg(r);
+      if (r.updated_at >= since && r.status !== 'new') { g.audited++; if (r.status === 'qualified') g.qualified++; if (r.status === 'skipped') { g.skipped++; const why = String(r.reason ?? '').split(':')[0].slice(0, 60); g.skip_reasons[why] = (g.skip_reasons[why] ?? 0) + 1; } }
+      if (!r.lead_id) continue;
+      for (const e of this.db.prepare('SELECT kind, summary, at FROM lead_events WHERE lead_id=?').all(r.lead_id)) {
+        const recent = e.at >= since;
+        if (e.kind === 'sent' && /^touch 1:/.test(e.summary ?? '')) { g.sent_all_time++; if (recent) g.sent++; }
+        if (e.kind === 'reply') { const pos = /^\[(positive|question)/.test(e.summary ?? ''); if (pos) g.positive_all_time++; if (recent) { g.replies++; if (pos) g.positive++; if (/wants a meeting/.test(e.summary ?? '')) g.meetings++; } }
+        if (e.kind === 'dnc' && recent) g.stops++;
+        if (e.kind === 'bounce' && recent) g.bounces++;
+      }
+    }
+    const list = [...segs.values()].map((g) => { const { skip_reasons: reasons, ...rest } = g; return { ...rest, top_skips: Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} (${v})`),
+      advice: g.sent_all_time >= 300 && g.positive_all_time === 0 ? 'pause: 300+ first emails and no positive reply. Check the list first, then the offer, then the copy'
+        : g.sent_all_time >= 100 && g.positive_all_time / g.sent_all_time < 0.005 ? 'weak: under 0.5% positive replies so far' : null }; });
+    return { days, segments: list };
+  }
+
+  formatWeekly(w) {
+    if (!w.segments.length) return 'No segments yet.';
+    return w.segments.map((g) => `• ${g.segment}: audited ${g.audited}, qualified ${g.qualified}, first emails ${g.sent}, replies ${g.replies} (${g.positive} interested${g.meetings ? `, ${g.meetings} want a call` : ''}), opt-outs ${g.stops}, bounces ${g.bounces}. All time: ${g.sent_all_time} sent / ${g.positive_all_time} interested.${g.top_skips.length ? ` Top skips: ${g.top_skips.join(', ')}.` : ''}${g.advice ? ` ⚠ ${g.advice}` : ''}`).join('\n');
+  }
+
   status() {
     const counts = Object.fromEntries(this.db.prepare('SELECT status, COUNT(*) n FROM prospects GROUP BY status').all().map((r) => [r.status, r.n]));
     return { config: this.config(), prospects: counts, serp_used_month: this.serpUsed(), last_report: this.settings.get('prospecting_last_report', null), running: this.#running };
@@ -384,6 +413,12 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
     const tz = this.settings.get('timezone', null) ?? 'Asia/Kolkata';
     const p = partsInTz(new Date(this.now()), tz); const day = `${p.y}-${p.m}-${p.d}`;
     const [h, m] = c.run_at.split(':').map(Number);
+    // Monday: the weekly learning report (once per week, after run_at).
+    const week = `${p.y}-${Math.floor((Date.UTC(p.y, p.m - 1, p.d) - Date.UTC(p.y, 0, 1)) / (7 * DAY))}`;
+    if (p.dow === 1 && p.h * 60 + p.mi >= h * 60 + m && this.settings.get('prospecting_last_week', null) !== week) {
+      this.settings.set('prospecting_last_week', week);
+      this.notifications?.create({ level: 'info', title: '📊 Weekly outreach report', body: this.formatWeekly(this.weeklyReport()) });
+    }
     if (!c.days.includes(p.dow) || p.h * 60 + p.mi < h * 60 + m || this.settings.get('prospecting_last_day', null) === day) return null;
     this.settings.set('prospecting_last_day', day);
     return this.runOnce();

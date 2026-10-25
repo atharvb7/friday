@@ -100,6 +100,11 @@ test('prospector: source -> audit with verified evidence -> qualify -> contact -
     assert.equal(w.prospector.serpUsed(), w.serpCalls.length);
     assert.equal(w.serpCalls.filter((c) => c.engine === 'google_maps_reviews').length, 1, 'reviews only for the listing with enough reviews');
 
+    const weekly = w.prospector.weeklyReport();
+    assert.equal(weekly.segments.length, 1); assert.match(weekly.segments[0].segment, /freight forwarders · Mumbai · automation/);
+    assert.ok(weekly.segments[0].audited >= 3); assert.equal(weekly.segments[0].qualified, 1);
+    assert.match(w.prospector.formatWeekly(weekly), /Top skips: has its own engineering team \(1\)/);
+
     // one piece of evidence is a "maybe", not a pitch
     w.prospector.setConfig({ min_evidence: 3 });
     const again = w.store.db.prepare("SELECT * FROM prospects WHERE company='Falcon Cargo'").get();

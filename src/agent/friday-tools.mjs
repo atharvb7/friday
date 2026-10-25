@@ -106,7 +106,7 @@ function prospectingTools(prospector) {
       name: 'prospecting_status', risk: 'safe',
       description: 'Client-hunting pipeline: configuration, prospect counts by status (new/qualified/skipped/hold/no_contact), searches used this month and the last run report (who qualified, who was skipped and why).',
       parameters: obj({}, []),
-      run: () => prospector.status(),
+      run: () => ({ ...prospector.status(), last_7_days: prospector.weeklyReport() }),
     },
   ];
 }
