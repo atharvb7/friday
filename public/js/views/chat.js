@@ -90,7 +90,7 @@ export function render({ app, api, toast }) {
     if (extra.tools?.length) body.append(h('div', { class: 'tools' }, extra.tools.map((t) => h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`))));
     if (content) body.append(role === 'assistant' ? md(content) : h('div', {}, content));
     if (extra.files?.length) body.append(h('div', { class: 'files' }, extra.files.map((f) => fileChip(f, toast))));
-    return h('div', { class: `msg ${role}` }, h('div', { class: 'av' }, role === 'user' ? 'You' : 'F'), body);
+    return h('div', { class: `msg ${role}` }, role === 'user' ? h('div', { class: 'av' }, 'You') : h('div', { class: 'av friday', role: 'img', 'aria-label': 'Friday' }), body);
   }
   function hello() {
     clear(msgs);
@@ -150,7 +150,7 @@ export function render({ app, api, toast }) {
     const viaVoice = lastInputWasVoice; lastInputWasVoice = false;
     const toolsEl = h('div', { class: 'tools' });
     const live = h('div', { class: 'bubble' }, toolsEl, h('div', { class: 'typing' }, h('i'), h('i'), h('i')));
-    const wrap = h('div', { class: 'msg assistant' }, h('div', { class: 'av' }, 'F'), live);
+    const wrap = h('div', { class: 'msg assistant' }, h('div', { class: 'av friday', role: 'img', 'aria-label': 'Friday' }), live);
     msgs.append(wrap); scroll();
     abort = new AbortController();
     const paintReply = () => { live.lastChild?.remove(); live.append(md(noActions(acc))); scroll(); };

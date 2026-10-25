@@ -32,6 +32,22 @@ export function isCompactMode(search = '') {
   return /(?:\?|&)compact=1(?:&|$)/.test(s);
 }
 
+// What she says per state (shared by the 3D viewer and the 2D portrait pet).
+export const PET_LINES = Object.freeze({
+  sleeping: ['Zzz… tap Wave to wake me up.', 'Resting… I am still watching your tasks.'],
+  listening: ['Mm-hm, I am listening…', 'Go on, tell me everything.'],
+  thinking: ['Hmm… let me think this through properly.', 'Give me a second, cutie… I mean, boss.'],
+  acting: ['On it! Watch me work.', 'Doing the thing right now~'],
+  waiting: ['I need your okay before I touch that — check the approval card?', 'This one is consequential… your call, boss.'],
+  blocked: ['Stuck. Something needs you — I paused instead of guessing.', 'I hit a wall and stopped safely. Tell me how to proceed?'],
+  offline: ['I lost the laptop link… still here, just sleepy.', 'Connection gone — I will wait right here.'],
+  done: ['Done~! Check the receipt, all verified.', 'Finished! Was I good? …Don’t answer that.'],
+});
+export function lineFor(state, rand = Math.random) {
+  const arr = PET_LINES[state] ?? PET_LINES.sleeping;
+  return arr[Math.floor(rand() * arr.length) % arr.length];
+}
+
 /**
  * Pure state -> pose map. No THREE, no DOM, no fetch.
  * Returns a frozen descriptor the animator interprets each frame.
@@ -247,21 +263,6 @@ export async function initPetViewer(opts = {}) {
     gaze.lastMove = performance.now();
   }, { passive: true });
 
-  const LINES = {
-    sleeping: ['Zzz… tap Wave to wake me up.', 'Resting… I am still watching your tasks.'],
-    listening: ['Mm-hm, I am listening…', 'Go on, tell me everything.'],
-    thinking: ['Hmm… let me think this through properly.', 'Give me a second, cutie… I mean, boss.'],
-    acting: ['On it! Watch me work.', 'Doing the thing right now~'],
-    waiting: ['I need your okay before I touch that — check the approval card?', 'This one is consequential… your call, boss.'],
-    blocked: ['Stuck. Something needs you — I paused instead of guessing.', 'I hit a wall and stopped safely. Tell me how to proceed?'],
-    offline: ['I lost the laptop link… still here, just sleepy.', 'Connection gone — I will wait right here.'],
-    done: ['Done~! Check the receipt, all verified.', 'Finished! Was I good? …Don’t answer that.'],
-  };
-  function lineFor(s) {
-    const arr = LINES[s] ?? LINES.sleeping;
-    return arr[Math.floor(Math.random() * arr.length)];
-  }
-
   const token = () => {
     try { return sessionStorage.getItem(SESSION_TOKEN_KEY) || ''; } catch { return ''; }
   };
@@ -328,7 +329,7 @@ export async function initPetViewer(opts = {}) {
     }
   }
   function openCompact() {
-    globalThis.open(`${globalThis.location.pathname}?compact=1`, 'friday-pet', 'width=360,height=480');
+    globalThis.open(`${globalThis.location.pathname}?compact=1&mode=3d`, 'friday-pet', 'width=360,height=480');
     if (note) {
       note.style.display = 'block';
       note.textContent =

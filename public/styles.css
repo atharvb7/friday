@@ -465,3 +465,15 @@ input[type=email] { width: 100%; background: var(--glass-strong); border: 1px so
 
 /* Chat delete: armed state after the first click (second click deletes). */
 .convo-del.armed { opacity: 1 !important; color: var(--bad); background: rgba(255,107,129,.15); font-weight: 600; font-size: 12px; white-space: nowrap; }
+
+/* Friday's face: the orb and her chat avatar are her portrait. State shows in the glow and ring,
+   never by recolouring her (hue-rotate on a face looks wrong). */
+.orb, .msg .av.friday { background: url(/assets/friday-face.webp) center / cover no-repeat, var(--grad); }
+.orb { position: relative; border: 1.5px solid rgba(255,255,255,.7); }
+.orb.thinking { filter: none; animation: think .9s ease-in-out infinite; box-shadow: 0 0 0 3px rgba(201,160,255,.55), 0 0 22px rgba(201,160,255,.75); }
+.orb.working { filter: none; animation: none; }
+.orb.working::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid transparent; border-top-color: var(--accent); border-right-color: var(--accent2); animation: spin 1.1s linear infinite; }
+.orb.stopped { background: url(/assets/friday-face.webp) center / cover no-repeat; box-shadow: 0 0 0 3px var(--bad), 0 0 18px rgba(255,107,129,.6); }
+.orb.offline { filter: grayscale(1) brightness(.75); }
+@keyframes think { 50% { transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .orb::after { animation: none !important; } }

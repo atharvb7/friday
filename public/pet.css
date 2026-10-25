@@ -27,3 +27,14 @@
   body.compact .btn { padding: 4px 8px; font-size: 12px; }
   body.compact #pet-state { font-size: 12px; padding: 4px 8px; }
   body.compact #attrib { font-size: 11px; padding: 4px; }
+
+/* Friday's 2D portrait pet: her colours (plum hair, pink accents), canvas fills the window. */
+body.portrait { background: radial-gradient(900px 600px at 50% 30%, #3a1f33, #1a0f16 70%); color: #fbe9f1; }
+#stage2d { position: fixed; inset: 0; }
+#stage2d canvas { display: block; cursor: pointer; }
+body.portrait #pet-state { background: rgba(26,15,22,.7); border-color: #523145; }
+body.portrait .btn { background: #331d2c; color: #fbe9f1; border-color: #6b3a5a; text-decoration: none; }
+body.portrait .btn:hover { background: #452538; }
+body.portrait #subtitle { background: rgba(42,24,36,.85); border: 1px solid #6b3a5a; }
+body.portrait #attrib { color: #c39bb0; background: rgba(26,15,22,.6); }
+body.compact.portrait #attrib { display: none; }

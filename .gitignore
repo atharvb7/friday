@@ -32,3 +32,12 @@ Thumbs.db
 *.swo
 .sbx-*/
 .claude/
+
+# Friday's artwork: owner-supplied, artist unknown — kept out of this public repo.
+# scripts/deploy-art.sh copies it to the server (see public/assets/ATTRIBUTION.md).
+public/assets/friday.webp
+public/assets/friday-face.webp
+public/assets/icon-192.png
+public/assets/icon-512.png
+public/assets/apple-touch-icon.png
+public/assets/favicon-64.png

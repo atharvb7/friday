@@ -1,6 +1,7 @@
 <!doctype html>
 <!--
-  Friday screen-pet stage — 3D view for megaman_x_divemmdortwinkle_girl.glb
+  Friday screen-pet stage. Default: her 2D portrait (pet-2d.js, /assets/friday.webp).
+  ?mode=3d: the older 3D view for megaman_x_divemmdortwinkle_girl.glb
   Model: "megaman_x_divemmdortwinkle_girl.glb" (glTF 2.0, ~0.7MB, 80 nodes,
   1 skin, ZERO embedded animations, ZERO morph targets).
   License: CC-BY-4.0 by lucianone — attribution required (see footer).
@@ -11,19 +12,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Friday screen pet — local 3D companion.">
+  <meta name="description" content="Friday screen pet — your on-screen companion.">
   <title>Friday Pet — screen companion</title>
+  <link rel="icon" href="/assets/favicon-64.png" type="image/png">
   <link rel="stylesheet" href="/pet.css">
-  <script type="module" src="/pet-viewer.js"></script>
+  <script type="module" src="/pet-boot.js"></script>
 </head>
 <body>
-  <div id="stage" aria-label="Friday 3D pet stage"></div>
+  <div id="stage2d" aria-label="Friday"></div>
   <div id="hud">
     <span id="pet-state" role="status">😴 sleeping</span>
     <button class="btn" id="btn-wave" type="button">Wave</button>
     <button class="btn" id="btn-talk" type="button">Talk test</button>
     <button class="btn" id="btn-float" type="button">Float on screen</button>
     <button class="btn" id="btn-compact" type="button">Sit on screen</button>
+    <a class="btn" id="btn-mode" href="?mode=3d">3D model</a>
   </div>
   <div id="subtitle" role="status" aria-live="polite"></div>
   <div id="fallback" role="alert"></div>
