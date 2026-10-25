@@ -15,14 +15,14 @@ exist in the business profile.
 
 ## AI agents (lead qualification, support, internal ops)
 
-- **Who:** SaaS and service companies with inbound leads or support volume; teams hiring SDRs, support reps, ops
-  assistants.
-- **Signals:** job posts for repetitive roles; a contact form with "we'll get back in 48h"; a chat widget that's
-  only an FAQ; public docs and slow forum answers; growth after funding.
+- **Who:** service businesses with inbound leads or customer-query volume (agencies, brokers, consultancies,
+  clinics, logistics, e-commerce brands). Never software/AI companies: they build this themselves.
+- **Signals:** a contact form with "we'll get back in 48h"; phone/email-only enquiries; reviews about slow replies;
+  hiring customer-service or ops assistants; growth (new branches, new services).
 - **Angle:** response time and capacity without a hire. The agent qualifies/answers in minutes, the team gets clean
   handoffs.
 - **Give first:** 3 specific ideas for where an agent removes work in *their* flow (from what you saw), or a tiny
-  demo trained on their public docs.
+  demo answering their real customer questions (from their FAQ/site).
 
 ## Automation (workflows, integrations, reporting)
 

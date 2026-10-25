@@ -38,28 +38,12 @@ for, typical price/engagement, and proof (projects, results, demos, links); idea
 (paste 2-3 emails the user wrote); signature; booking link; sending setup (which mailbox, daily cap). Save with op set.
 Ask the user in small chunks, not one giant questionnaire.
 
-## Step 1 - Pick the target (ICP + offer)
+## Steps 1-3 - Find, study and shortlist (load `client-hunting`)
 
-Pick ONE segment and ONE offer per batch, e.g. "dental clinics in Pune -> voice agent for missed calls",
-"Series A SaaS hiring SDRs -> AI agent for lead qualification", "agencies drowning in reporting -> automation".
-Load `prospecting` for ICP and signal thinking. Good signals for our offers: `references/plays.md`.
-
-## Step 2 - Find leads
-
-- Small (<= 5): `web_search` + `web_fetch` inline.
-- Bigger: `research_start` with instructions to return a table: company, website, what they do, the specific signal
-  (with URL), the right decision maker (name, role, source URL), a published contact email if one exists, and fit P0/P1/P2.
-  When the report arrives, save all rows with ONE `lead_save` call.
-- Emails: only addresses published by the company or the person, or given by the user. Never guess patterns.
-  No email? Save the lead anyway (next_action: "find contact") and say so.
-- Check `lead_find q=<company>` first. Never re-pitch someone already in the pipeline, a client, or dnc.
-
-## Step 3 - Research before writing (per lead)
-
-5 minutes of real homework (load `account-research` for depth): what they sell, to whom, how they get customers,
-where the manual / slow / leaky part is (phone-only booking, slow reply, forms that go nowhere, repetitive
-ops visible in job posts), recent trigger. Write 3-5 lines into `research` and the trigger into `signal` via `lead_save`.
-Score fit (`lead-triage`). DQ anything that doesn't fit; don't force it.
+Always load `client-hunting` before finding anyone. It decides who is worth pitching: operations-heavy businesses
+that cannot build this themselves (never software/AI/tech companies, they are competitors), an evidenced gap audit
+per company, a fit score, the decision maker and a real email, and which offer + message fits. Skip anyone who does
+not qualify and say why. Check `lead_find q=<company>` first; never re-pitch someone already in the pipeline.
 
 ## Step 4 - Write
 
