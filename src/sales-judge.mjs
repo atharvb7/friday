@@ -25,6 +25,8 @@ export const OUTREACH_QUESTIONS = {
     criteria: { true: 'The email asserts something specific about the company (a volume, a process, hours worked, a problem) that does not appear in `lead`', false: 'Every statement about the company appears in `lead`, or the email only describes what usually happens in businesses like theirs' } },
   fabricated_proof: { type: 'noul', instructions: 'Does `email.body` claim a past result, client or achievement for the sender that is not listed in `proof`?',
     criteria: { true: 'The email says the sender helped, built, saved or achieved something (often with numbers) for a client, and `proof` does not list it', false: 'Every statement about the sender\'s past work matches `proof`, or the email makes no claim about past work' } },
+  sounds_low_level: { type: 'noul', instructions: 'Does `email.body` describe the sender\'s own work as small tasks or simple tools rather than engineered AI systems?',
+    criteria: { true: 'The sender presents their work as things like updating spreadsheets, sending WhatsApp or chat messages, simple bots, Zapier/n8n flows or admin help', false: 'The sender presents their work as designing and running production AI agent systems for a business' } },
   asks_one_easy_thing: { type: 'noul', instructions: 'Does `email.body` end with a single question that can be answered with a short reply?',
     criteria: { true: 'One clear, low-effort question such as "Want me to send it?"', false: 'No question, several asks, or it asks for a long meeting' } },
 };
@@ -43,6 +45,7 @@ export function judgeOutreach(answers) {
   if (n('mixes_offers') >= YES) problems.push({ why: 'it pitches more than one offer: keep one' });
   if (n('fabricated_proof') >= YES) problems.push({ why: 'it claims a past result or client that is not in your Proof list: remove it and use a real proof line from the profile (never invent results)' });
   if (n('unsupported_claims') >= YES) problems.push({ why: 'it states facts or numbers about them that your research does not show (e.g. invented volumes or hours): say only what you saw, or frame it as what usually happens' });
+  if (n('sounds_low_level') >= YES) problems.push({ why: 'it positions the work as small tasks/simple tools: present Atharv as a forward-deployed AI engineer who builds production agentic systems' });
   if (n('asks_one_easy_thing') <= NO) problems.push({ why: 'it does not end with one easy question: end with a one-line ask' });
   return { ok: problems.length === 0, problems };
 }
@@ -87,6 +90,13 @@ export class SalesJudge {
       const { answers } = await this.jev.decide({ state, questions: OUTREACH_QUESTIONS });
       return { to: it.to, company: it.lead?.company ?? null, ...judgeOutreach(answers) };
     }));
+  }
+
+  // An email without a lead (e.g. a test to the user, or a reply in a thread): style, proof and positioning only.
+  async reviewMessage({ subject, body, proof, firstTouch = true }) {
+    const keys = ['fabricated_proof', 'sounds_low_level', 'lists_services', 'mentions_price', 'mixes_offers', ...(firstTouch ? ['asks_one_easy_thing'] : [])];
+    const { answers } = await this.jev.decide({ state: { proof: clip(proof, 3000), email: { subject: clip(subject, 200), body: clip(body, 3000) } }, questions: Object.fromEntries(keys.map((k) => [k, OUTREACH_QUESTIONS[k]])) });
+    return judgeOutreach(answers);
   }
 
   async classifyReply({ ourSubject, replyText }) {

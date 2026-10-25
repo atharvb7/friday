@@ -108,3 +108,16 @@ test('google: a second (outreach) account has its own token file and state; reau
     assert.deepEqual(r.reauth, [{ account: 'outreach', email: 'atharv@gmail.com' }]);
   } finally { r.done(); }
 });
+
+test('gmail: html emails go out as multipart/alternative with a plain-text part first', async () => {
+  const r = rig();
+  try {
+    const st = new URL(r.g.authUrl()).searchParams.get('state'); await r.g.callback({ code: 'c', state: st });
+    await r.gmail.send({ to: 'a@b.co', subject: 'hi', body: 'plain words', html: '<p>rich words</p>' });
+    const raw = Buffer.from(r.calls.find((c) => c.url.pathname.endsWith('/messages/send')).body.raw.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    assert.match(raw, /Content-Type: multipart\/alternative; boundary="friday_alt_/);
+    assert.ok(raw.indexOf('text/plain') < raw.indexOf('text/html'));
+    const parts = [...raw.matchAll(/base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n--/g)].map((m) => Buffer.from(m[1].replace(/\r\n/g, ''), 'base64').toString('utf8'));
+    assert.deepEqual(parts, ['plain words', '<p>rich words</p>']);
+  } finally { r.done(); }
+});

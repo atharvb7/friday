@@ -9,6 +9,7 @@
 //  - With JEV configured (sales-judge.mjs), batches are quality-reviewed before approval and replies are classified
 //    (interest, question, objection, not now, referral, stop, out of office); fixed rules still run first.
 import { randomUUID } from 'node:crypto';
+import { renderEmail, DEFAULT_BRAND } from './email-template.mjs';
 
 export const STAGES = ['new', 'researched', 'contacted', 'replied', 'meeting', 'proposal', 'won', 'lost', 'nurture', 'dnc'];
 const OPEN = new Set(['new', 'researched', 'contacted', 'nurture']);
@@ -28,12 +29,15 @@ const UNSUB_RE = /\b(unsubscribe|remove me|take me off|stop (emailing|contacting
 const OOO_RE = /\b(out of (the )?office|on (annual |parental |sick )?leave|on vacation|automatic reply|auto-?reply|away until|currently away)\b/i;
 const DAY = 86_400_000;
 // House style, enforced in code (the model skips written rules when in a hurry). Extra phrases: setting outreach_banned.
-const BANNED = ["i'm reaching out", 'i am reaching out', 'reaching out because', 'quick intro', 'typical things', 'no pitch',
+const BANNED = ['whatsapp', 'spreadsheet', 'n8n', 'zapier', 'chatbot', 'no vendor lock-in', 'recent work:', 'take off your plate', "take off people's plates",
+  "i'm reaching out", 'i am reaching out', 'reaching out because', 'quick intro', 'typical things', 'no pitch',
   'hope this finds you', 'hope this email finds you', 'just checking in', 'circling back', 'leverage', 'synergy', 'game-changer',
   'game changer', 'revolutionize', 'revolutionise', 'drowning', 'i help companies', 'i help businesses', 'cutting-edge', 'seamless'];
 const CALL_ASK_RE = /\b(\d{2})\s*-?\s*min(ute)?s?\b|\bquick call\b|\bhop on a call\b|\bjump on a call\b/i;
 // "I recently helped a CA firm cut X by 80%" - a past-result claim with a number; only real, listed proof may be used.
 const RESULT_CLAIM_RE = /\b(i|we)\s+(recently\s+|just\s+)?(helped|enabled|saved|got|took|grew|cut|reduced|increased|doubled|tripled)\b[^.!?\n]*\d/i;
+// "- Built an AI scheduling agent for a recruiting firm ..." - client work stated as done; only listed proof may be used.
+const CLIENT_CLAIM_RE = /\b(built|deployed|automated|delivered|shipped|implemented)\b[^.!?\n]*\bfor\s+(a|an)\s+[^.!?\n]*(firm|company|client|startup|agency|forwarder|brand|business|group|institute)\b/i;
 const words = (s) => String(s ?? '').trim().split(/\s+/).filter(Boolean).length;
 // The reply's own words: Gmail snippets carry the quoted earlier mail after "On <date> <x> wrote:".
 const ownWords = (snippet) => String(snippet ?? '').split(/\s+On\s.{4,120}?wrote:|-{3,}\s*Original Message|\n>/i)[0].trim();
@@ -180,7 +184,7 @@ export class Pipeline {
       if (!EMAIL_RE.test(to)) throw new TypeError(`email ${i + 1}: needs a valid recipient (to, or a lead with an email)`);
       if (seen.has(to)) throw new TypeError(`email ${i + 1}: ${to} appears twice in this batch`);
       seen.add(to);
-      const body = String(e.body ?? '').trim();
+      const body = this.stripSignoff(String(e.body ?? '').trim());
       if (body.length < 20 || body.length > 5000) throw new TypeError(`email ${i + 1}: body must be 20-5000 chars`);
       const followUp = Boolean(e.follow_up && lead?.last_message_id);
       const subject = clean(e.subject, 200);
@@ -188,7 +192,7 @@ export class Pipeline {
       const lead2 = lead ?? this.byEmail(to);
       if (!lead2) throw new TypeError(`email ${i + 1}: ${to} is not in the pipeline; save it with lead_save first`);
       out.push({ to, lead_id: lead2.id, company: lead2.company, subject: followUp ? null : subject, follow_up: followUp,
-        body: OPT_OUT_RE.test(body) ? body : `${body}\n\n${this.optOutLine()}`,
+        body, opt_out: !OPT_OUT_RE.test(body),
         blocked: this.isSuppressed(to) ? 'do-not-contact' : ['dnc', 'won', 'lost', 'replied', 'meeting', 'proposal'].includes(lead2.stage) ? `lead stage is ${lead2.stage}` : null });
     }
     return out;
@@ -199,10 +203,9 @@ export class Pipeline {
   // Deterministic house-style checks for one prepared email (no model involved).
   lint(m) {
     const lead = this.get(m.lead_id); const out = [];
-    const body = m.body.replace(this.optOutLine(), '');
-    const sig = String(this.settings.get('outreach_signature', '') ?? '').trim();
-    const text = sig ? body.replace(sig, '') : body;
+    const text = m.body;
     const low = text.toLowerCase();
+    if (CLIENT_CLAIM_RE.test(text)) out.push(`it claims client work ("${CLIENT_CLAIM_RE.exec(text)[0].slice(0, 80)}"): only projects listed in the profile's Proof section may be mentioned`);
     if (RESULT_CLAIM_RE.test(text)) out.push(`it claims a past result ("${RESULT_CLAIM_RE.exec(text)[0].slice(0, 80)}"): only results listed in the profile's Proof section may be used, never invented ones`);
     if (/→|->|=>/.test(text)) out.push('no arrow chains (a → b → c): describe the end result in one plain sentence');
     if (/[—–]/.test(text) || /[—–]/.test(m.subject ?? '')) out.push('no em/en dashes: use a full stop or comma');
@@ -212,11 +215,13 @@ export class Pipeline {
     const greet = /^\s*(hi|hello|dear|hey)\s+([^,\n]+)[,\n]/i.exec(text);
     if (greet && ROLE_ONLY_RE.test(greet[2].trim())) out.push(`greeting "${greet[2].trim()}" is a role, not a name: use the person's first name, or "Hi ${lead?.company ?? 'there'} team"`);
     if (!m.follow_up) {
-      if (words(m.subject) > 6) out.push('subject too long: 2-5 words, lowercase, about their business');
+      if (m.subject && words(m.subject) > 6) out.push('subject too long: 2-5 words, lowercase, about their business');
       if (CALL_ASK_RE.test(text)) out.push('a first email asks for one easy yes (e.g. "Want me to send the one-page plan?"), not a call');
-      if (words(text) > 170) out.push(`too long (${words(text)} words): keep the body to 90-150 words`);
-      if (sig && !body.includes(sig)) out.push(`end with the exact signature:\n${sig}`);
-      if (!/https?:\/\//.test(`${lead?.signal ?? ''} ${lead?.research ?? ''} ${lead?.source ?? ''}`)) out.push('no evidence link saved for this lead: study the company, then lead_save the gap with the URL where you saw it (signal)');
+      if (words(text.replace(/[#*-]/g, ' ')) > 200) out.push(`too long (${words(text)} words): keep the body to 120-180 words`);
+      const bullets = text.split('\n').filter((l) => /^\s*[-•*]\s+/.test(l)).length;
+      if (bullets > 4) out.push(`${bullets} bullets: keep to at most 3-4, about their business`);
+      if (text.split('\n').filter((l) => /^\s*#{2,3}\s/.test(l)).length > 2) out.push('at most two section headings');
+      if (lead && !/https?:\/\//.test(`${lead.signal ?? ''} ${lead.research ?? ''} ${lead.source ?? ''}`)) out.push('no evidence link saved for this lead: study the company, then lead_save the gap with the URL where you saw it (signal)');
     }
     return out;
   }
@@ -232,8 +237,8 @@ export class Pipeline {
     if (this.judge?.ready && this.settings.get('outreach_review', true) !== false) {
       const offerOf = (l) => l?.offer ?? 'AI agents and automation that run a whole workflow end to end';
       try {
-        const proof = /## Proof[^\n]*\n([\s\S]*?)(\n## |$)/.exec(String(this.settings.get('business_profile', null)?.text ?? ''))?.[1]?.trim() ?? 'No proof listed.';
-        const verdicts = await this.judge.reviewOutreach(live.map((m) => { const lead = this.get(m.lead_id); return { to: m.to, lead, offer: offerOf(lead), proof, subject: m.subject ?? '(follow-up)', body: m.body }; }));
+        const proof = this.proof();
+        const verdicts = await this.judge.reviewOutreach(live.map((m) => { const lead = this.get(m.lead_id); return { to: m.to, lead, offer: offerOf(lead), proof, subject: m.subject ?? '(follow-up)', body: this.render(m).text }; }));
         for (const v of verdicts) { const it = issues.get(v.to); it.fix.push(...v.problems.map((p) => p.why)); if (v.problems.some((p) => p.block)) it.drop_lead = true; }
         judged = true;
       } catch (e) { note = `quality review unavailable (${String(e.message ?? e).slice(0, 60)})`; }
@@ -241,6 +246,39 @@ export class Pipeline {
     const bad = [...issues.values()].filter((v) => v.fix.length);
     if (!bad.length) return { ok: true, reviewed: judged, ...(note ? { note } : {}) };
     return { ok: false, emails: bad };
+  }
+
+  // The designed email (header + body + signature + opt-out) and its plain-text twin. Follow-ups/replies: no header.
+  render(m) {
+    const brand = { ...DEFAULT_BRAND, ...(this.settings.get('outreach_brand', null) ?? {}) };
+    return renderEmail({ body: m.body, signature: String(this.settings.get('outreach_signature', '') ?? '').trim(), optOut: m.opt_out === false ? '' : this.optOutLine(), brand, header: !m.follow_up });
+  }
+  // Friday sometimes signs off itself ("Best,\nAtharv ..."); the template adds the real signature, so drop hers.
+  stripSignoff(body) {
+    const brand = { ...DEFAULT_BRAND, ...(this.settings.get('outreach_brand', null) ?? {}) };
+    const first = brand.name.toLowerCase().split(' ')[0];
+    const lines = body.split('\n');
+    // Cut only a trailing block that STARTS with a sign-off word or the sender's name, and whose lines are all short.
+    for (let k = Math.max(0, lines.length - 7); k < lines.length; k++) {
+      const t = lines[k].trim().replace(/^[—–-]+\s*/, '');
+      const starts = /^(best|regards|best regards|kind regards|warm regards|thanks|thank you|cheers|sincerely)[,!.]?$/i.test(t) || t.toLowerCase().startsWith(first);
+      if (starts && lines.slice(k).every((l) => l.trim().length <= 70)) return lines.slice(0, k).join('\n').trim();
+    }
+    return body;
+  }
+
+  proof() { return /## Proof[^\n]*\n([\s\S]*?)(\n## |$)/.exec(String(this.settings.get('business_profile', null)?.text ?? ''))?.[1]?.trim() ?? 'No proof listed.'; }
+
+  // Any email from the outreach inbox that is not an outreach_send batch (a test to the user, a reply, a forward):
+  // the same house-style lint and JEV proof/positioning review, so nothing leaves that inbox unchecked.
+  async reviewMessage({ to, subject = null, body, reply = false }) {
+    const lead = addrs(to).map((a) => this.byEmail(a)).find(Boolean) ?? null;
+    const m = { to: lower(to), lead_id: lead?.id ?? null, subject, follow_up: reply, body: this.stripSignoff(String(body ?? '').trim()) };
+    const fix = this.lint(m);
+    if (this.judge?.ready && this.settings.get('outreach_review', true) !== false) {
+      try { const v = await this.judge.reviewMessage({ subject: subject ?? '', body: m.body, proof: this.proof(), firstTouch: !reply }); fix.push(...v.problems.map((p) => p.why)); } catch { /* JEV down: lint only */ }
+    }
+    return fix.length ? { ok: false, fix } : { ok: true };
   }
 
   summarize(emails) {
@@ -260,7 +298,8 @@ export class Pipeline {
       if (results.some((r) => r.sent)) await this.sleep(spacingMs[0] + Math.floor(Math.random() * (spacingMs[1] - spacingMs[0])));
       try {
         const lead = this.get(m.lead_id);
-        const r = m.follow_up ? await this.gmail.reply({ message_id: lead.last_message_id, to: m.to, body: m.body }) : await this.gmail.send({ to: m.to, subject: m.subject, body: m.body });
+        const { text, html } = this.render(m);
+        const r = m.follow_up ? await this.gmail.reply({ message_id: lead.last_message_id, to: m.to, body: text, html }) : await this.gmail.send({ to: m.to, subject: m.subject, body: text, html });
         if (r?.error) { results.push({ to: m.to, error: r.error }); continue; }
         this.recordSend({ to: m.to, subject: m.subject ?? '(follow-up)', message_id: r.id, thread_id: r.thread_id, leadId: m.lead_id });
         results.push({ to: m.to, sent: true, thread_id: r.thread_id });

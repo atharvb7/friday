@@ -150,13 +150,18 @@ export class Gmail {
   }
 
   // RFC 2822 message with optional chat-file attachments.
-  async #mime({ to, cc, bcc, subject, body, attachments = [], inReplyTo = null, references = null }) {
+  async #mime({ to, cc, bcc, subject, body, html = null, attachments = [], inReplyTo = null, references = null }) {
     const boundary = `friday_${randomBytes(12).toString('hex')}`;
+    const b64 = (s) => Buffer.from(String(s ?? ''), 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n');
+    // With html: multipart/alternative (plain text first, then HTML), so every client gets a readable version.
+    const altBoundary = `friday_alt_${randomBytes(8).toString('hex')}`;
+    const alternative = html ? [`Content-Type: multipart/alternative; boundary="${altBoundary}"`, '', `--${altBoundary}`, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64(body),
+      `--${altBoundary}`, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64(html), `--${altBoundary}--`] : null;
     const head = [`To: ${cleanAddr(to)}`, cc ? `Cc: ${cleanAddr(cc)}` : null, bcc ? `Bcc: ${cleanAddr(bcc)}` : null, `Subject: ${encodeHeader(cleanAddr(subject))}`, 'MIME-Version: 1.0',
       inReplyTo ? `In-Reply-To: ${inReplyTo}` : null, references ? `References: ${references}` : null].filter(Boolean);
     const text = Buffer.from(String(body ?? ''), 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n');
-    if (!attachments.length) return [...head, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', text].join('\r\n');
-    const parts = [`--${boundary}`, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', text];
+    if (!attachments.length) return alternative ? [...head, ...alternative].join('\r\n') : [...head, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', text].join('\r\n');
+    const parts = alternative ? [`--${boundary}`, ...alternative] : [`--${boundary}`, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', text];
     let total = 0;
     for (const fid of attachments) {
       const f = this.files?.resolve(fid); if (!f) throw new Error(`attachment not found: ${fid}`);
@@ -167,9 +172,9 @@ export class Gmail {
     return [...head, `Content-Type: multipart/mixed; boundary="${boundary}"`, '', ...parts].join('\r\n');
   }
 
-  async send({ to, cc = null, bcc = null, subject, body, attachments = [] }) {
+  async send({ to, cc = null, bcc = null, subject, body, html = null, attachments = [] }) {
     if (!to || !subject || !body) return { error: 'to, subject and body are required' };
-    const raw = b64url(await this.#mime({ to, cc, bcc, subject, body, attachments }));
+    const raw = b64url(await this.#mime({ to, cc, bcc, subject, body, html, attachments }));
     const r = await this.google.api('POST', `${GMAIL}/messages/send`, { raw });
     return { sent: true, id: r.id, thread_id: r.threadId };
   }
@@ -181,10 +186,10 @@ export class Gmail {
     return { threadId: m.threadId, inReplyTo: mid, references: [header(h, 'References'), mid].filter(Boolean).join(' '), subject: /^re:/i.test(subj) ? subj : `Re: ${subj}`, replyTo: header(h, 'Reply-To') ?? header(h, 'From') };
   }
 
-  async reply({ message_id, body, to = null, cc = null, attachments = [] }) {
+  async reply({ message_id, body, html = null, to = null, cc = null, attachments = [] }) {
     if (!message_id || !body) return { error: 'message_id and body are required' };
     const rh = await this.#replyHeaders(message_id);
-    const raw = b64url(await this.#mime({ to: to ?? rh.replyTo, cc, subject: rh.subject, body, attachments, inReplyTo: rh.inReplyTo, references: rh.references }));
+    const raw = b64url(await this.#mime({ to: to ?? rh.replyTo, cc, subject: rh.subject, body, html, attachments, inReplyTo: rh.inReplyTo, references: rh.references }));
     const r = await this.google.api('POST', `${GMAIL}/messages/send`, { raw, threadId: rh.threadId });
     return { sent: true, id: r.id, thread_id: r.threadId };
   }

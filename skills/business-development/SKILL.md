@@ -51,8 +51,9 @@ FIRST read the **Messaging** section of the business profile: its positioning, r
 everything below and any generic advice in `cold-email`. Follow its template for the offer you are pitching, one offer
 per email, and copy the signature exactly. Then load `cold-email` for craft (frameworks, personalization).
 House rules on top of it:
-- Length and format as the profile's Messaging section says (default 90-150 words), plain text, no bullet lists,
-  no links in the first touch, no attachments, no images.
+- Length and format exactly as the profile's Messaging section says: light text with one **bold** positioning line,
+  at most two `### ` headings and 3-4 `- ` bullets; no links, no attachments, no images, and no sign-off or signature
+  (the designed header, signature and opt-out are added automatically).
 - Subject 2-4 words, lowercase, looks internal. No fake "Re:".
 - Line 1 = the specific observation. Then the cost of that problem. Then one proof line from the profile. Then a
   low-friction interest ask ("worth a look?", "want me to send the 3 ideas?"). Signature from the profile.

@@ -363,16 +363,28 @@ export function buildFridayTools(ctx) {
       category: (a) => (a?.op === 'trash' ? 'deletion' : 'messaging'), riskClass: () => 'consequential',
       description: 'Send mail from the user\'s Gmail — needs approval. op send (to, subject, body, cc, bcc, attachments = chat file ids), reply (message_id, body; goes to the sender, stays in the thread), forward (message_id, to, note), send_draft (draft_id), trash (message_id or thread_id; recoverable 30 days). Write as him, only what he asked for; never invent facts, promises or commitments. Permanent deletion is impossible.',
       parameters: obj({ account: { type: 'string', enum: ['personal', 'outreach'], description: 'which inbox (default personal; outreach = the cold-outreach address and its replies)' }, op: { type: 'string', enum: ['send', 'reply', 'forward', 'send_draft', 'trash'] }, to: { type: 'string' }, cc: { type: 'string' }, bcc: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' },
-        attachments: { type: 'array', items: { type: 'string' } }, message_id: { type: 'string' }, thread_id: { type: 'string' }, draft_id: { type: 'string' }, note: { type: 'string' } }, ['op']),
+        attachments: { type: 'array', items: { type: 'string' } }, message_id: { type: 'string' }, thread_id: { type: 'string' }, draft_id: { type: 'string' }, note: { type: 'string' },
+        skip_review: { type: 'boolean', description: 'outreach inbox only: ONLY when the user explicitly told you to send despite the quality review' } }, ['op']),
       summarize: (a) => {
         const files = (a.attachments ?? []).map((id) => ctx.files.resolve(id)?.name ?? id).join(', ');
         if (a.op === 'trash') return `Move to Gmail trash${a.account === 'outreach' ? ' (outreach inbox)' : ''}: ${a.thread_id ? `thread ${a.thread_id}` : `message ${a.message_id}`}`;
         if (a.op === 'send_draft') return `Send Gmail draft ${a.draft_id}${a.account === 'outreach' ? ' (outreach inbox)' : ''}`;
         return `${a.account === 'outreach' ? '[outreach inbox] ' : ''}Email ${a.op}${a.to ? ` to ${clip(a.to, 160)}` : a.message_id ? ` (reply in thread of ${a.message_id})` : ''}${a.cc ? ` cc ${clip(a.cc, 100)}` : ''}${a.subject ? ` — “${clip(a.subject, 160)}”` : ''}${files ? ` 📎 ${clip(files, 200)}` : ''}\n${clip(a.body ?? a.note ?? '', 1500)}`;
       },
+      // Mail from the outreach inbox gets the same quality gate as outreach_send (tests to the user included).
+      validate: async (a) => {
+        if (a?.account !== 'outreach' || !['send', 'reply'].includes(a.op) || !ctx.pipeline || a.skip_review === true) return null;
+        const r = await ctx.pipeline.reviewMessage({ to: a.to ?? '', subject: a.subject ?? null, body: a.body ?? '', reply: a.op === 'reply' });
+        return r.ok ? null : { error: 'email_needs_work', note: 'Nothing was staged. Rewrite the email to fix every point, then call email_send again.', fix: r.fix };
+      },
       run: async (a) => {
         const blocked = ['send', 'forward'].includes(a.op) ? ctx.pipeline?.blockedRecipients(a.to, a.cc, a.bcc) ?? [] : [];
         if (blocked.length) return { error: `do_not_contact: ${blocked.join(', ')} asked not to be contacted; nothing was sent` };
+        // Outreach inbox: the designed template (header, signature, opt-out on first touches) for new mail and replies.
+        if (a.account === 'outreach' && ['send', 'reply'].includes(a.op) && ctx.pipeline && a.body) {
+          const r = ctx.pipeline.render({ body: ctx.pipeline.stripSignoff(String(a.body).trim()), follow_up: a.op === 'reply', opt_out: a.op === 'send' });
+          a = { ...a, body: r.text, html: r.html };
+        }
         const out = await ({ send: () => mail(a).send(a), reply: () => mail(a).reply(a), forward: () => mail(a).forward(a), send_draft: () => mail(a).sendDraft(a), trash: () => mail(a).trash(a) }[a.op] ?? (() => ({ error: 'unknown op' })))();
         if (out?.sent && a.op === 'send') { try { ctx.pipeline?.recordSend({ to: a.to, subject: a.subject, message_id: out.id, thread_id: out.thread_id }); } catch {} }
         return out;

@@ -213,7 +213,7 @@ test('pipeline: stages come from real events; house-style lint runs on every bat
     const sig = s.settings.get('outreach_signature');
     const bad = await s.p.review([{ lead_id: l.id, subject: 'Crest — automating tenant and vendor coordination across two cities', body: 'Hi Operations Head,\n\nI\'m reaching out because your team is drowning in tickets. We triage → assign → close. Worth a 15-min call?\n\nAtharv' }]);
     const fix = bad.emails[0].fix.join(' | ');
-    for (const re of [/arrow chains/, /dashes/, /banned phrases: "i'm reaching out", "reaching out because", "drowning"/, /is a role, not a name/, /subject too long/, /not a call/, /exact signature/]) assert.match(fix, re);
+    for (const re of [/arrow chains/, /dashes/, /banned phrases: "i'm reaching out", "reaching out because", "drowning"/, /is a role, not a name/, /subject too long/, /not a call/]) assert.match(fix, re);
     const fab = await s.p.review([{ lead_id: l.id, subject: 'maintenance at crest', body: `Hi Crest team,\n\nNoticed tenants can only raise requests by phone.\n\nI recently helped a property group cut maintenance turnaround from 3 days to 4 hours.\n\nWant the one-page plan?\n\n${sig}` }]);
     assert.match(fab.emails[0].fix.join(' '), /claims a past result \("I recently helped a property group cut maintenance turnaround from 3/);
     const noEvidence = s.p.save({ company: 'Heena Tours', email: 'mail@heena.example', signal: 'travel agency, probably manual' });
@@ -222,5 +222,29 @@ test('pipeline: stages come from real events; house-style lint runs on every bat
     assert.equal(r.emails.length, 1); assert.match(r.emails[0].fix.join(' '), /no evidence link/);
     assert.deepEqual(await s.p.review([{ lead_id: l.id, subject: 'maintenance requests at crest', body: good }]), { ok: true, reviewed: false });
     assert.equal((await s.p.review([{ lead_id: noEvidence.id, subject: 'x', body: 'Hi there, a specific thing about you here.' }], { skipJudge: true })).ok, true, 'the user can override');
+  } finally { s.close(); }
+});
+
+test('email template: designed HTML + plain text, signature and opt-out added, sign-offs stripped, no images', async () => {
+  const { renderEmail, parseBody } = await import('../src/email-template.mjs');
+  const body = 'Hi Omar,\n\nNoticed **Falcon** takes quotes by email.\n\n### What I\'d build for Falcon\n- An agent that drafts every quote from your rate sheet\n- Approval before anything goes out\n\nWant the one-page architecture plan?';
+  assert.deepEqual(parseBody(body).map((b) => b.type), ['p', 'p', 'h', 'ul', 'p']);
+  const { text, html } = renderEmail({ body, signature: 'Atharv Bhosale\nAI Engineer\nlinkedin.com/in/x', optOut: 'P.S. reply no' });
+  assert.match(html, /<strong>Falcon<\/strong>/); assert.match(html, /<li[^>]*>An agent that drafts/); assert.match(html, /border-top:4px solid/);
+  assert.match(html, /href="https:\/\/linkedin.com\/in\/x"/); assert.doesNotMatch(html, /<img|<script|https?:\/\/(?!linkedin)/);
+  assert.ok(text.endsWith('P.S. reply no')); assert.match(text, /WHAT I'D BUILD FOR FALCON\n\n- An agent/); assert.doesNotMatch(text, /\*\*/);
+  assert.doesNotMatch(renderEmail({ body: '<script>x</script> hi', signature: '' }).html, /<script>x/, 'escaped');
+  assert.doesNotMatch(renderEmail({ body: 'hi', header: false }).html, /border-top:4px/, 'replies have no header');
+
+  const s = setup();
+  try {
+    s.settings.set('outreach_signature', 'Atharv Bhosale\nAI Engineer · Agentic Systems\n+91 00000 00000');
+    assert.equal(s.p.stripSignoff('Hi,\n\nWant the automation plan?\n\nBest,\nAtharv Bhosale\nAI/ML Engineer · Forward-deployed automation\nlinkedin.com/in/x'), 'Hi,\n\nWant the automation plan?');
+    assert.equal(s.p.stripSignoff('Hi,\n\nWant the automation plan?'), 'Hi,\n\nWant the automation plan?', 'a real closing line is kept');
+    const l = s.p.save({ company: 'Falcon', email: 'omar@falcon.example', signal: 'quotes by email (https://falcon.example/contact)' });
+    await s.p.send([{ lead_id: l.id, subject: 'quotes at falcon', body: `${body}\n\nBest,\nAtharv` }]);
+    assert.ok(s.sent[0].html.includes('Atharv Bhosale') && s.sent[0].html.includes('AI Engineer'), 'signature from settings');
+    assert.equal((s.sent[0].body.match(/Atharv/g) ?? []).length, 1, 'her own sign-off was replaced by the real signature');
+    assert.ok(s.sent[0].body.endsWith(DEFAULT_OPT_OUT));
   } finally { s.close(); }
 });
