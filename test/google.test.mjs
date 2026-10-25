@@ -33,8 +33,11 @@ function rig() {
   let now = 1_000_000;
   const store = new Store(join(dir, 'db.sqlite'));
   const files = new Files({ store, dir: join(dir, 'files') });
-  const g = new GoogleAuth({ clientId: 'cid', clientSecret: 'csec', publicUrl: 'https://friday.example.ts.net:4317/', dataDir: dir, fetchImpl, now: () => now });
-  return { dir, g, gmail: new Gmail({ google: g, files }), files, calls, fail: (e) => { tokenFail = e; }, advance: (ms) => { now += ms; }, refreshes: () => refreshes, done: () => { store.close(); rmSync(dir, { recursive: true, force: true }); } };
+  const reauth = [];
+  const opts = { clientId: 'cid', clientSecret: 'csec', publicUrl: 'https://friday.example.ts.net:4317/', dataDir: dir, fetchImpl, now: () => now, onReauth: (x) => reauth.push(x) };
+  const g = new GoogleAuth(opts);
+  const out = new GoogleAuth({ ...opts, account: 'outreach' });
+  return { dir, g, out, reauth, gmail: new Gmail({ google: g, files }), files, calls, fail: (e) => { tokenFail = e; }, advance: (ms) => { now += ms; }, refreshes: () => refreshes, done: () => { store.close(); rmSync(dir, { recursive: true, force: true }); } };
 }
 
 test('google oauth: PKCE auth url, single-use state, refresh token stored 0600 and never returned, refresh + revoke handling', async () => {
@@ -85,5 +88,23 @@ test('gmail: search/open parse headers, body and attachments; send builds MIME w
     assert.deepEqual(r.calls.at(-1).body, { ids: ['m1'], addLabelIds: [], removeLabelIds: ['UNREAD'] });
     const at = await r.gmail.attachment({ message_id: 'm1', attachment_id: 'att1', name: 'offer.pdf' });
     assert.equal(at.file.name, 'offer.pdf'); assert.equal(r.files.read(at._attach[0]).toString(), '%PDF-1.4 fake');
+  } finally { r.done(); }
+});
+
+test('google: a second (outreach) account has its own token file and state; reauth is reported, not silent', async () => {
+  const r = rig();
+  try {
+    const mainState = new URL(r.g.authUrl()).searchParams.get('state');
+    const outState = new URL(r.out.authUrl()).searchParams.get('state');
+    assert.ok(r.out.ownsState(outState)); assert.ok(!r.out.ownsState(mainState)); assert.ok(r.g.ownsState(mainState));
+    assert.equal(new URL(r.out.authUrl()).searchParams.get('redirect_uri'), 'https://friday.example.ts.net:4317/oauth/google/callback', 'one redirect URI for both');
+    await r.out.callback({ code: 'c', state: outState });
+    assert.ok(existsSync(join(r.dir, 'secrets', 'google-outreach.json')));
+    assert.equal(existsSync(join(r.dir, 'secrets', 'google.json')), false, 'personal slot untouched');
+    assert.equal(r.out.status().account, 'outreach'); assert.equal(r.out.status().connected, true); assert.equal(r.g.status().connected, false);
+    assert.throws(() => new GoogleAuth({ dataDir: r.dir, account: '../x' }), /bad google account/);
+    r.advance(2 * 3600_000); r.fail('invalid_grant');
+    await assert.rejects(() => r.out.accessToken(), /google_reauth_needed/);
+    assert.deepEqual(r.reauth, [{ account: 'outreach', email: 'atharv@gmail.com' }]);
   } finally { r.done(); }
 });

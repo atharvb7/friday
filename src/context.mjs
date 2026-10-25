@@ -227,8 +227,14 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.profile = new Profile({ settings });
   ctx.composio = new Composio({ apiKey: env.COMPOSIO_API_KEY, settings });
   ctx.files = new Files({ store, dir: resolve(dataDir, 'files'), bus });
-  ctx.google = new GoogleAuth({ clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, publicUrl: env.FRIDAY_PUBLIC_URL, dataDir });
-  ctx.gmail = new Gmail({ google: ctx.google, files: ctx.files });
+  { // Gmail: 'main' = the owner's personal inbox, 'outreach' = the address that sends cold outreach and gets the replies.
+    const onReauth = ({ account, email }) => ctx.notifications?.create({ level: 'warning', title: `Gmail (${account === 'main' ? 'personal' : account}) disconnected`, body: `Google stopped accepting Friday's access${email ? ` to ${email}` : ''} (expired or revoked). Connect it again in Settings → Connected apps.` });
+    const g = { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, publicUrl: env.FRIDAY_PUBLIC_URL, dataDir, onReauth };
+    ctx.google = new GoogleAuth(g);
+    ctx.googleOutreach = new GoogleAuth({ ...g, account: 'outreach' });
+    ctx.gmail = new Gmail({ google: ctx.google, files: ctx.files });
+    ctx.gmailOutreach = new Gmail({ google: ctx.googleOutreach, files: ctx.files });
+  }
   ctx.deployer = new Deployer({ url: env.FRIDAY_DEPLOYER_URL, secret: env.FRIDAY_DEPLOYER_SECRET });
   ctx.login = new OwnerLogin({ settings, google: ctx.google, publicUrl: env.FRIDAY_SITE_URL });
   ctx.documents = new Documents({ files: ctx.files, appRoot, python: env.FRIDAY_DOCS_PYTHON ?? 'python3' });
@@ -254,7 +260,7 @@ export function createContext({ appRoot, env = process.env }) {
   kindRouter.byKind.team = new TeamOrchestrator({ store, router: kindRouter, ai });
   ctx.rules.proactive = ctx.proactive;
   ctx.proactive.mood = ctx.mood;
-  ctx.pipeline = new Pipeline({ store, settings, gmail: ctx.gmail, notifications: ctx.notifications, bus });
+  ctx.pipeline = new Pipeline({ store, settings, gmail: ctx.gmailOutreach, notifications: ctx.notifications, bus });
   ctx.fridayTools = buildFridayTools(ctx);
   { // gated tools get their approved-execution path registered automatically
     const register = ctx.fridayTools.register;

@@ -7,9 +7,11 @@ export function agentRoutes(router, ctx) {
   router.post('/v1/learned/settings', async ({ body }) => { const b = await body(); if (typeof b.enabled !== 'boolean') return [400, { error: 'enabled must be boolean' }]; settings.set('auto_learn', b.enabled); return [200, { enabled: b.enabled }]; });
   router.get('/v1/apps', async () => [200, await ctx.composio.status()]);
   router.post('/v1/apps/:app([a-z]+)/connect', async ({ params }) => { try { return [200, await ctx.composio.connectLink(params.app)]; } catch (e) { return [400, { error: e.message }]; } });
-  router.get('/v1/google', () => [200, ctx.google.status()]);
-  router.post('/v1/google/connect', () => { try { return [200, { url: ctx.google.authUrl() }]; } catch (e) { return [400, { error: e.message }]; } });
-  router.post('/v1/google/disconnect', async () => [200, { disconnected: await ctx.google.disconnect() }]);
+  const gAcct = (a) => (a === 'outreach' ? ctx.googleOutreach : ctx.google);
+  router.get('/v1/google', ({ url }) => [200, { ...gAcct(url.searchParams.get('account')).status(), accounts: [ctx.google.status(), ctx.googleOutreach.status()] }]);
+  const acctOf = async (body) => { try { return (await body())?.account ?? null; } catch { return null; } };
+  router.post('/v1/google/connect', async ({ body }) => { try { return [200, { url: gAcct(await acctOf(body)).authUrl() }]; } catch (e) { return [400, { error: e.message }]; } });
+  router.post('/v1/google/disconnect', async ({ body }) => [200, { disconnected: await gAcct(await acctOf(body)).disconnect() }]);
   router.get('/v1/watches', ({ url }) => [200, { watches: watches.list(url.searchParams.get('status') ?? 'active') }]);
   router.delete('/v1/watches/:id([a-f0-9-]+)', ({ params }) => { const ok = watches.cancel(params.id); return [ok ? 200 : 404, { cancelled: ok }]; });
 }

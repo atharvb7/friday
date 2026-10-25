@@ -120,7 +120,8 @@ test('business tools: email_send refuses do-not-contact and logs touches; outrea
     const sends = [];
     const ctx = { memory: {}, store: s.store, tools: null, indexer: null, jobs: {}, proactive: {}, settings: s.settings, researchMemory: null, nodes: null, pipeline: s.p,
       skills: new Skills({ roots: [new URL('../skills', import.meta.url).pathname] }), files: { resolve: () => null },
-      gmail: { async send(a) { sends.push(a); return { sent: true, id: 'g1', thread_id: 'gt1' }; } } };
+      gmail: { async send(a) { sends.push(a); return { sent: true, id: 'g1', thread_id: 'gt1' }; }, async search() { return { from: 'personal' }; } },
+      gmailOutreach: { async search() { return { from: 'outreach' }; } } };
     const tools = buildFridayTools(ctx);
     assert.equal(tools.get('outreach_send').risk, 'gated');
     for (const n of ['business_profile', 'lead_save', 'lead_find', 'lead_update', 'do_not_contact']) assert.equal(tools.get(n).risk, 'safe', n);
@@ -132,6 +133,9 @@ test('business tools: email_send refuses do-not-contact and logs touches; outrea
     await tools.get('email_send').run({ op: 'send', to: 'cto@delta.dev', subject: 'hello', body: 'b' });
     assert.equal(s.p.byEmail('cto@delta.dev').touches, 1);
 
+    assert.equal((await tools.get('email_search').run({})).from, 'personal');
+    assert.equal((await tools.get('email_search').run({ account: 'outreach' })).from, 'outreach');
+    assert.match(tools.get('email_send').summarize({ op: 'reply', account: 'outreach', message_id: 'm', body: 'hi' }), /^\[outreach inbox\]/);
     assert.match(tools.get('business_profile').run({ op: 'get' }).note, /No business profile/);
     tools.get('business_profile').run({ op: 'set', text: '# Us\nWe build AI voice agents and automations.' });
     assert.match(tools.get('business_profile').run({ op: 'get' }).profile, /voice agents/);

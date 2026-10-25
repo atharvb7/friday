@@ -48,11 +48,13 @@ export function render({ app, api, toast, go }) {
       h('span', { class: 'grow' }, `👀 ${w.title} `, h('span', { class: 'chip' }, `${w.kind} · every ${w.every_min}m`), w.last_note ? h('span', { class: 'faint small' }, ` ${w.last_note}`) : null),
       h('button', { class: 'btn', onclick: async () => { await api(`/v1/watches/${w.id}`, { method: 'DELETE' }); toast('Stopped watching.'); build(); } }, 'Stop'))) : h('p', { class: 'muted' }, 'Not watching anything. Ask me e.g. “keep an eye on WhatsApp for Salex Now and confirm the booking when it comes”.'));
     const apps = await api('/v1/apps').catch(() => ({ configured: false, apps: [] }));
-    const g = await api('/v1/google').catch(() => ({ configured: false }));
-    const gmailRow = h('div', { class: 'row wrap' },
-      h('strong', { class: 'grow' }, 'Gmail ', h('span', { class: `chip ${g.connected ? 'good' : 'warn'}` }, g.connected ? `connected${g.email ? ` · ${g.email}` : ''}` : g.configured ? 'not connected' : 'Google credentials not set on the server')),
-      g.configured && !g.connected ? h('button', { class: 'btn primary', onclick: async () => { try { const r = await api('/v1/google/connect', { method: 'POST' }); window.open(r.url, '_blank', 'noopener'); toast('Sign in with Google in the new tab, then come back.'); } catch (e) { toast(e.message); } } }, 'Connect') : null,
-      g.connected ? h('button', { class: 'btn', onclick: async () => { if (!confirm('Disconnect Gmail from Friday?')) return; await api('/v1/google/disconnect', { method: 'POST' }); toast('Gmail disconnected.'); build(); } }, 'Disconnect') : null);
+    const gs = await api('/v1/google').catch(() => ({ configured: false }));
+    const gRow = (g, label, hint) => h('div', { class: 'row wrap' },
+      h('strong', { class: 'grow' }, `${label} `, h('span', { class: `chip ${g.connected ? 'good' : 'warn'}` }, g.connected ? `connected${g.email ? ` · ${g.email}` : ''}` : g.configured ? 'not connected' : 'Google credentials not set on the server'), h('span', { class: 'faint small' }, ` ${hint}`)),
+      g.configured && !g.connected ? h('button', { class: 'btn primary', onclick: async () => { try { const r = await api('/v1/google/connect', { method: 'POST', body: { account: g.account } }); window.open(r.url, '_blank', 'noopener'); toast('Sign in with Google in the new tab (pick the right account), then come back.'); } catch (e) { toast(e.message); } } }, 'Connect') : null,
+      g.connected ? h('button', { class: 'btn', onclick: async () => { if (!confirm(`Disconnect ${label} from Friday?`)) return; await api('/v1/google/disconnect', { method: 'POST', body: { account: g.account } }); toast(`${label} disconnected.`); build(); } }, 'Disconnect') : null);
+    const [gMain, gOut] = gs.accounts ?? [{ ...gs, account: 'main' }, { configured: gs.configured, account: 'outreach' }];
+    const gmailRow = h('div', { class: 'stack' }, gRow(gMain, 'Gmail (personal)', 'your inbox'), gRow(gOut, 'Gmail (outreach)', 'sends cold emails, watched for replies'));
     section('Connected apps', gmailRow, !apps.configured ? h('p', { class: 'muted' }, 'Composio is not set up on the server yet (COMPOSIO_API_KEY).') : apps.error ? h('p', { class: 'muted' }, apps.error) :
       h('div', { class: 'stack' }, ...apps.apps.map((a) => h('div', { class: 'row wrap' },
         h('strong', { class: 'grow' }, a.label, ' ', h('span', { class: `chip ${a.connected ? 'good' : 'warn'}` }, a.connected ? 'connected' : a.pending ? 'waiting for login' : 'not connected')),

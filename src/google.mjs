@@ -1,6 +1,7 @@
 // Direct Gmail via the user's own Google Cloud OAuth client (free; no Composio). Friday runs the OAuth web flow
 // itself: /oauth/google/callback on its tailnet HTTPS address. The refresh token lives in <data>/secrets/google.json
-// (0600) and never reaches the model, the UI or logs. Scope: gmail.modify — read, label, draft, send, trash;
+// (0600) and never reaches the model, the UI or logs. A second account ('outreach', <data>/secrets/google-outreach.json)
+// sends cold outreach and is watched for replies, so the personal inbox stays separate. Scope: gmail.modify — read, label, draft, send, trash;
 // it cannot permanently delete mail.
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -12,10 +13,11 @@ const b64url = (buf) => Buffer.from(buf).toString('base64').replace(/\+/g, '-').
 const fromB64url = (s) => Buffer.from(String(s ?? '').replace(/-/g, '+').replace(/_/g, '/'), 'base64');
 
 export class GoogleAuth {
-  constructor({ clientId, clientSecret, publicUrl, dataDir, fetchImpl = globalThis.fetch, now = () => Date.now() }) {
-    Object.assign(this, { clientId: clientId ?? '', clientSecret: clientSecret ?? '', fetchImpl, now });
+  constructor({ clientId, clientSecret, publicUrl, dataDir, account = 'main', onReauth = null, fetchImpl = globalThis.fetch, now = () => Date.now() }) {
+    if (!/^[a-z]{2,20}$/.test(account)) throw new TypeError('bad google account name');
+    Object.assign(this, { clientId: clientId ?? '', clientSecret: clientSecret ?? '', account, onReauth, fetchImpl, now });
     this.redirectUri = publicUrl ? `${String(publicUrl).replace(/\/+$/, '')}/oauth/google/callback` : '';
-    this.file = join(dataDir, 'secrets', 'google.json');
+    this.file = join(dataDir, 'secrets', account === 'main' ? 'google.json' : `google-${account}.json`);
     this.pending = new Map(); // state -> { verifier, expires }
     this.cache = null; // { access_token, expires_at }
   }
@@ -23,7 +25,9 @@ export class GoogleAuth {
   #read() { try { return JSON.parse(readFileSync(this.file, 'utf8')); } catch { return null; } }
   #write(obj) { mkdirSync(join(this.file, '..'), { recursive: true, mode: 0o700 }); writeFileSync(this.file, JSON.stringify(obj), { mode: 0o600 }); try { chmodSync(this.file, 0o600); } catch { /* best effort */ } }
   get connected() { return Boolean(this.#read()?.refresh_token); }
-  status() { const s = this.#read(); return { configured: this.configured, connected: Boolean(s?.refresh_token), email: s?.email ?? null, redirectUri: this.redirectUri || null }; }
+  status() { const s = this.#read(); return { account: this.account, configured: this.configured, connected: Boolean(s?.refresh_token), email: s?.email ?? null, redirectUri: this.redirectUri || null }; }
+  // All accounts share one redirect URI; the server hands the callback to the account that minted the state.
+  ownsState(state) { const p = this.pending.get(String(state ?? '')); return Boolean(p && p.expires >= this.now()); }
 
   authUrl() {
     if (!this.configured) throw new Error('google_not_configured: set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and FRIDAY_PUBLIC_URL in the server .env');
@@ -51,7 +55,12 @@ export class GoogleAuth {
     const r = await this.fetchImpl('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: this.clientId, client_secret: this.clientSecret, ...params }), signal: AbortSignal.timeout(20_000) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
-      if (j.error === 'invalid_grant') { rmSync(this.file, { force: true }); this.cache = null; throw new Error('google_reauth_needed: the Google connection expired or was revoked — connect Gmail again in Settings'); }
+      if (j.error === 'invalid_grant') {
+        const email = this.#read()?.email ?? null;
+        rmSync(this.file, { force: true }); this.cache = null;
+        try { this.onReauth?.({ account: this.account, email }); } catch { /* never mask the error */ }
+        throw new Error('google_reauth_needed: the Google connection expired or was revoked — connect Gmail again in Settings');
+      }
       throw new Error(`google_token_${r.status}: ${String(j.error_description ?? j.error ?? '').slice(0, 160)}`);
     }
     return j;

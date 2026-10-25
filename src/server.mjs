@@ -193,8 +193,9 @@ const handler = async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/oauth/google/callback') { // browser redirect from Google: protected by the single-use state
     const page = (title, msg) => { const b = `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width"><title>${title}</title><body style="font-family:system-ui;max-width:520px;margin:15vh auto;padding:0 16px;text-align:center"><h2>${title}</h2><p>${msg}</p><p><a href="/">Back to Friday</a></p>`; res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'", 'Referrer-Policy': 'no-referrer' }); res.end(b); };
     const esc = (s) => String(s).replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
-    ctx.google.callback({ code: url.searchParams.get('code'), state: url.searchParams.get('state'), error: url.searchParams.get('error') })
-      .then((r) => { ctx.bus.publish('google.connected', {}); page('Gmail connected ✅', `Friday can now use ${esc(r.email ?? 'your Gmail')}. You can close this tab.`); })
+    const g = [ctx.googleOutreach, ctx.google].find((x) => x?.ownsState(url.searchParams.get('state'))) ?? ctx.google;
+    g.callback({ code: url.searchParams.get('code'), state: url.searchParams.get('state'), error: url.searchParams.get('error') })
+      .then((r) => { ctx.bus.publish('google.connected', { account: g.account }); page('Gmail connected ✅', `Friday can now use ${esc(r.email ?? 'your Gmail')}${g.account === 'outreach' ? ' for outreach' : ''}. You can close this tab.`); })
       .catch((e) => page('Gmail not connected', esc(e.message)));
     return;
   }

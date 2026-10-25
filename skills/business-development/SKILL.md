@@ -27,8 +27,8 @@ costs more than ten meetings earn.
 
 `business_profile` (read FIRST, every time) · `lead_save` / `lead_find` / `lead_update` / `do_not_contact` (your CRM) ·
 `web_search` / `web_fetch` (quick research) · `research_start` (big prospecting runs in the background) ·
-`outreach_send` (send a batch for ONE approval) · `email_search` / `email_open` (replies) · `email_send` op reply (answer
-a reply, approval) · `reminder_create` · `document_create` (proposals, one-pagers) · `skill_load`.
+`outreach_send` (send a batch for ONE approval, from the outreach Gmail) · `email_search` / `email_open` with
+`account: "outreach"` (replies) · `email_send` op reply with `account: "outreach"` (answer a reply, approval) · `reminder_create` · `document_create` (proposals, one-pagers) · `skill_load`.
 
 ## Step 0 - Business profile
 
@@ -90,10 +90,11 @@ nudges the user once a day. On "do my follow-ups": `lead_find due=true`, write e
 
 The pipeline watches Gmail: unsubscribes go to do-not-contact automatically, out-of-office pauses the sequence, bounces close
 the lead, and any other reply moves the lead to `replied`, stops its follow-ups and notifies the user.
-When asked to handle a reply: `email_open` the thread, classify it (positive / question / objection / not now /
+When asked to handle a reply: `email_open` the thread with `account: "outreach"` (all outreach and its replies live in
+the outreach inbox; never answer a lead from the personal inbox), classify it (positive / question / objection / not now /
 referral), and draft the answer (load `handle-objection` for pushback; `cold-email` reference reply-handling.md).
 Positive: propose two concrete times in their time zone + the booking link. Not now: thank them, `lead_update`
-stage nurture with next_at on the date they gave. Send only through `email_send` op reply (approval). Log the outcome
+stage nurture with next_at on the date they gave. Send only through `email_send` op reply with `account: "outreach"` (approval). Log the outcome
 with `lead_update`.
 
 ## Step 8 - Calls, proposals, close

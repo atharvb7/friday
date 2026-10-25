@@ -183,7 +183,7 @@ export class Pipeline {
   }
 
   async send(emails, { spacingMs = [8_000, 20_000] } = {}) {
-    if (!this.gmail?.ready) return { error: 'gmail_not_connected: connect Gmail in Settings → Connected apps' };
+    if (!this.gmail?.ready) return { error: 'outreach_gmail_not_connected: connect Gmail (outreach) in Settings → Connected apps; nothing was sent' };
     const list = this.prepare(emails);
     const results = [];
     for (const m of list) {
@@ -263,7 +263,7 @@ export class Pipeline {
     this.db.prepare("UPDATE leads SET stage='replied', next_at=NULL, next_action='answer their reply', updated_at=? WHERE id=?").run(this.#iso(), lead.id);
     this.#event(lead.id, 'reply', clean(m.snippet, 500));
     this.bus?.publish('lead.replied', { id: lead.id });
-    this.notifications?.create({ level: 'warning', title: `💬 ${who} replied`, body: `“${clean(m.snippet, 300)}”\nFollow-ups stopped. Ask me to draft the answer (lead ${lead.id.slice(0, 8)}, message ${m.id}).` });
+    this.notifications?.create({ level: 'warning', title: `💬 ${who} replied`, body: `“${clean(m.snippet, 300)}”\nFollow-ups stopped. Ask me to draft the answer (outreach inbox, lead ${lead.id.slice(0, 8)}, message ${m.id}).` });
   }
 
   async #checkBounces() {
