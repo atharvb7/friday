@@ -155,6 +155,8 @@ test('sales judge: outreach review gates the batch before approval; replies are 
   assert.deepEqual(judgeOutreach({ sells_software: { noul: 0.1 }, gap_specific: { score: 2.8 }, offer_fits_gap: { noul: 0.9 }, opener_specific: { noul: 0.9 }, lists_services: { noul: 0.1 }, mentions_price: { noul: 0.05 }, mixes_offers: { noul: 0.1 }, asks_one_easy_thing: { noul: 0.9 } }), { ok: true, problems: [] });
   const bad = judgeOutreach({ sells_software: { noul: 0.95 }, gap_specific: { score: 0.4 }, offer_fits_gap: { noul: 0.5 }, opener_specific: { noul: 0.5 }, lists_services: { noul: 0.5 } });
   assert.equal(bad.ok, false); assert.equal(bad.problems.filter((p) => p.block).length, 2, 'unsettled answers (0.5) do not block');
+  assert.match(judgeOutreach({ fabricated_proof: { noul: 0.95 } }).problems.map((p) => p.why).join(' '), /not in your Proof list/);
+  assert.equal(judgeOutreach({ fabricated_proof: { noul: 0.5 } }).problems.length, 0, 'unsettled is not flagged');
   assert.equal(judgeReply({ asks_to_stop: { noul: 0.9 }, category: { choice: 'objection' } }).action, 'stop');
   assert.equal(judgeReply({ asks_to_stop: { noul: 0.1 }, out_of_office: { noul: 0.95 } }).action, 'pause');
   assert.deepEqual(judgeReply({ asks_to_stop: { noul: 0.05 }, out_of_office: { noul: 0.02 }, wants_meeting: { noul: 0.9 }, category: { choice: 'positive' } }), { action: 'human', category: 'positive', meeting: true, unsettled: false });
@@ -212,6 +214,8 @@ test('pipeline: stages come from real events; house-style lint runs on every bat
     const bad = await s.p.review([{ lead_id: l.id, subject: 'Crest — automating tenant and vendor coordination across two cities', body: 'Hi Operations Head,\n\nI\'m reaching out because your team is drowning in tickets. We triage → assign → close. Worth a 15-min call?\n\nAtharv' }]);
     const fix = bad.emails[0].fix.join(' | ');
     for (const re of [/arrow chains/, /dashes/, /banned phrases: "i'm reaching out", "reaching out because", "drowning"/, /is a role, not a name/, /subject too long/, /not a call/, /exact signature/]) assert.match(fix, re);
+    const fab = await s.p.review([{ lead_id: l.id, subject: 'maintenance at crest', body: `Hi Crest team,\n\nNoticed tenants can only raise requests by phone.\n\nI recently helped a property group cut maintenance turnaround from 3 days to 4 hours.\n\nWant the one-page plan?\n\n${sig}` }]);
+    assert.match(fab.emails[0].fix.join(' '), /claims a past result \("I recently helped a property group cut maintenance turnaround from 3/);
     const noEvidence = s.p.save({ company: 'Heena Tours', email: 'mail@heena.example', signal: 'travel agency, probably manual' });
     const good = `Hi Crest team,\n\nNoticed tenants can only raise maintenance requests by phone on your contact page.\n\nThat is the work I take over, end to end, inside the tools you already use.\n\nWant me to send a one-page plan for automating maintenance requests?\n\n${sig}`;
     const r = await s.p.review([{ lead_id: l.id, subject: 'maintenance requests at crest', body: good }, { lead_id: noEvidence.id, subject: 'enquiries at heena', body: good.replace('Crest', 'Heena') }]);

@@ -32,6 +32,8 @@ const BANNED = ["i'm reaching out", 'i am reaching out', 'reaching out because',
   'hope this finds you', 'hope this email finds you', 'just checking in', 'circling back', 'leverage', 'synergy', 'game-changer',
   'game changer', 'revolutionize', 'revolutionise', 'drowning', 'i help companies', 'i help businesses', 'cutting-edge', 'seamless'];
 const CALL_ASK_RE = /\b(\d{2})\s*-?\s*min(ute)?s?\b|\bquick call\b|\bhop on a call\b|\bjump on a call\b/i;
+// "I recently helped a CA firm cut X by 80%" - a past-result claim with a number; only real, listed proof may be used.
+const RESULT_CLAIM_RE = /\b(i|we)\s+(recently\s+|just\s+)?(helped|enabled|saved|got|took|grew|cut|reduced|increased|doubled|tripled)\b[^.!?\n]*\d/i;
 const words = (s) => String(s ?? '').trim().split(/\s+/).filter(Boolean).length;
 // The reply's own words: Gmail snippets carry the quoted earlier mail after "On <date> <x> wrote:".
 const ownWords = (snippet) => String(snippet ?? '').split(/\s+On\s.{4,120}?wrote:|-{3,}\s*Original Message|\n>/i)[0].trim();
@@ -201,6 +203,7 @@ export class Pipeline {
     const sig = String(this.settings.get('outreach_signature', '') ?? '').trim();
     const text = sig ? body.replace(sig, '') : body;
     const low = text.toLowerCase();
+    if (RESULT_CLAIM_RE.test(text)) out.push(`it claims a past result ("${RESULT_CLAIM_RE.exec(text)[0].slice(0, 80)}"): only results listed in the profile's Proof section may be used, never invented ones`);
     if (/→|->|=>/.test(text)) out.push('no arrow chains (a → b → c): describe the end result in one plain sentence');
     if (/[—–]/.test(text) || /[—–]/.test(m.subject ?? '')) out.push('no em/en dashes: use a full stop or comma');
     const extra = Array.isArray(this.settings.get('outreach_banned', null)) ? this.settings.get('outreach_banned') : [];
@@ -229,7 +232,8 @@ export class Pipeline {
     if (this.judge?.ready && this.settings.get('outreach_review', true) !== false) {
       const offerOf = (l) => l?.offer ?? 'AI agents and automation that run a whole workflow end to end';
       try {
-        const verdicts = await this.judge.reviewOutreach(live.map((m) => { const lead = this.get(m.lead_id); return { to: m.to, lead, offer: offerOf(lead), subject: m.subject ?? '(follow-up)', body: m.body }; }));
+        const proof = /## Proof[^\n]*\n([\s\S]*?)(\n## |$)/.exec(String(this.settings.get('business_profile', null)?.text ?? ''))?.[1]?.trim() ?? 'No proof listed.';
+        const verdicts = await this.judge.reviewOutreach(live.map((m) => { const lead = this.get(m.lead_id); return { to: m.to, lead, offer: offerOf(lead), proof, subject: m.subject ?? '(follow-up)', body: m.body }; }));
         for (const v of verdicts) { const it = issues.get(v.to); it.fix.push(...v.problems.map((p) => p.why)); if (v.problems.some((p) => p.block)) it.drop_lead = true; }
         judged = true;
       } catch (e) { note = `quality review unavailable (${String(e.message ?? e).slice(0, 60)})`; }
