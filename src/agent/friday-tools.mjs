@@ -1,6 +1,7 @@
 import { validatePlan } from './team.mjs';
 import { TOOLKITS, classify } from '../composio.mjs';
 import { CREATE_FORMATS, DOCS_HELP, EDIT_HELP } from '../documents.mjs';
+import { ASPECTS, QUALITIES, MAX_PROMPT } from '../images.mjs';
 // Model-facing tools. Each tool declares a risk class:
 //   safe  — runs immediately (reads, the user's own memory, queueing tasks)
 //   gated — never runs directly; the brain stages it for explicit approval
@@ -572,6 +573,14 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
       parameters: obj({ format: { type: 'string', enum: CREATE_FORMATS }, name: { type: 'string', description: 'File name without extension' }, title: { type: 'string' }, markdown: { type: 'string' },
         sheets: { type: 'array', items: { type: 'object' } }, slides: { type: 'array', items: { type: 'object' } }, rows: { type: 'array', items: { type: 'array' } } }, ['format', 'name']),
       run: (a, { conversationId } = {}) => ctx.documents.create({ ...a, conversationId: conversationId ?? null }),
+    },
+    {
+      name: 'image_create', risk: 'safe',
+      description: `Draw pictures (illustrations, photo-style images, posters, logo ideas, wallpapers, memes, concept art) with FLUX and attach them to your reply; he sees them inline. YOU write the prompt in English, max ${MAX_PROMPT} chars: subject, setting, style or medium, composition and camera, lighting, colours, mood. Text inside images: quote it exactly and keep it to a few words. To change a picture you made: based_on = its file id, and start from its prompt (shown next to the file) changing only what he asked. That is a fresh render with the same seed, size and model, so the layout may shift; you cannot edit pixels. count 2-4 for options to pick from. Never sexual images of minors or anyone who looks young, never sexual or humiliating images of real people, never realistic fake photos of real people passed off as real.`,
+      parameters: obj({ prompt: { type: 'string' }, aspect: { type: 'string', enum: Object.keys(ASPECTS), description: 'default 1:1 (16:9 wallpapers/banners, 9:16 phone/stories)' },
+        count: { type: 'integer', description: '1-4, default 1' }, quality: { type: 'string', enum: Object.keys(QUALITIES), description: 'fast (default, ~3 s, very good) or best (FLUX.1-dev, ~10 s)' },
+        based_on: { type: 'string', description: 'file id of an earlier image you made, to tweak it' }, seed: { type: 'integer' }, name: { type: 'string', description: 'short file name' } }, ['prompt']),
+      run: (a, { conversationId } = {}) => ctx.images.create({ ...a, conversationId: conversationId ?? null }),
     },
     {
       name: 'document_read', risk: 'safe',

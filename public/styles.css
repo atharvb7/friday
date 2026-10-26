@@ -179,6 +179,16 @@ dialog { background: var(--surface); color: var(--text); border: 1px solid var(-
 .file-chip:hover { border-color: var(--accent, #7c5cff); }
 .file-chip .fi { font-size: 20px; } .file-chip .fn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; } .file-chip .fs { font-size: 12px; opacity: .7; white-space: nowrap; }
 .msg.user .file-chip { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.3); }
+.img-card { display: block; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg2); cursor: zoom-in; max-width: min(100%, 420px); line-height: 0; }
+.img-card img { display: block; width: 100%; height: auto; max-height: 460px; object-fit: contain; }
+.img-card.loading { width: 260px; aspect-ratio: 1; background: linear-gradient(110deg, var(--bg2) 30%, var(--line) 50%, var(--bg2) 70%) 0 0 / 300% 100%; animation: img-shimmer 1.4s linear infinite; }
+.img-card.loading img { visibility: hidden; }
+@keyframes img-shimmer { to { background-position: -300% 0; } }
+.lightbox { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; background: rgba(0,0,0,.86); }
+.lightbox img { max-width: 100%; max-height: calc(100vh - 96px); object-fit: contain; border-radius: 10px; }
+.lightbox .lb-bar { display: flex; align-items: center; gap: 8px; max-width: 100%; color: #fff; }
+.lightbox .lb-bar .fn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; margin-right: 4px; }
+@media (prefers-reduced-motion: reduce) { .img-card.loading { animation: none; } }
 .attach-tray { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 6px; } .attach-tray .x { margin-left: 4px; border: 0; background: none; color: inherit; cursor: pointer; font-size: 15px; }
 .composer.drop .box { outline: 2px dashed var(--accent, #7c5cff); outline-offset: 2px; }
 

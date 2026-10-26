@@ -7,13 +7,43 @@ import { svgIcon } from '../icons.js';
 
 const FILE_ICON = { docx: '📝', doc: '📝', odt: '📝', rtf: '📝', xlsx: '📊', xls: '📊', csv: '📊', tsv: '📊', pptx: '📽️', ppt: '📽️', pdf: '📕', md: '🗒️', txt: '🗒️', html: '🌐', json: '🧾', png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', webp: '🖼️', zip: '🗜️' };
 const fmtSize = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
-async function download(f) {
-  const r = await fetch(`/v1/files/${f.id}`, { headers: { Authorization: `Bearer ${auth.token}` }, cache: 'no-store' });
-  if (!r.ok) throw new Error(`download failed (${r.status})`);
-  const url = URL.createObjectURL(await r.blob());
-  const a = Object.assign(document.createElement('a'), { href: url, download: f.name });
-  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30_000);
+// Pictures (hers or his) show inline. The file route always answers as a download, so the bytes are fetched with the
+// token and re-typed as an image blob; SVG never previews (it could carry script).
+const PREVIEW = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+const blobs = new Map(); // file id -> Promise<object URL>, kept for the session so re-rendered chats don't refetch
+const previewType = (f) => PREVIEW[f.name.split('.').pop().toLowerCase()] ?? null;
+const fetchBlobUrl = (f) => fetch(`/v1/files/${f.id}`, { headers: { Authorization: `Bearer ${auth.token}` }, cache: 'no-store' })
+  .then(async (r) => { if (!r.ok) throw new Error(`download failed (${r.status})`); return URL.createObjectURL(new Blob([await r.arrayBuffer()], { type: previewType(f) ?? 'application/octet-stream' })); });
+function fileBlob(f) {
+  if (!blobs.has(f.id)) { const p = fetchBlobUrl(f); p.catch(() => blobs.delete(f.id)); blobs.set(f.id, p); }
+  return blobs.get(f.id);
 }
+async function download(f) {
+  const cached = Boolean(previewType(f)); // big documents are not kept in memory after the download
+  const url = await (cached ? fileBlob(f) : fetchBlobUrl(f));
+  const a = Object.assign(document.createElement('a'), { href: url, download: f.name });
+  document.body.append(a); a.click(); a.remove();
+  if (!cached) setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+function lightbox(f, url, onErr) {
+  const close = () => { box.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const box = h('div', { class: 'lightbox', role: 'dialog', 'aria-label': f.name, onclick: (e) => { if (e.target === box) close(); } },
+    h('img', { src: url, alt: f.name }),
+    h('div', { class: 'lb-bar' }, h('span', { class: 'fn' }, f.name),
+      h('button', { class: 'btn', type: 'button', onclick: () => download(f).catch((e) => onErr?.(e.message)) }, '⬇ Download'),
+      h('button', { class: 'btn quiet', type: 'button', 'aria-label': 'Close', onclick: close }, '✕')));
+  document.addEventListener('keydown', onKey);
+  document.body.append(box);
+}
+function imageCard(f, onErr) {
+  const img = h('img', { alt: f.name, decoding: 'async' });
+  const card = h('button', { class: 'img-card loading', type: 'button', title: f.name, onclick: () => fileBlob(f).then((u) => lightbox(f, u, onErr)).catch((e) => onErr?.(e.message)) }, img);
+  fileBlob(f).then((u) => { img.onload = () => card.classList.remove('loading'); img.src = u; })
+    .catch(() => card.replaceWith(fileChip(f, onErr)));
+  return card;
+}
+const fileView = (f, onErr) => (previewType(f) ? imageCard(f, onErr) : fileChip(f, onErr));
 function fileChip(f, onErr) {
   const ext = f.name.split('.').pop().toLowerCase();
   return h('button', { class: 'file-chip', type: 'button', title: `Download ${f.name}`, onclick: () => download(f).catch((e) => onErr?.(e.message)) },
@@ -92,7 +122,7 @@ export function render({ app, api, toast }) {
     const body = h('div', { class: 'bubble' });
     if (extra.tools?.length) body.append(h('div', { class: 'tools' }, extra.tools.map((t) => h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`))));
     if (content) body.append(role === 'assistant' ? md(noTags(content)) : h('div', {}, content));
-    if (extra.files?.length) body.append(h('div', { class: 'files' }, extra.files.map((f) => fileChip(f, toast))));
+    if (extra.files?.length) body.append(h('div', { class: 'files' }, extra.files.map((f) => fileView(f, toast))));
     return h('div', { class: `msg ${role}` }, role === 'user' ? h('div', { class: 'av' }, 'You') : h('div', { class: 'av friday', role: 'img', 'aria-label': 'Friday' }), body);
   }
   function hello() {
@@ -164,7 +194,7 @@ export function render({ app, api, toast }) {
         delta: (d) => { acc += d.text; paintReply(); },
         thinking: () => {},
         tool: (t) => { tools.push(t); toolsEl.append(h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`)); },
-        done: (d) => { acc = d.reply; paintReply(); if (d.files?.length) live.append(h('div', { class: 'files' }, d.files.map((f) => fileChip(f, toast)))); if (speak && acc) say(acc); },
+        done: (d) => { acc = d.reply; paintReply(); if (d.files?.length) live.append(h('div', { class: 'files' }, d.files.map((f) => fileView(f, toast)))); if (speak && acc) say(acc); },
         error: () => { acc ||= '(That didn’t go through. Try again?)'; paintReply(); },
       }, abort.signal);
     } catch (e) { acc ||= `Couldn’t reach my brain: ${e.message}`; paintReply(); }

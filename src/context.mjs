@@ -57,6 +57,7 @@ import { Prospector } from './prospector.mjs';
 import { Composio } from './composio.mjs';
 import { Files } from './files.mjs';
 import { Documents } from './documents.mjs';
+import { Images } from './images.mjs';
 import { DmChats } from './dm-chat.mjs';
 import { GoogleAuth, Gmail } from './google.mjs';
 import { OwnerLogin } from './login.mjs';
@@ -240,6 +241,8 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.deployer = new Deployer({ url: env.FRIDAY_DEPLOYER_URL, secret: env.FRIDAY_DEPLOYER_SECRET });
   ctx.login = new OwnerLogin({ settings, google: ctx.google, publicUrl: env.FRIDAY_SITE_URL });
   ctx.documents = new Documents({ files: ctx.files, appRoot, python: env.FRIDAY_DOCS_PYTHON ?? 'python3' });
+  ctx.images = new Images({ store, files: ctx.files, apiKey: env.FRIDAY_NVIDIA_API_KEY ?? null, baseUrl: env.FRIDAY_IMAGE_BASE_URL ?? undefined });
+  ctx.chat.fileNote = (f) => { const i = ctx.images.info(f.id); return i ? `image you drew, prompt: "${i.prompt}"` : null; };
   ctx.learner = new Learner({ ai, store, skills, dir: resolve(dataDir, 'skills'), profile: ctx.profile, bus, settings });
   { // successful laptop/Hermes runs become (or improve) playbooks, off the hot path
     const prev = store.onEvent;

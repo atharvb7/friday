@@ -19,10 +19,12 @@ export function stripStageDirections(text) {
   }).replace(/[ \t]{2,}/g, ' ').replace(/ +([.,!?])/g, '$1').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+export const stripFileNotes = (text) => String(text ?? '').replace(/\[attached files:[^\n]*\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+
 // Claim guard: a reply that says an action was queued/sent/created must be backed by a tool call THIS turn.
 // Tools that only READ never back an "I queued/sent/created it" claim; any other tool (incl. gated ones) can.
 const READ_ONLY_TOOLS = new Set(['memory_search', 'file_search', 'file_read', 'time_now', 'web_search', 'web_fetch', 'research_search', 'task_list', 'task_trace', 'laptop_status', 'reminder_list', 'skill_load', 'briefing_now']);
-const CLAIM_RE = /\b(i['’]?ve|i have|i just|i['’]?ll go ahead and|i went ahead and)\s+(queued|queue|sent|send|created|set|scheduled|started|opened|kicked off|added|submitted|requested|put in)\b|\b(queued (the|your|that|it|up)|task (is |has been )?queued|waiting (for|on) your approval|approval (request|prompt)\b|check your (inbox|notification)|sent .{0,40}for approval|(is|has been|have been) (queued|scheduled|created)|i['’]?ll remind you|reminder(['’]s| is)? (set|created|added|scheduled))\b/i;
+const CLAIM_RE = /\b(i['’]?ve|i have|i just|i['’]?ll go ahead and|i went ahead and)\s+(queued|queue|sent|send|created|set|scheduled|started|opened|kicked off|added|submitted|requested|put in)\b|\b(queued (the|your|that|it|up)|task (is |has been )?queued|waiting (for|on) your approval|approval (request|prompt)\b|check your (inbox|notification)|sent .{0,40}for approval|(is|has been|have been) (queued|scheduled|created)|i['’]?ll remind you|reminder(['’]s| is)? (set|created|added|scheduled)|here(['’]s| is| are) (your|the|a|some) (new )?(images?|pictures?|pics?|drawings?|illustrations?)|(i['’]?ve|i have|i just) (drawn|drew|painted|generated|sketched|rendered))\b/i;
 export function claimsActionWithoutTool(text, toolsUsed) {
   return CLAIM_RE.test(String(text ?? '')) && !toolsUsed.some((t) => !READ_ONLY_TOOLS.has(t.name));
 }
@@ -35,7 +37,7 @@ export function claimsLookupWithoutTool(reply, toolsUsed, userText = '') {
   return LOOKUP_RE.test(String(reply ?? '')) || (!toolsUsed.length && ASK_SEARCH_RE.test(String(userText ?? ''))); // a request handled by another tool (e.g. a laptop task) is fine
 }
 const LOOKUP_NOTE = '[system check] The user asked you to look something up (or your message described searching), but you called NO search tool this turn — any "results" you wrote are made up. Call web_search now (several differently worded queries if needed, then web_fetch the best pages) and answer only from what the tools return.';
-const GUARD_NOTE = '[system check] Your last message claimed that something was queued, sent, created or scheduled, but you called NO tool this turn, so nothing actually happened. If the user wants that done, call the correct tool now (computer_task for anything on their laptop/browser, research_start, code_task, task_create, reminder_create, schedule_task, rule_create). Otherwise correct your message. Never claim an action without a tool result.';
+const GUARD_NOTE = '[system check] Your last message claimed that something was queued, sent, created or scheduled, but you called NO tool this turn, so nothing actually happened. If the user wants that done, call the correct tool now (computer_task for anything on their laptop/browser, research_start, code_task, task_create, reminder_create, schedule_task, rule_create, image_create for pictures). Otherwise correct your message. Never claim an action without a tool result.';
 
 export class Brain {
   constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null, skills = null, policy = null, approvals = null, mood = null, habits = null }) {
@@ -95,7 +97,8 @@ export class Brain {
     if (claimsActionWithoutTool(last.content, toolsUsed)) { // still claiming without a tool after the retry: be honest instead
       last = { ...last, content: 'Hold on — I said I’d do that, but I didn’t actually run anything, so nothing is queued and no approval was sent. Tell me again and I’ll do it properly, or say what you want changed.' };
     }
-    const reply = channel === 'voice' ? last.content.trim() : stripStageDirections(last.content);
+    const said = stripFileNotes(last.content); // the history's "[attached files: …]" notes are bookkeeping; she sometimes copies the format
+    const reply = channel === 'voice' ? said : stripStageDirections(said);
     if (!member) this.habits?.record(reply);
     return { reply, model: last.model, provider: last.provider, toolsUsed, attachments: [...new Set(attachments)], usage: last.usage, usedVector: ctxInfo.usedVector, memoryIds: ctxInfo.memoryIds };
   }

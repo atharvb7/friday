@@ -119,10 +119,11 @@ export class ChatStore {
     if (!this.getConversation(conversationId)) throw new Error('conversation_not_found');
     const n = Number.isInteger(limit) && limit > 0 ? Math.min(limit, MAX_HISTORY_MESSAGES) : 20;
     const rows = this.db.prepare('SELECT role, content, attachments FROM (SELECT role, content, attachments, created_at, rowid FROM messages WHERE conversation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?) ORDER BY created_at ASC, rowid ASC').all(conversationId, n);
-    // The model sees attachments as a note it can act on (document_read / document_edit by file id).
+    // The model sees attachments as a note it can act on (document_read / document_edit by file id); fileNote (set by
+    // the context) adds what it needs to work on a file again, e.g. the prompt of an image she drew.
     return rows.map(({ role, content, attachments }) => {
       const files = this.#files(attachments);
-      return { role, content: files.length ? `${content}${content ? '\n' : ''}[attached files: ${files.map((f) => `${f.name} (file id ${f.id.slice(0, 8)})`).join(', ')}]` : content };
+      return { role, content: files.length ? `${content}${content ? '\n' : ''}[attached files: ${files.map((f) => { const note = this.fileNote?.(f); return `${f.name} (file id ${f.id.slice(0, 8)}${note ? `; ${note}` : ''})`; }).join(', ')}]` : content };
     });
   }
 }
