@@ -184,6 +184,7 @@ test('brain: a false "queued" claim is corrected by forcing the tool call; persi
     const store = new Store(join(d, 'db.sqlite')); const settings = new Settings(store); const chat = new ChatStore(store); const bus = new EventBus();
     const memory = new Memory(store); const notifications = new Notifications(store, bus);
     const policy = new Policy({ settings, bus }); const approvals = new Approvals({ store, notifications, chat, bus });
+    policy.set('computer', 'ask'); // laptop tasks run without asking by default; at "ask" each one is staged for approval
     const ctx = { memory, store, tools: null, indexer: null, worker: { cancel() {} }, jobs: {}, settings, proactive: {}, skills: null, nodes: { online: true, list: () => [] }, researchMemory: null };
     const ft = buildFridayTools(ctx);
     const convo = chat.createConversation('t'); chat.addMessage(convo.id, 'user', 'open salexnow.com on my laptop');

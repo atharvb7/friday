@@ -43,7 +43,7 @@ export class NodeHub {
   hello(deviceId, { caps = [], platform = null } = {}) {
     const n = this.#nodes.get(deviceId);
     if (!n) throw new Error('not_connected');
-    n.caps = Array.isArray(caps) ? caps.filter((c) => typeof c === 'string').slice(0, 50) : [];
+    n.caps = Array.isArray(caps) ? caps.filter((c) => typeof c === 'string').slice(0, 120) : []; // full-desktop nodes report ~45
     n.platform = typeof platform === 'string' ? platform.slice(0, 80) : null;
     n.lastSeen = this.now();
     this.bus?.publish('node.ready', { id: deviceId, caps: n.caps });

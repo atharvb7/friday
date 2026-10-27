@@ -35,9 +35,11 @@ export function chatRoutes(router, ctx) {
     ctx.companion.chatStart();
     try { return await turnInner(args); } finally { ctx.companion.chatEnd(); }
   }
-  async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner', channel = 'chat', attachments = [], member = null }) {
+  // note: context that came WITH his words but is not his words (e.g. what a screenshot shows). It is stored with the
+  // message so the brain sees it, but guards, tool loading and auto-memory look only at what he actually said.
+  async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner', channel = 'chat', attachments = [], member = null, note = '' }) {
     if (attachments.length) ctx.files?.claim(attachments, convo.id);
-    chat.addMessage(convo.id, 'user', text, { attachments });
+    chat.addMessage(convo.id, 'user', note ? `${text}\n\n${note}` : text, { attachments });
     let replyFiles = [];
     const brain = ctx.chatBrain();
     // JEV is off unless enabled; the local classifier is the deterministic default.
@@ -104,9 +106,9 @@ export function chatRoutes(router, ctx) {
   }
 
   // One-shot text turn for non-browser clients (voice devices): returns just the reply.
-  ctx.quickTurn = async (text, conversationId = null, channel = 'chat') => {
+  ctx.quickTurn = async (text, conversationId = null, channel = 'chat', note = '') => {
     const convo = (conversationId && chat.getConversation(conversationId)) || chat.createConversation(text.slice(0, 60));
-    return turn({ convo, text, channel });
+    return turn({ convo, text, channel, note });
   };
 
   router.post('/v1/chat', async ({ body, principal }) => {

@@ -49,6 +49,24 @@ export class Jobs {
     return this.db.prepare(`SELECT * FROM jobs WHERE status=? ${kind ? 'AND kind=?' : ''} ORDER BY due_at ASC LIMIT 100`).all(...(kind ? [status, kind] : [status])).map((r) => ({ ...r, recurrence: r.recurrence ? JSON.parse(r.recurrence) : null }));
   }
   cancel(id) { const ok = this.db.prepare("UPDATE jobs SET status='cancelled' WHERE id=? AND status='active'").run(id).changes > 0; if (ok) this.bus?.publish('job.cancelled', { id }); return ok; }
+  // Change an active job in place (new time, text or repeat rule): editing must never leave the old one firing too.
+  update(id, { title = null, when = null, recurrence } = {}) {
+    const j = this.get(id);
+    if (!j || j.status !== 'active') return null;
+    const tz = this.timezone;
+    const rec = recurrence === undefined ? j.recurrence : validateRecurrence(recurrence);
+    const now = this.now();
+    let due = new Date(j.due_at);
+    if (when) {
+      due = parseWhen(when, tz);
+      if (!rec && due.getTime() < now.getTime() - 60_000) throw new TypeError('time is in the past');
+    } else if (recurrence !== undefined && rec) due = nextOccurrence(rec, now, tz);
+    if (title !== null && (typeof title !== 'string' || !title.trim() || title.length > 200)) throw new TypeError('title required (<=200 chars)');
+    this.db.prepare('UPDATE jobs SET title=?, due_at=?, recurrence=?, timezone=? WHERE id=?').run(title?.trim() || j.title, due.toISOString(), rec ? JSON.stringify(rec) : null, tz, id);
+    this.bus?.publish('job.updated', { id });
+    return this.get(id);
+  }
+
   snooze(id, minutes) {
     if (!Number.isInteger(minutes) || minutes < 1 || minutes > 7 * 24 * 60) throw new TypeError('minutes must be 1..10080');
     return this.db.prepare("UPDATE jobs SET due_at=? WHERE id=? AND status='active'").run(new Date(this.now().getTime() + minutes * 60_000).toISOString(), id).changes > 0;

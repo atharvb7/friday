@@ -4,6 +4,7 @@ import { buildSystemPrompt, buildGuestPrompt, buildMemberPrompt, normalizePerson
 // Approved members (other people) only get general-purpose tools — nothing that touches the owner's world.
 export const MEMBER_TOOLS = new Set(['web_search', 'web_fetch', 'time_now', 'document_create', 'document_read', 'document_edit', 'files_list', 'file_share']);
 import { pickRegister } from '../mood.mjs';
+import { ToolRouter, GROUPS, SKILL_GROUPS, schemasFor } from './toolsets.mjs';
 
 const MAX_STEPS = 10; // room for a few search -> read -> re-search rounds
 const MAX_TOOL_CALLS = 16;
@@ -23,7 +24,7 @@ export const stripFileNotes = (text) => String(text ?? '').replace(/\[attached f
 
 // Claim guard: a reply that says an action was queued/sent/created must be backed by a tool call THIS turn.
 // Tools that only READ never back an "I queued/sent/created it" claim; any other tool (incl. gated ones) can.
-const READ_ONLY_TOOLS = new Set(['memory_search', 'file_search', 'file_read', 'time_now', 'web_search', 'web_fetch', 'research_search', 'task_list', 'task_trace', 'laptop_status', 'reminder_list', 'skill_load', 'briefing_now']);
+const READ_ONLY_TOOLS = new Set(['memory_search', 'file_search', 'file_read', 'time_now', 'web_search', 'web_fetch', 'research_search', 'task_list', 'task_trace', 'laptop_status', 'laptop_screen', 'reminder_list', 'skill_load', 'briefing_now']);
 const CLAIM_RE = /\b(i['’]?ve|i have|i just|i['’]?ll go ahead and|i went ahead and)\s+(queued|queue|sent|send|created|set|scheduled|started|opened|kicked off|added|submitted|requested|put in)\b|\b(queued (the|your|that|it|up)|task (is |has been )?queued|waiting (for|on) your approval|approval (request|prompt)\b|check your (inbox|notification)|sent .{0,40}for approval|(is|has been|have been) (queued|scheduled|created)|i['’]?ll remind you|reminder(['’]s| is)? (set|created|added|scheduled)|here(['’]s| is| are) (your|the|a|some) (new )?(images?|pictures?|pics?|drawings?|illustrations?)|(i['’]?ve|i have|i just) (drawn|drew|painted|generated|sketched|rendered))\b/i;
 export function claimsActionWithoutTool(text, toolsUsed) {
   return CLAIM_RE.test(String(text ?? '')) && !toolsUsed.some((t) => !READ_ONLY_TOOLS.has(t.name));
@@ -37,11 +38,12 @@ export function claimsLookupWithoutTool(reply, toolsUsed, userText = '') {
   return LOOKUP_RE.test(String(reply ?? '')) || (!toolsUsed.length && ASK_SEARCH_RE.test(String(userText ?? ''))); // a request handled by another tool (e.g. a laptop task) is fine
 }
 const LOOKUP_NOTE = '[system check] The user asked you to look something up (or your message described searching), but you called NO search tool this turn — any "results" you wrote are made up. Call web_search now (several differently worded queries if needed, then web_fetch the best pages) and answer only from what the tools return.';
+const TOOLS_NOTE = 'TOOLS: only the tool groups that fit this conversation are loaded. If you need a tool you do not see, call tools_load first (it lists every group); never tell him you cannot do something before checking it.';
 const GUARD_NOTE = '[system check] Your last message claimed that something was queued, sent, created or scheduled, but you called NO tool this turn, so nothing actually happened. If the user wants that done, call the correct tool now (computer_task for anything on their laptop/browser, research_start, code_task, task_create, reminder_create, schedule_task, rule_create, image_create for pictures). Otherwise correct your message. Never claim an action without a tool result.';
 
 export class Brain {
-  constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null, skills = null, policy = null, approvals = null, mood = null, habits = null }) {
-    Object.assign(this, { ai, fridayTools, settings, contextBuilder, chat, bus, audit, skills, policy, approvals, mood, habits });
+  constructor({ ai, fridayTools, settings, contextBuilder, chat, bus, audit = null, skills = null, policy = null, approvals = null, mood = null, habits = null, toolRouter = new ToolRouter() }) {
+    Object.assign(this, { ai, fridayTools, settings, contextBuilder, chat, bus, audit, skills, policy, approvals, mood, habits, toolRouter });
   }
 
   personality() { return normalizePersonality(this.settings.get('personality', {})); }
@@ -53,12 +55,23 @@ export class Brain {
     if (!member) this.mood?.touch?.();
     const moodNow = this.mood?.current({ moodiness: personality.moodiness }) ?? null;
     const ctxInfo = member ? { text: '', memoryIds: [], usedVector: false } : await this.contextBuilder.build({ text }); // members never see the owner's memories/tasks
-    const system = member ? buildMemberPrompt({ ownerName: this.settings.get('user_name', null), memberName, channel, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : `${buildSystemPrompt({ personality, mood: moodNow, channel, habitsNote: this.habits?.cooldownNote() ?? '', register: pickRegister({ personality, mood: moodNow?.mood }), autoMemory: this.settings.get('auto_memory', true) !== false, userName: this.settings.get('user_name', null), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}${this.skills?.index() ? `\n\nSkills you can load with skill_load when a request matches (do not load unless needed):\n${this.skills.index()}` : ''}${ctxInfo.text ? `\n\n${ctxInfo.text}` : ''}`;
-    const messages = [{ role: 'system', content: system }, ...this.chat.historyForProvider(conversationId, 20)];
-    const schemas = member ? this.fridayTools.schemas().filter((s) => MEMBER_TOOLS.has(s.function?.name ?? s.name)) : this.fridayTools.schemas();
+    const history = this.chat.historyForProvider(conversationId, 20);
+    const userTurns = history.filter((m) => m.role === 'user');
+    const groups = member ? new Set() : this.toolRouter.select({ conversationId, text: `${text}\n${/\[attached files:[^\]]*\]/i.exec(userTurns.at(-1)?.content ?? '')?.[0] ?? ''}`, previousText: userTurns.length > 1 ? userTurns.at(-2).content : '' });
+    const routed = !member && this.toolRouter.enabled;
+    const skillsText = !this.skills?.index() ? '' : (!routed || [...groups].some((g) => SKILL_GROUPS.has(g)))
+      ? `\n\nSkills you can load with skill_load when a request matches (do not load unless needed):\n${this.skills.index()}`
+      : `\n\nSkills (playbooks) you can load with skill_load when a request matches: ${this.skills.names()}`;
+    const system = member ? buildMemberPrompt({ ownerName: this.settings.get('user_name', null), memberName, channel, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : `${buildSystemPrompt({ personality, mood: moodNow, channel, habitsNote: this.habits?.cooldownNote() ?? '', register: pickRegister({ personality, mood: moodNow?.mood }), autoMemory: this.settings.get('auto_memory', true) !== false, userName: this.settings.get('user_name', null), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}${routed ? `\n\n${TOOLS_NOTE}` : ''}${skillsText}${ctxInfo.text ? `\n\n${ctxInfo.text}` : ''}`;
+    const messages = [{ role: 'system', content: system }, ...history];
+    const allSchemas = this.fridayTools.schemas();
+    let schemas = member ? allSchemas.filter((s) => MEMBER_TOOLS.has(s.function?.name ?? s.name)) : routed ? schemasFor(allSchemas, groups) : allSchemas.filter((s) => (s.function?.name ?? s.name) !== 'tools_load');
+    const loadGroups = (names) => { for (const g of names) groups.add(g); schemas = schemasFor(allSchemas, groups); };
+    const loadedByModel = new Set(); // groups the model asked for with tools_load: they stay loaded for the next turns
     const toolsUsed = [];
     const attachments = []; // files tools produced this turn (documents) — attached to the reply
     let calls = 0;
+    const failures = new Map(); // "tool|error" -> count: a tool failing the same way again is not retried blindly
     let guardTries = 0;
     let lookupTries = 0;
     let last = null;
@@ -68,6 +81,7 @@ export class Brain {
       if (!last.toolCalls.length) {
         if (guardTries < 1 && claimsActionWithoutTool(last.content, toolsUsed)) { // she said she did it, but no tool ran: make her actually do it (or retract)
           guardTries += 1;
+          if (routed) loadGroups(Object.keys(GROUPS)); // the fix may need any tool (computer_task, research_start, image_create...)
           messages.push({ role: 'assistant', content: last.content }, { role: 'user', content: GUARD_NOTE });
           this.bus?.publish('brain.claim_guard', { conversationId });
           continue;
@@ -80,11 +94,17 @@ export class Brain {
         }
         break;
       }
-      messages.push({ role: 'assistant', content: last.content || null, tool_calls: last.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.argumentsText || '{}' } })) });
+      messages.push({ role: 'assistant', content: last.content || null, tool_calls: last.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.argumentsText || '{}' }, ...(c.extra ? { extra_content: c.extra } : {}) })) });
       for (const call of last.toolCalls) {
         calls += 1;
         const result = calls > MAX_TOOL_CALLS ? { error: 'tool_call_limit_reached' } : member && !MEMBER_TOOLS.has(call.name) ? { error: 'not_available' } : await this.#runTool(call, conversationId, member ? { member: true, userId } : {});
+        if (result?.error) {
+          const k = `${call.name}|${String(result.error).slice(0, 120)}`;
+          const n = (failures.get(k) ?? 0) + 1; failures.set(k, n);
+          if (n >= 2) result.stop_retrying = 'Same error as your previous attempt: do not call this tool again this turn. Tell him plainly what failed (and what would fix it, e.g. connecting the account).';
+        }
         if (Array.isArray(result?._attach)) { attachments.push(...result._attach); delete result._attach; result.attached_to_your_reply = true; }
+        if (routed && call.name === 'tools_load' && Array.isArray(result?.loaded)) { loadGroups(result.loaded); for (const g of result.loaded) loadedByModel.add(g); }
         toolsUsed.push({ name: call.name, ok: !result.error });
         onTool?.({ name: call.name, ok: !result.error });
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, RESULT_CHARS) });
@@ -100,6 +120,7 @@ export class Brain {
     const said = stripFileNotes(last.content); // the history's "[attached files: …]" notes are bookkeeping; she sometimes copies the format
     const reply = channel === 'voice' ? said : stripStageDirections(said);
     if (!member) this.habits?.record(reply);
+    if (routed) this.toolRouter.remember(conversationId, [...toolsUsed.map((t) => t.name), ...[...loadedByModel].map((g) => GROUPS[g].tools[0])]);
     return { reply, model: last.model, provider: last.provider, toolsUsed, attachments: [...new Set(attachments)], usage: last.usage, usedVector: ctxInfo.usedVector, memoryIds: ctxInfo.memoryIds };
   }
 

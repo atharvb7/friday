@@ -77,6 +77,9 @@ export class Skills {
     return out.trim();
   }
 
+  // Names only (about a sixth of index()): for turns that are unlikely to need a playbook.
+  names() { return this.list().map((s) => s.name).join(', '); }
+
   // Install from a local folder after sanity checks (no symlinks, size cap, valid SKILL.md).
   install(srcDir, destRoot) {
     const src = resolve(srcDir);

@@ -100,7 +100,9 @@ test('policy: tier matrix, critical needs time-boxed high, expiry reverts, revok
   const p = new Policy({ settings: s, now: () => t });
   assert.equal(DEFAULT_LEVELS.spending, 'ask');
   assert.equal(p.decide({ category: 'research', risk: 'routine' }), 'allow');
-  assert.equal(p.decide({ category: 'computer', risk: 'routine' }), 'ask');
+  assert.equal(p.decide({ category: 'computer', risk: 'routine' }), 'allow', 'routine laptop use is trusted by default (owner gave full access)');
+  assert.equal(p.decide({ category: 'computer', risk: 'consequential' }), 'ask');
+  assert.equal(p.decide({ category: 'deletion', risk: 'consequential' }), 'ask');
   assert.equal(p.decide({ category: 'coding', risk: 'consequential' }), 'ask'); // trusted < autonomous
   p.set('coding', 'autonomous');
   assert.equal(p.decide({ category: 'coding', risk: 'consequential' }), 'allow');

@@ -48,14 +48,16 @@ test('UI smoke (real Chrome): every view renders without errors; emoji picker in
     await page.waitForTimeout(200);
     const atBottom = await page.evaluate(() => { const m = document.getElementById('msgs'); return m.scrollHeight - m.scrollTop - m.clientHeight < 5; });
     assert.equal(atBottom, true, 'new content keeps the chat scrolled to the bottom');
-    // delete a chat from the sidebar (confirm dialog accepted)
+    // delete a chat from the sidebar (two-step in-app confirm: first click arms "Delete?", the second deletes)
     await page.evaluate(() => { location.hash = 'chat'; });
     await ta.fill('hello for deletion test'); await ta.dispatchEvent('input'); await page.locator('.composer .act.send').click();
     await page.waitForSelector('.convo-row', { timeout: 10000 });
     const before = await page.locator('.convo-row').count();
-    page.once('dialog', (d) => d.accept());
     await page.locator('.convo-row').first().hover();
     await page.locator('.convo-del').first().click();
+    await page.waitForSelector('.convo-del.armed', { timeout: 2000 });
+    assert.equal(await page.locator('.convo-row').count(), before, 'the first click only arms the button');
+    await page.locator('.convo-del.armed').first().click();
     await page.waitForFunction((n) => document.querySelectorAll('.convo-row').length === n - 1, before, { timeout: 5000 });
     // ChatGPT-style scrolling: the page and sidebar never scroll; only the message list (and conversation list) do.
     await page.evaluate(() => { const m = document.getElementById('msgs'); m.replaceChildren(); for (let i = 0; i < 60; i++) { const d = document.createElement('div'); d.className = 'msg'; d.textContent = `m${i} `.repeat(30); m.append(d); } });

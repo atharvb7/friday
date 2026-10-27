@@ -72,7 +72,7 @@ export function render({ app, api, toast, go }) {
 
     // Voice (Whisper listens, Kokoro speaks)
     const vs = await api('/v1/voice/status');
-    const PRESETS = [['af_heart:65,af_nicole:35', 'Soft & playful — Heart + Nicole (default)'], ['af_heart', 'Warm & bright — Heart'], ['af_nicole', 'Soft, hushed — Nicole'], ['af_heart:50,af_sky:50', 'Light & airy — Heart + Sky'], ['af_bella', 'Expressive — Bella'], ['af_sarah', 'Calm — Sarah'], ['bf_emma', 'British, calm — Emma'], ['bf_isabella', 'British, soft — Isabella']];
+    const PRESETS = [['af_heart:50,af_nicole:50', 'Soft & gentle — Heart + Nicole (default)'], ['af_heart:65,af_nicole:35', 'Soft & playful — Heart + Nicole'], ['af_heart', 'Warm & bright — Heart'], ['af_nicole', 'Soft, hushed — Nicole'], ['af_heart:50,af_sky:50', 'Light & airy — Heart + Sky'], ['af_bella', 'Expressive — Bella'], ['af_sarah', 'Calm — Sarah'], ['bf_emma', 'British, calm — Emma'], ['bf_isabella', 'British, soft — Isabella']];
     const voiceSel = h('select', {}, PRESETS.map(([v, l]) => h('option', { value: v, selected: vs.settings.voice === v }, l)));
     const speed = h('input', { type: 'range', min: 0.8, max: 1.15, step: 0.01, value: vs.settings.speed, 'aria-label': 'Speaking speed' });
     const canExpress = vs.expressive === 'ready';

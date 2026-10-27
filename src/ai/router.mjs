@@ -9,6 +9,14 @@ import { ProviderError } from './openai-compat.mjs';
 const BREAKER_THRESHOLD = 3;
 const BREAKER_COOLDOWN_MS = 60_000;
 const AUTH_COOLDOWN_MS = 10 * 60_000;
+const NOT_FOUND_COOLDOWN_MS = 30 * 60_000; // "function not found / not entitled" does not fix itself in a minute
+const MAX_HINT_MS = 6 * 3600_000;
+// Failures that say "not now" skip the model at once (one wasted round trip, not three): rate limits for as long as the
+// provider asks, overload (503 "high demand") and stalls for a minute. Hard skips are never retried as a last resort.
+const HARD_KINDS = new Set(['auth', 'quota', 'not_found']);
+// A screenshot question answers in 2-6 s when the model is healthy; waiting the default 30 s on a stalled one before
+// falling back made "what's on my screen" take 41 s (28 Oct). Deep reasoning keeps the provider's longer limit.
+const ROLE_STALL_MS = { vision: 12_000 };
 
 export class AllModelsFailed extends Error {
   constructor(role, attempts) {
@@ -48,10 +56,15 @@ export class ModelRouter {
 
   #key(e) { return `${e.provider}:${e.model}`; }
   #open(key) { const b = this.#breakers.get(key); return b && b.openUntil > this.now(); }
+  #hardOpen(key) { const b = this.#breakers.get(key); return this.#open(key) && HARD_KINDS.has(b.kind); }
   #fail(key, error) {
-    const b = this.#breakers.get(key) ?? { failures: 0, openUntil: 0, lastError: null };
-    b.failures += 1; b.lastError = error.message?.slice(0, 200);
+    const b = this.#breakers.get(key) ?? { failures: 0, openUntil: 0, lastError: null, kind: null };
+    b.failures += 1; b.lastError = error.message?.slice(0, 200); b.kind = error.kind;
+    const hint = Number.isFinite(error.retryAfterMs) && error.retryAfterMs > 0 ? Math.min(error.retryAfterMs, MAX_HINT_MS) : null;
     if (error.kind === 'auth') b.openUntil = this.now() + AUTH_COOLDOWN_MS;
+    else if (error.kind === 'not_found') b.openUntil = this.now() + NOT_FOUND_COOLDOWN_MS;
+    else if (error.kind === 'rate' || error.kind === 'quota') b.openUntil = this.now() + (hint ?? BREAKER_COOLDOWN_MS);
+    else if ((error.kind === 'overload' && error.status === 503) || (error.kind === 'timeout' && /stalled/.test(error.message))) b.openUntil = this.now() + BREAKER_COOLDOWN_MS;
     else if (b.failures >= BREAKER_THRESHOLD) b.openUntil = this.now() + BREAKER_COOLDOWN_MS;
     this.#breakers.set(key, b);
   }
@@ -69,24 +82,37 @@ export class ModelRouter {
     const chain = (this.chains[role] ?? this.chains.chat ?? []).filter((e) => this.#providers.get(e.provider)?.configured);
     if (!chain.length) throw new AllModelsFailed(role, [{ key: role, error: 'no_provider_configured' }]);
     const attempts = [];
-    for (const entry of chain) {
-      const key = this.#key(entry);
-      if (this.#open(key)) { attempts.push({ key, error: 'circuit_open' }); continue; }
-      const t0 = this.now();
-      try {
-        const out = await this.#providers.get(entry.provider).complete({ thinking: this.thinkingRoles.has(role), ...opts, model: entry.model });
-        this.#ok(key);
-        this.#record(role, entry, this.now() - t0, out.usage, true);
-        if (this.#lastModel !== key) { this.bus?.publish('model.changed', { role, provider: entry.provider, model: entry.model, from: this.#lastModel }); this.#lastModel = key; }
-        return { ...out, provider: entry.provider, role, attempts };
-      } catch (error) {
-        if (opts.signal?.aborted) throw error; // user cancelled: never fall through
-        const pe = error instanceof ProviderError ? error : new ProviderError(error.message, { retryable: true });
-        this.#record(role, entry, this.now() - t0, null, false, pe.message);
-        this.#fail(key, pe);
-        this.bus?.publish('model.failed', { role, provider: entry.provider, model: entry.model, kind: pe.kind, error: pe.message.slice(0, 160) });
-        attempts.push({ key, error: pe.message.slice(0, 120) });
-        if (!pe.retryable && pe.kind !== 'auth') throw pe; // bad request: another model will not fix it
+    const rejectedBy = new Set(); // providers that refused this request as malformed: their other models would too
+    // Last resort: when every model was skipped only for a soft reason (cooling down after overload/rate), try them
+    // anyway rather than failing the turn without a single request.
+    const passes = [chain, chain.filter((e) => this.#open(this.#key(e)) && !this.#hardOpen(this.#key(e)))];
+    for (const [pass, list] of passes.entries()) {
+      if (pass === 1 && attempts.some((a) => a.error !== 'circuit_open')) break;
+      for (const entry of list) {
+        const key = this.#key(entry);
+        if (rejectedBy.has(entry.provider)) continue;
+        if (pass === 0 && this.#open(key)) { attempts.push({ key, error: 'circuit_open' }); continue; }
+        const t0 = this.now();
+        try {
+          const out = await this.#providers.get(entry.provider).complete({ thinking: this.thinkingRoles.has(role), ...(ROLE_STALL_MS[role] ? { stallMs: ROLE_STALL_MS[role] } : {}), ...opts, model: entry.model });
+          this.#ok(key);
+          this.#record(role, entry, this.now() - t0, out.usage, true);
+          if (this.#lastModel !== key) { this.bus?.publish('model.changed', { role, provider: entry.provider, model: entry.model, from: this.#lastModel }); this.#lastModel = key; }
+          return { ...out, provider: entry.provider, role, attempts };
+        } catch (error) {
+          if (opts.signal?.aborted) throw error; // user cancelled: never fall through
+          const pe = error instanceof ProviderError ? error : new ProviderError(error.message, { retryable: true });
+          this.#record(role, entry, this.now() - t0, null, false, pe.message);
+          this.#fail(key, pe);
+          this.bus?.publish('model.failed', { role, provider: entry.provider, model: entry.model, kind: pe.kind, error: pe.message.slice(0, 160) });
+          attempts.push({ key, error: pe.message.slice(0, 120) });
+          if (!pe.retryable && pe.kind !== 'auth') {
+            // Bad request: no model of this provider will accept it, but another provider may (schemas and
+            // parameters are checked differently). Only when no other provider is left is it final.
+            rejectedBy.add(entry.provider);
+            if (!chain.some((e) => !rejectedBy.has(e.provider))) throw pe;
+          }
+        }
       }
     }
     throw new AllModelsFailed(role, attempts);
@@ -153,15 +179,32 @@ export function chainsFromEnv(env) {
   const LIGHT = 'nvidia/nemotron-3.5-lightning-30b-a3b';
   const fb = env.FRIDAY_FALLBACK_MODEL ? [{ provider: 'fallback', model: env.FRIDAY_FALLBACK_MODEL }] : [];
   const n = (m) => ({ provider: 'nvidia', model: m });
+  // Gemini Flash scores about twice Nemotron on the Intelligence Index, but the free tier allows 5 requests/minute and
+  // 20 requests/DAY per model (AI Studio limits page, Oct 2026; 3.5-flash shares 3.6-flash's quota) and 3.8-flash is often "high
+  // demand". So by default it only leads the low-volume, high-value roles (deep reasoning, planning); chat and tool turns
+  // would spend the day's quota in ten messages. The router skips a limited model for as long as Google says (an hour
+  // for the daily quota), so calls drop to Nemotron at once. FRIDAY_GEMINI_ROLES=chat,execute,reason,plan widens it.
+  const gRoles = new Set(String(env.FRIDAY_GEMINI_ROLES ?? 'reason,plan').split(',').map((x) => x.trim()));
+  const g = (role, ...models) => (gRoles.has(role) ? models.map((m) => ({ provider: 'gemini', model: m })) : []);
+  const G38 = env.FRIDAY_GEMINI_MODEL ?? 'gemini-3.8-flash';
+  const G36 = env.FRIDAY_GEMINI_MODEL_2 ?? 'gemini-3.6-flash';
+  // Outage backup on a second company: when the whole NVIDIA chain is down, turns still get answered. Flash-Lite is
+  // weaker than Nemotron (AA index 22 vs 23-26) but the free tier allows 15 RPM / 500 RPD. '' turns it off.
+  const backup = (env.FRIDAY_GEMINI_BACKUP_MODEL ?? 'gemini-3.5-flash-lite') ? [{ provider: 'gemini', model: env.FRIDAY_GEMINI_BACKUP_MODEL ?? 'gemini-3.5-flash-lite' }] : [];
+  const gVision = env.FRIDAY_GEMINI_VISION_MODEL ?? 'gemini-3.5-flash-lite';
   return {
-    chat: env.FRIDAY_MODELS_CHAT ? parse(env.FRIDAY_MODELS_CHAT) : [n(SUPER), n(ULTRA), n(LIGHT), ...fb],
-    execute: env.FRIDAY_MODELS_EXECUTE ? parse(env.FRIDAY_MODELS_EXECUTE) : [n(SUPER), n(ULTRA), n(LIGHT), ...fb],
-    reason: env.FRIDAY_MODELS_REASON ? parse(env.FRIDAY_MODELS_REASON) : [n(ULTRA), n(SUPER), n(LIGHT), ...fb],
-    plan: env.FRIDAY_MODELS_PLAN ? parse(env.FRIDAY_MODELS_PLAN) : [n(ULTRA), n(SUPER), n(LIGHT), ...fb],
+    chat: env.FRIDAY_MODELS_CHAT ? parse(env.FRIDAY_MODELS_CHAT) : [...g('chat', G38, G36), n(SUPER), n(ULTRA), n(LIGHT), ...backup, ...fb],
+    execute: env.FRIDAY_MODELS_EXECUTE ? parse(env.FRIDAY_MODELS_EXECUTE) : [...g('execute', G38, G36), n(SUPER), n(ULTRA), n(LIGHT), ...backup, ...fb],
+    reason: env.FRIDAY_MODELS_REASON ? parse(env.FRIDAY_MODELS_REASON) : [...g('reason', G38), n(ULTRA), ...g('reason', G36), n(SUPER), n(LIGHT), ...backup, ...fb],
+    plan: env.FRIDAY_MODELS_PLAN ? parse(env.FRIDAY_MODELS_PLAN) : [...g('plan', G38), n(ULTRA), ...g('plan', G36), n(SUPER), n(LIGHT), ...backup, ...fb],
     // Driving a real website needs the strongest model: slower per step, far fewer wasted steps.
     computer: env.FRIDAY_MODELS_COMPUTER ? parse(env.FRIDAY_MODELS_COMPUTER) : [n(ULTRA), n(SUPER), ...fb],
     extract: env.FRIDAY_MODELS_EXTRACT ? parse(env.FRIDAY_MODELS_EXTRACT) : [n(SUPER), n(LIGHT), ...fb], // Super follows the JSON-only instruction; Lightning rambles
-    vision: env.FRIDAY_MODELS_VISION ? parse(env.FRIDAY_MODELS_VISION) : [n('nvidia/nemotron-3-nano-omni-30b-a3b-reasoning')],
+    // Screenshots (voice "what's on my screen", computer agent screen reading + click coordinates on a 0-1000 grid).
+    // Measured 28 Oct on real screenshots: Flash-Lite 2-6 s, exact text, 1-4 px at 1920x1080 (500 free requests/day);
+    // Super-VL 4-8 px but 2.5-22 s and misread a path; Nemotron Omni 3-7 s when it answers (often 503). ~1k prompt
+    // tokens per image on all three. FRIDAY_GEMINI_VISION_MODEL='' keeps images on NVIDIA.
+    vision: env.FRIDAY_MODELS_VISION ? parse(env.FRIDAY_MODELS_VISION) : [...(gVision ? [{ provider: 'gemini', model: gVision }] : []), n(SUPER), n('nvidia/nemotron-3-nano-omni-30b-a3b-reasoning')],
     embed: [{ provider: 'nvidia', model: env.FRIDAY_EMBED_MODEL ?? 'nvidia/nemotron-3-embed-1b' }],
   };
 }

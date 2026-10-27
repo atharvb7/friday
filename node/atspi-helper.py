@@ -2,7 +2,8 @@
 """AT-SPI accessibility helper for the Friday node (read UI trees, press buttons,
 set text). Works on Wayland because it talks to the accessibility bus, not the
 compositor. Usage: atspi-helper.py <cmd> '<json args>'   -> JSON on stdout."""
-import json, sys
+import json, sys, warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 import gi
 gi.require_version('Atspi', '2.0')
 from gi.repository import Atspi
@@ -30,20 +31,35 @@ def states(a):
     except Exception:
         return {}
 
-def walk(node, path, out, depth=0):
+TEXTUAL = {'text', 'entry', 'paragraph', 'terminal', 'spin button', 'password text', 'label', 'heading', 'static'}
+
+def text_of(a, role):
+    if role not in TEXTUAL or role == 'password text': return ''
+    try:  # call the Text interface explicitly: on new libatspi a.get_text() resolves to Accessible, not Text
+        if 'Text' not in a.get_interfaces(): return ''
+        return (Atspi.Text.get_text(a, 0, min(Atspi.Text.get_character_count(a), 300)) or '').strip()
+    except Exception: return ''
+
+def walk(node, path, out, depth=0, parent_name=None):
     if len(out) >= MAX_NODES or depth > 14: return
     role = role_of(node); nm = name_of(node); st = states(node)
-    if st.get('SHOWING', True) and (role in INTERACTIVE or nm):
+    # A button's inner label repeats the button's name: skip it (halves the tree for toolbars/keypads).
+    dup = role == 'label' and nm and nm == parent_name
+    if st.get('SHOWING', True) and not dup and (role in INTERACTIVE or nm):
         acts = []
         try:
             ai = node.get_action_iface()
             if ai: acts = [ai.get_action_name(i) for i in range(ai.get_n_actions())]
         except Exception: pass
-        out.append({'ref': '.'.join(map(str, path)), 'role': role, 'name': nm[:80], 'actions': acts, 'editable': bool(st.get('EDITABLE'))})
+        el = {'ref': '.'.join(map(str, path)), 'role': role, 'name': nm[:80], 'actions': acts[:6], 'editable': bool(st.get('EDITABLE'))}
+        val = text_of(node, role)
+        if val and val != nm: el['value'] = val[:300]
+        if st.get('FOCUSED'): el['focused'] = True
+        out.append(el)
     try: n = node.get_child_count()
     except Exception: n = 0
     for i in range(min(n, 80)):
-        try: walk(node.get_child_at_index(i), path + [i], out, depth + 1)
+        try: walk(node.get_child_at_index(i), path + [i], out, depth + 1, nm)
         except Exception: pass
 
 def resolve(ref):
@@ -59,9 +75,11 @@ def cmd_windows(_):
         try:
             for j in range(app.get_child_count()):
                 w = app.get_child_at_index(j)
-                wins.append({'ref': f'{ai}.{j}', 'name': name_of(w)})
+                try: active = w.get_state_set().contains(Atspi.StateType.ACTIVE)  # the focused window
+                except Exception: active = False
+                wins.append({'ref': f'{ai}.{j}', 'name': name_of(w), **({'active': True} if active else {})})
         except Exception: pass
-        res.append({'app': name_of(app), 'index': ai, 'windows': wins})
+        if wins: res.append({'app': name_of(app), 'index': ai, 'windows': wins})  # skip window-less services (daemons, portals)
     return {'apps': res}
 
 def cmd_tree(a):
@@ -73,7 +91,9 @@ def cmd_act(a):
     node = resolve(a['ref']); ai = node.get_action_iface()
     if not ai: return {'ok': False, 'error': 'no_actions'}
     names = [ai.get_action_name(i) for i in range(ai.get_n_actions())]
-    idx = names.index(a['action']) if a.get('action') in names else 0
+    if a.get('action') and a['action'] not in names:  # never fall back to another action (index 0 could be "paste")
+        return {'ok': False, 'error': 'no_such_action', 'available': names[:12]}
+    idx = names.index(a['action']) if a.get('action') else 0
     return {'ok': bool(ai.do_action(idx)), 'action': names[idx]}
 
 def cmd_set_text(a):

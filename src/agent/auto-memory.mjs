@@ -12,10 +12,11 @@ const jaccard = (a, b) => { const A = words(a), B = words(b); if (!A.size || !B.
 
 const SYSTEM = `You maintain a personal assistant's long-term memory about ONE user. From the exchange below, extract only durable, useful facts worth remembering about the USER: preferences, personal facts (people, pets, places, routines, health, studies, job), plans and deadlines, decisions, goals, projects, and emotionally significant events (e.g. "failed an exam today", "got the internship"). 
 NOT worth saving: statements about what is NOT known or missing ("name not yet known"), small talk, jokes, questions, the assistant's own words, temporary context, things already known, opinions about the assistant, anything secret (passwords, keys, card numbers).
-Output ONLY a JSON array, max 3 items, each {"content": "User ... (third person, one clear sentence, include a date/time reference if it is an event)", "kind": "preference|long_term|project|episodic", "importance": 0.0-1.0, "project": null or "name"}. Output [] if nothing is worth saving.`;
+Output ONLY a JSON array, max 3 memory items, each {"content": "User ... (third person, one clear sentence, include a date/time reference if it is an event)", "kind": "preference|long_term|project|episodic", "importance": 0.0-1.0, "project": null or "name"}.
+ALSO, for each concrete thing the USER says HE has to do / submit / finish / attend (assignments, lab manual, prototype, exam, meeting, payment), add a to-do item {"kind": "todo", "content": "short title, e.g. Lab manual", "due": "YYYY-MM-DD or YYYY-MM-DDTHH:MM in his local time, resolved from Now (today/tomorrow/in 2 days/30th), or null", "priority": "high|normal|low"} — up to 6 to-dos, one per item, even if the deadline is vague (null). Not for things the assistant will do. Output [] if nothing is worth saving.`;
 
 export class AutoMemory {
-  constructor({ ai, memory, settings, indexer = null, bus = null, now = () => Date.now() }) { Object.assign(this, { ai, memory, settings, indexer, bus, now }); }
+  constructor({ ai, memory, settings, indexer = null, bus = null, commitments = null, now = () => Date.now() }) { Object.assign(this, { ai, memory, settings, indexer, bus, commitments, now }); }
 
   enabled() { return this.settings.get('auto_memory', true) !== false; }
 
@@ -37,7 +38,14 @@ export class AutoMemory {
         { role: 'user', content: `Now: ${userTimeIso}\n\nAlready known:\n${known.map((m) => `- ${m.content}`).join('\n') || '(nothing relevant)'}\n\nUser said: ${text.slice(0, 1500)}\nAssistant replied: ${String(assistantText ?? '').slice(0, 600)}` },
       ] });
     } catch { return { saved: 0, reason: 'model_unavailable' }; }
-    const items = this.#parse(out.content);
+    const parsed = this.#parse(out.content);
+    let todos = 0;
+    for (const it of parsed.filter((x) => x.kind === 'todo').slice(0, 6)) { // deadlines become tracked to-dos, not just memories
+      if (!this.commitments || SECRET_RE.test(it.content)) continue;
+      try { const r = this.commitments.add({ title: it.content.trim().slice(0, 200), due: typeof it.due === 'string' ? it.due : null, priority: it.priority, source: 'auto:chat' }); if (r.created) todos++; } catch { /* bad date or cap: skip */ }
+    }
+    if (todos) this.bus?.publish('commitment.auto_added', { count: todos });
+    const items = parsed.filter((x) => x.kind !== 'todo');
     let saved = 0;
     for (const it of items.slice(0, 3)) {
       const c = it.content.trim();
@@ -50,7 +58,7 @@ export class AutoMemory {
       } catch { /* invalid item: skip */ }
     }
     if (saved) { this.settings.set('auto_memory_day', { day, n: counter.n + saved }); this.bus?.publish('memory.auto_saved', { count: saved }); }
-    return { saved, reason: 'ok' };
+    return { saved, todos, reason: 'ok' };
   }
 
   #parse(text) {

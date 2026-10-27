@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { reelEdit, reelFolder } from './reel-edit.mjs';
 import { zipFolder } from './zip.mjs';
 import { BrowserController } from './browser.mjs';
-import { atspiAvailable, defaultAllowedDirs, idleMs, makeDesktop } from './desktop.mjs';
+import { atspiAvailable, defaultAllowedDirs, idleMs, InputDevice, makeDesktop } from './desktop.mjs';
 
 const CONF_DIR = process.env.FRIDAY_NODE_HOME ?? join(homedir(), '.friday-node');
 const CONF = join(CONF_DIR, 'config.json');
@@ -44,7 +44,11 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 const { chromium } = await import('playwright-core');
 const chromePath = conf.chrome ?? ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium'].find((p) => existsSync(p));
 const browser = chromePath ? new BrowserController({ chromium, profileDir: join(CONF_DIR, 'chrome-profile'), executablePath: chromePath, headless: conf.headless === true, allowedDirs }) : null;
-const desktop = makeDesktop({ allowedDirs });
+// fullAccess (default on, the owner asked for it): any app, keyboard/mouse, screenshots, shell, files in $HOME.
+// Set "fullAccess": false in config.json to go back to browser + allowed folders only.
+const fullAccess = conf.fullAccess !== false;
+const input = new InputDevice();
+const desktop = makeDesktop({ allowedDirs, fullAccess, input });
 
 const handlers = {
   ...(browser ? {
@@ -65,9 +69,10 @@ const handlers = {
     },
     reel_edit: (a) => reelEdit(a, { downloadsRoot: allowedDirs.find((d) => /\/Downloads$/.test(d)) ?? join(homedir(), 'Downloads') }),
   } : {}),
-  file_find: (a) => desktop.file_find(a), open_target: (a) => desktop.open_target(a), open_app: (a) => desktop.open_app(a),
 };
-if (await atspiAvailable()) Object.assign(handlers, { windows_list: () => desktop.windows_list(), ui_tree: (a) => desktop.ui_tree(a), ui_act: (a) => desktop.ui_act(a), ui_set_text: (a) => desktop.ui_set_text(a) });
+const ATSPI = new Set(['windows_list', 'ui_tree', 'ui_act', 'ui_set_text', 'window_focus', 'window_close']);
+const hasAtspi = await atspiAvailable();
+for (const [name, fn] of Object.entries(desktop)) if (typeof fn === 'function' && (hasAtspi || !ATSPI.has(name))) handlers[name] = (a) => fn(a ?? {});
 const caps = Object.keys(handlers);
 
 async function execute(c) {
@@ -79,14 +84,15 @@ async function execute(c) {
   try { await post('/v1/node/result', out); } catch (e) { log('result post failed', e.message); }
 }
 
-// Tell the server when the human is using the machine (GNOME idle monitor).
+// Tell the server when the human is using the machine (GNOME idle monitor). Friday's own uinput events reset the
+// idle timer too, so input that started before her last injection ended is hers, not the user's.
 setInterval(async () => {
   const idle = await idleMs();
-  if (idle !== null && idle < 3000) post('/v1/node/events', { type: 'activity', holdMs: 15_000 }).catch(() => {});
+  if (idle !== null && idle < 3000 && Date.now() - idle > input.lastInjectAt + 400) post('/v1/node/events', { type: 'activity', holdMs: 15_000 }).catch(() => {});
 }, 3000).unref();
 
 let stopping = false;
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { stopping = true; await browser?.close(); process.exit(0); });
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { stopping = true; input.close(); await browser?.close(); process.exit(0); });
 
 let backoff = 1000;
 while (!stopping) {

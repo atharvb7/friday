@@ -31,6 +31,12 @@ test('companion over HTTP: read+chat device streams state, reports presence, voi
     assert.equal(st.stt, 'not_installed'); assert.equal(st.tts, 'not_installed'); assert.equal(st.engine, 'none');
     const ask = await fetch(base + '/v1/voice/ask', { method: 'POST', headers: { Authorization: `Bearer ${dev}`, 'Content-Type': 'audio/wav' }, body: Buffer.alloc(100) });
     assert.equal(ask.status, 501);
+    // laptop push-to-talk: text already transcribed on the device (works without server STT)
+    const turn = await call(dev, '/v1/voice/turn', { method: 'POST', body: JSON.stringify({ text: 'hello there' }) });
+    assert.equal(turn.status, 200); const tj = await turn.json();
+    assert.equal(tj.heard, 'hello there'); assert.equal(typeof tj.reply, 'string'); assert.ok(tj.conversationId);
+    assert.equal((await call(dev, '/v1/voice/turn', { method: 'POST', body: JSON.stringify({ text: 'x', image: { mime: 'image/png', data: 'AAAA' } }) })).status, 400);
+    assert.equal((await call(dev, '/v1/voice/turn', { method: 'POST', body: JSON.stringify({}) })).status, 400);
     ac.abort();
   } finally { child.kill('SIGTERM'); await new Promise((r) => { child.on('exit', r); setTimeout(r, 5000); }); rmSync(dir, { recursive: true, force: true }); }
 });

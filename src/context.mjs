@@ -27,6 +27,8 @@ import { MemoryIndexer } from './ai/memory-indexer.mjs';
 import { Settings } from './settings.mjs';
 import { ContextBuilder } from './agent/context-builder.mjs';
 import { buildFridayTools } from './agent/friday-tools.mjs';
+import { ToolRouter, toolsLoadTool } from './agent/toolsets.mjs';
+import { Commitments, commitmentTools } from './commitments.mjs';
 import { Brain } from './agent/brain.mjs';
 import { Notifications } from './notifications.mjs';
 import { Mood } from './mood.mjs';
@@ -142,6 +144,9 @@ export function createContext({ appRoot, env = process.env }) {
   // Model router: providers are interchangeable; nothing else names a vendor.
   const ai = new ModelRouter({ db: store.db, bus, chains: chainsFromEnv(env), thinkingRoles: thinkingRolesFromEnv(env) });
   ai.register(new OpenAICompatProvider({ name: 'nvidia', baseUrl: env.FRIDAY_NEMOTRON_BASE_URL ?? 'https://integrate.api.nvidia.com/v1', apiKey: env.FRIDAY_NVIDIA_API_KEY ?? null, noThinking: { chat_template_kwargs: { enable_thinking: false } } }));
+  // Gemini's OpenAI-compatible endpoint. 'low' is the lowest thinking level every current Flash accepts (3.8 refuses minimal).
+  ai.register(new OpenAICompatProvider({ name: 'gemini', baseUrl: env.FRIDAY_GEMINI_BASE_URL ?? 'https://generativelanguage.googleapis.com/v1beta/openai', apiKey: env.FRIDAY_GEMINI_API_KEY ?? null,
+    noThinking: { reasoning_effort: 'low' }, thoughtSignatures: true, alwaysStream: true, stallMs: 30_000, timeoutMs: 120_000 }));
   if (env.FRIDAY_FALLBACK_BASE_URL && env.FRIDAY_FALLBACK_API_KEY) {
     ai.register(new OpenAICompatProvider({ name: 'fallback', baseUrl: env.FRIDAY_FALLBACK_BASE_URL, apiKey: env.FRIDAY_FALLBACK_API_KEY }));
   }
@@ -223,8 +228,9 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.approvals = new Approvals({ store, notifications: ctx.notifications, chat: ctx.chat, bus, audit: ctx.audit });
   ctx.users = new Users({ store, approvals: ctx.approvals, bus });
   ctx.auth.memberActive = (id) => ctx.users.get(id)?.status === 'approved';
+  ctx.commitments = new Commitments({ store, settings, bus });
   ctx.proactive = new Proactive({
-    store, notifications: ctx.notifications, jobs: ctx.jobs, ai, memory, settings, bus, dataDir,
+    store, notifications: ctx.notifications, jobs: ctx.jobs, ai, memory, settings, bus, dataDir, commitments: ctx.commitments,
     agentReady: () => ctx.dshAdapter.status().ready,
   });
   ctx.profile = new Profile({ settings });
@@ -274,13 +280,16 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.fridayTools.register = (tool) => { register(tool); if (tool.risk !== 'safe') ctx.approvals.register(tool.name, tool.run); };
     for (const tool of ctx.fridayTools.list()) if (tool.risk !== 'safe') ctx.approvals.register(tool.name, tool.run);
   }
+  ctx.fridayTools.register(toolsLoadTool());
+  for (const t of commitmentTools(ctx.commitments)) ctx.fridayTools.register(t);
   ctx.mood = new Mood({ settings, store });
   ctx.habits = new Habits({ settings });
-  ctx.autoMemory = new AutoMemory({ ai, memory, settings, indexer, bus });
+  ctx.autoMemory = new AutoMemory({ ai, memory, settings, indexer, bus, commitments: ctx.commitments });
   ctx.brain = new Brain({
     mood: ctx.mood, habits: ctx.habits,
     ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit, skills, policy: ctx.policy, approvals: ctx.approvals,
-    contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory, questions: ctx.questions, profile: ctx.profile, dmChats: ctx.dmChats }),
+    toolRouter: new ToolRouter({ enabled: env.FRIDAY_TOOL_ROUTING !== '0' }),
+    contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory, questions: ctx.questions, profile: ctx.profile, dmChats: ctx.dmChats, commitments: ctx.commitments }),
   });
   ctx.chatBrain = () => {
     if (ai.hasProvider && !ctx.state.emergencyStopped) return { name: 'friday-brain', adapter: ctx.brain };

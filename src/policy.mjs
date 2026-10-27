@@ -14,7 +14,9 @@ export const LEVELS = Object.freeze(['ask', 'trusted', 'autonomous', 'high']);
 export const RISKS = Object.freeze(['routine', 'consequential', 'critical']);
 
 export const DEFAULT_LEVELS = Object.freeze({
-  research: 'autonomous', coding: 'trusted', browser: 'trusted', computer: 'ask', messaging: 'ask', spending: 'ask', deletion: 'ask', system: 'ask',
+  // computer is trusted: the owner gave Friday full routine use of his laptop (apps, screen, typing, shell, files) without
+  // asking. Anything that sends, spends, deletes or changes the system is classified into those categories and still asks.
+  research: 'autonomous', coding: 'trusted', browser: 'trusted', computer: 'trusted', messaging: 'ask', spending: 'ask', deletion: 'ask', system: 'ask',
 });
 
 const MAX_HIGH_HOURS = 12;

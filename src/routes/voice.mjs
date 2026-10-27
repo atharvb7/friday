@@ -1,6 +1,7 @@
 // POST audio/wav -> text, text -> audio/wav, and a one-call "ask" for devices:
 // wav in -> transcribe -> Friday answers -> wav out (headers carry the texts).
 import { DEFAULT_VOICE, ENGINES } from '../voice-server.mjs';
+import { voiceTurn } from '../voice-turn.mjs';
 
 // Performance tags the expressive voice acts out; never shown or sent as text.
 const VOICE_TAGS = /\s*\[(?:laugh|chuckle|sigh|gasp|groan|sniff|cough|clear throat|shush|whispering|happy|sarcastic|surprised|dramatic|angry|crying|fear|narration|advertisement)\]\s*/gi;
@@ -35,6 +36,17 @@ export function voiceRoutes(router, ctx) {
   // The speaker was switched on: load her voice now so the first sentence is not slow.
   router.post('/v1/voice/warm', async () => {
     try { return [200, await voiceServer.warm(cfg())]; } catch (e) { return fail(e); }
+  });
+
+  // Text already transcribed on the device (laptop push-to-talk), optionally with a screenshot when the question is about
+  // the screen. JSON in: { text, image?: { mime, data(base64) }, conversationId? } -> JSON out: { heard, reply (with
+  // voice tags, for TTS), text (display), conversationId, screen }. The device speaks the reply itself or calls /speak.
+  router.post('/v1/voice/turn', async ({ body }) => {
+    let b; try { b = await body({ max: 4 * 1024 * 1024 }); } catch (e) { return e.message === 'body_too_large' ? [413, { error: 'body too large (screenshot over 2.5 MB?)' }] : [400, { error: 'invalid JSON' }]; }
+    try {
+      bus.publish('voice.started', {});
+      return [200, await voiceTurn(b, { ai: ctx.ai, quickTurn: ctx.quickTurn, chat: ctx.chat, stripTags: stripVoiceTags })];
+    } catch (e) { return e instanceof TypeError ? [400, { error: e.message }] : [502, { error: String(e.message ?? e).slice(0, 200) }]; } finally { bus.publish('voice.ended', {}); }
   });
 
   router.post('/v1/voice/ask', async ({ rawBody }) => {

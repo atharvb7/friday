@@ -10,8 +10,10 @@ import { PythonWorker } from './voice-worker.mjs';
 
 const MAX_AUDIO = 8 * 1024 * 1024;
 const TIMEOUT_MS = 60_000;
-// soft + warm, a little playful; 'expressive' clones this Kokoro blend at a slightly higher pitch (cuter) and adds emotion
-export const DEFAULT_VOICE = { voice: 'af_heart:65,af_nicole:35', speed: 0.96, engine: 'expressive', pitch: 1.12 };
+// Very soft and gentle, clear: Kokoro Heart + Nicole at 0.92 (149 words/min, 0 word errors in every run; samples and
+// scores in outputs/friday-voice-samples-v2, 2026-10-28). The 'expressive' Chatterbox Nano voice performs [laugh]/[sigh]
+// but misread 3-6% of words, rushed (~185 wpm) and cut 2 of 15 sentences short, so it is opt-in (Settings).
+export const DEFAULT_VOICE = { voice: 'af_heart:50,af_nicole:50', speed: 0.92, engine: 'kokoro', pitch: 1.0 };
 export const ENGINES = Object.freeze(['expressive', 'kokoro']);
 
 export class VoiceServer {

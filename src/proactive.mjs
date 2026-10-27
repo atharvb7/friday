@@ -15,8 +15,8 @@ const HOUR = 3600_000;
 
 export class Proactive {
   #timer = null;
-  constructor({ store, notifications, jobs, ai, memory, settings, bus = null, agentReady = () => true, dataDir = '.', now = () => new Date() }) {
-    Object.assign(this, { store, notifications, jobs, ai, memory, settings, bus, agentReady, dataDir, now });
+  constructor({ store, notifications, jobs, ai, memory, settings, bus = null, agentReady = () => true, dataDir = '.', commitments = null, now = () => new Date() }) {
+    Object.assign(this, { store, notifications, jobs, ai, memory, settings, bus, agentReady, dataDir, commitments, now });
     this.db = store.db;
     this.db.exec('CREATE TABLE IF NOT EXISTS proactive_log (key TEXT NOT NULL, ts TEXT NOT NULL)');
     this.db.exec('CREATE INDEX IF NOT EXISTS proactive_log_idx ON proactive_log (key, ts)');
@@ -88,6 +88,12 @@ export class Proactive {
           if (now - Date.parse(q.created_at) > 2 * HOUR) sent += this.#send(`nudge-question:${q.id}`, 365 * 24 * HOUR, { level: 'warning', title: 'A task is paused on your answer', body: String(q.question).slice(0, 200) }) ? 1 : 0;
         }
       } catch { /* tables may not exist in minimal setups */ }
+      try { // a deadline coming up: one heads-up per to-do (timed: 3h before; all-day: the morning of)
+        for (const c of this.commitments?.dueForNudge({ withinHours: 3 }) ?? []) {
+          const when = new Date(c.due_at).toLocaleString('en-GB', { timeZone: tz, weekday: 'short', hour: '2-digit', minute: '2-digit' });
+          if (this.#send(`todo-due:${c.id}`, 365 * 24 * HOUR, { level: 'warning', title: `Due ${c.all_day ? 'today' : `at ${when}`}: ${c.title}`, body: 'Still open on your list. Tell me when it\'s done, or if the deadline moved.' })) { sent += 1; this.commitments.markNudged(c.id); }
+        }
+      } catch { /* optional */ }
       sent += (await this.maybeBriefing(cfg, tz)) ? 1 : 0;
     }
     return { sent, quiet };
@@ -117,25 +123,27 @@ export class Proactive {
     const endOfDay = new Date(now + 24 * HOUR).toISOString();
     const reminders = this.jobs ? this.jobs.list({ status: 'active' }).filter((j) => j.due_at <= endOfDay) : [];
     const pinned = this.memory.pinned(4);
-    return { active, attention, finished, reminders, pinned, tz };
+    const todos = this.commitments?.summaryLines({ hours: 72, max: 10 }) ?? [];
+    return { active, attention, finished, reminders, pinned, todos, tz };
   }
 
   async composeBriefing(tz) {
     const g = this.gather(tz);
     const fmt = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
     const facts = [
+      `His to-dos (overdue or due within 3 days, then undated):\n${g.todos.join('\n') || 'none'}`,
       `Reminders next 24h: ${g.reminders.map((r) => `${r.title} @ ${fmt(r.due_at)}`).join('; ') || 'none'}`,
       `Needs attention (blocked/failed): ${g.attention.map((t) => `${t.title} [${t.status}]`).join('; ') || 'none'}`,
       `In progress: ${g.active.map((t) => t.title).join('; ') || 'none'}`,
       `Finished in last 24h: ${g.finished.map((t) => `${t.title}: ${String(t.result ?? '').slice(0, 120)}`).join(' | ') || 'none'}`,
       `Pinned context: ${g.pinned.map((m) => m.content).join('; ') || 'none'}`,
     ].join('\n');
-    const fallback = `Morning. ${g.reminders.length} reminder(s) in the next 24h, ${g.attention.length} item(s) needing attention, ${g.active.length} task(s) in progress, ${g.finished.length} finished.`;
+    const fallback = `Morning. ${g.todos.length ? `On your plate:\n${g.todos.join('\n')}\n` : ''}${g.reminders.length} reminder(s) in the next 24h, ${g.attention.length} item(s) needing attention, ${g.active.length} task(s) in progress, ${g.finished.length} finished.`;
     if (!this.ai.hasProvider) return fallback;
     try {
       const sys = buildSystemPrompt({ personality: normalizePersonality(this.settings.get('personality', {})), mood: this.mood?.current?.() ?? null, userName: this.settings.get('user_name', null), timezone: tz, now: this.now() });
       const out = await this.ai.chat([
-        { role: 'system', content: `${sys}\n\nWrite the user's morning briefing from ONLY the facts below. Max ~120 words. Sections in this order, skipping empty ones: needs you today, in progress, finished, one suggested focus. Do not invent items.` },
+        { role: 'system', content: `${sys}\n\nWrite the user's morning briefing from ONLY the facts below. Max ~120 words. Sections in this order, skipping empty ones: needs you today (his to-dos: overdue first, then due today/soon, with their deadlines), in progress, finished, one suggested focus. Never say there is no pending work while his to-do list has items. Do not invent items.` },
         { role: 'user', content: facts },
       ], { maxTokens: 1200, temperature: 0.5 });
       return out.content.trim() || fallback;

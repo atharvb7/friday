@@ -6,7 +6,8 @@ JSON-lines protocol on stdin/stdout, one request -> one response, models load la
   {"id":1,"op":"stt","wav":"/path.wav","lang":"en","prompt":"..."}   -> {"id":1,"ok":true,"text":"..."}
   {"id":2,"op":"tts","text":"...","voice":"af_heart:60,af_nicole:40","speed":0.95,"out":"/path.wav",
    "engine":"expressive","pitch":1.12}                                -> {"id":2,"ok":true,"engine":"expressive"}
-  {"id":3,"op":"warm","engine":"expressive","voice":"...","pitch":1.12} -> loads the TTS engine ahead of the first sentence
+  {"id":3,"op":"warm","engine":"expressive","voice":"...","pitch":1.12,"stt":false} -> loads the TTS engine (and Whisper
+                                                                          with "stt":true) ahead of the first sentence
   {"id":3,"op":"status"}                                              -> {"id":3,"ok":true,...}
 """
 import json, os, sys, time
@@ -236,6 +237,7 @@ def tts(req):
     return {"rate": rate, "seconds": round(len(samples) / rate, 2), "engine": engine}
 
 def warm(req):
+    if req.get("stt"): whisper()  # the laptop key warms Whisper while you are still talking
     if req.get("engine") == "expressive" and cbx_ready():
         expressive().cond(req.get("voice") or "af_heart", float(req.get("pitch") or 1.0))
         return {"engine": "expressive"}
