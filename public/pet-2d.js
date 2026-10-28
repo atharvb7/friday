@@ -4,7 +4,7 @@
 // Drawing on a canvas keeps "Float on screen" (Picture-in-Picture via captureStream) working.
 //
 // STRUCTURE: pure helpers first (node-testable, no DOM); the browser part is initPet2D().
-import { PET_STATES, poseFor, isCompactMode, lineFor } from './pet-viewer.js';
+import { PET_STATES, poseFor, isCompactMode, lineFor } from './pet-shared.js';
 
 export const PET_IMAGE = '/assets/friday.webp';
 const SESSION_TOKEN_KEY = 'friday.token'; // where the web app keeps it (js/api.js): local when "remember me", else session

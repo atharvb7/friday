@@ -1,6 +1,4 @@
 # Asset attribution
-- `pet.glb` — "megaman_x_divemmdortwinkle_girl.glb" by lucianone, licensed CC-BY-4.0.
-  Original filename kept in `public/pet.html`. 80 nodes, 1 skin, no authored animations (Friday animates it procedurally).
 - `friday.webp`, `friday-face.webp`, `icon-*.png`, `apple-touch-icon.png`, `favicon-64.png` — Friday's look, derived from a
   portrait image supplied by the owner (artist unknown; background removed, heart bubble taken out, cropped). Personal use;
   replace with art you hold rights to before using Friday's look commercially. These files are git-ignored (this repo is

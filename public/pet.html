@@ -1,13 +1,5 @@
 <!doctype html>
-<!--
-  Friday screen-pet stage. Default: her 2D portrait (pet-2d.js, /assets/friday.webp).
-  ?mode=3d: the older 3D view for megaman_x_divemmdortwinkle_girl.glb
-  Model: "megaman_x_divemmdortwinkle_girl.glb" (glTF 2.0, ~0.7MB, 80 nodes,
-  1 skin, ZERO embedded animations, ZERO morph targets).
-  License: CC-BY-4.0 by lucianone — attribution required (see footer).
-  All motion is PROCEDURAL (code-driven bone transforms); no clips exist.
-  There are no jaw/mouth bones, so "talk" is head-bob + subtitle only.
--->
+<!-- Friday screen-pet stage: her 2D portrait (pet-2d.js, /assets/friday.webp). -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -26,14 +18,10 @@
     <button class="btn" id="btn-talk" type="button">Talk test</button>
     <button class="btn" id="btn-float" type="button">Float on screen</button>
     <button class="btn" id="btn-compact" type="button">Sit on screen</button>
-    <a class="btn" id="btn-mode" href="?mode=3d">3D model</a>
   </div>
   <div id="subtitle" role="status" aria-live="polite"></div>
   <div id="fallback" role="alert"></div>
   <p id="note"></p>
-  <footer id="attrib">
-    Pet model CC-BY-4.0 by lucianone — “megaman_x_divemmdortwinkle_girl.glb”.
-    Procedural animation only (no mocap / no embedded clips).
-  </footer>
+  <footer id="attrib"></footer>
 </body>
 </html>

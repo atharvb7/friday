@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { bubbleFor, motionAt, PET_IMAGE } from '../public/pet-2d.js';
-import { PET_STATES, PET_LINES, lineFor } from '../public/pet-viewer.js';
+import { PET_STATES, PET_LINES, lineFor } from '../public/pet-shared.js';
 
 const ART = [PET_IMAGE, '/assets/friday-face.webp', '/assets/icon-192.png', '/assets/icon-512.png', '/assets/apple-touch-icon.png', '/assets/favicon-64.png'];
 const artHere = ART.every((f) => existsSync(new URL(`../public${f}`, import.meta.url)));

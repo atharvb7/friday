@@ -7,11 +7,11 @@ import {
   nextBlinkDelay,
   isCompactMode,
   poseFor,
-} from '../public/pet-viewer.js';
+} from '../public/pet-shared.js';
 
 // No WebGL/THREE in these tests: poseFor/timing/compact parsing are pure.
 // Proof: importing the module must not require a DOM or fetch.
-test('pet-viewer imports cleanly without DOM/WebGL globals', () => {
+test('pet-shared imports cleanly without DOM/WebGL globals', () => {
   assert.equal(typeof document, 'undefined');
   assert.equal(typeof globalThis.WebGLRenderingContext, 'undefined');
 });

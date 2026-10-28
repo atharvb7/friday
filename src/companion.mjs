@@ -5,7 +5,7 @@
 //         speaking waiting verifying success error offline
 export const COMPANION_STATES = Object.freeze(['idle', 'listening', 'thinking', 'planning', 'researching', 'browsing', 'coding', 'computer_use', 'speaking', 'waiting', 'verifying', 'success', 'error', 'offline']);
 
-// Mapping onto the 3D pet's existing pose vocabulary (public/pet-viewer.js).
+// Mapping onto the pet's pose vocabulary (public/pet-shared.js).
 const PET = { idle: 'listening', listening: 'listening', thinking: 'thinking', planning: 'thinking', researching: 'acting', browsing: 'acting', coding: 'acting', computer_use: 'acting', speaking: 'listening', waiting: 'waiting', verifying: 'acting', success: 'done', error: 'blocked', offline: 'offline' };
 const KIND_STATE = { research: 'researching', coding: 'coding', computer: 'computer_use', agent: 'planning' };
 const FLASH_MS = 6000;
