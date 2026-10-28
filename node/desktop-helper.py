@@ -95,6 +95,40 @@ def shot(a):
         except OSError: pass
 
 
+def region(a):
+    """Part of the screen (x, y, w, h as 0-1 fractions of the desktop): a fingerprint (16x16 grey, 4-bit) to notice
+    changes cheaply, plus a JPEG of that part only when image=true. Live chat polls this every ~2 s (no model involved)."""
+    fx, fy, fw, fh = (float(a.get(k, d)) for k, d in (('x', 0), ('y', 0), ('w', 1), ('h', 1)))
+    if not (0 <= fx < 1 and 0 <= fy < 1 and 0 < fw <= 1 and 0 < fh <= 1): return {'error': 'region must be 0-1 fractions'}
+    t0 = time.time()
+    r = portal_shot()
+    if 'error' in r: return r
+    path = r['path']
+    try:
+        import gi, hashlib
+        gi.require_version('GdkPixbuf', '2.0')
+        from gi.repository import GdkPixbuf
+        pb = GdkPixbuf.Pixbuf.new_from_file(path)
+        sw, sh = pb.get_width(), pb.get_height()
+        x, y = int(fx * sw), int(fy * sh); w, h = max(8, min(int(fw * sw), sw - x)), max(8, min(int(fh * sh), sh - y))
+        crop = pb.new_subpixbuf(x, y, w, h)
+        tiny = crop.scale_simple(16, 16, GdkPixbuf.InterpType.BILINEAR)
+        px, n, stride = tiny.get_pixels(), tiny.get_n_channels(), tiny.get_rowstride()
+        grey = bytes(((px[r * stride + c * n] * 3 + px[r * stride + c * n + 1] * 6 + px[r * stride + c * n + 2]) // 10) >> 4 for r in range(16) for c in range(16))
+        out = {'hash': hashlib.sha1(grey).hexdigest()[:16], 'ms': round((time.time() - t0) * 1000)}
+        if a.get('image'):
+            max_w = max(320, min(int(a.get('maxWidth') or 900), 1600))
+            if w > max_w: crop = crop.scale_simple(max_w, max(1, round(h * max_w / w)), GdkPixbuf.InterpType.BILINEAR)
+            flat = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, crop.get_width(), crop.get_height()); flat.fill(0xffffffff)
+            crop.composite(flat, 0, 0, crop.get_width(), crop.get_height(), 0, 0, 1, 1, GdkPixbuf.InterpType.NEAREST, 255)
+            ok, buf = flat.save_to_bufferv('jpeg', ['quality'], ['80'])
+            out.update({'mime': 'image/jpeg', 'base64': base64.b64encode(buf).decode(), 'width': flat.get_width(), 'height': flat.get_height()})
+        return out
+    finally:
+        try: os.remove(path)
+        except OSError: pass
+
+
 def _gtk():
     os.environ['GDK_BACKEND'] = 'x11'
     import gi
@@ -138,7 +172,7 @@ def clip_set(a):
     os._exit(0)
 
 
-CMDS = {'screen': lambda _a: screen(), 'shot': shot, 'clip_get': clip_get, 'clip_set': clip_set}
+CMDS = {'screen': lambda _a: screen(), 'shot': shot, 'region': region, 'clip_get': clip_get, 'clip_set': clip_set}
 if __name__ == '__main__':
     try:
         raw = sys.stdin.read() if len(sys.argv) > 2 and sys.argv[2] == '-' else (sys.argv[2] if len(sys.argv) > 2 else '{}')

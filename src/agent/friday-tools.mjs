@@ -217,6 +217,23 @@ export function buildFridayTools(ctx) {
       run: (a) => ({ tasks: store.listTasks().filter((t) => !a.status || t.status === a.status).slice(0, 12).map((t) => ({ id: t.id.slice(0, 8), title: clip(t.title, 100), status: t.status, result: t.status === 'completed' ? clip(t.result, 300) : undefined, error: t.error ? clip(t.error, 160) : undefined })) }),
     },
     {
+      // 28 Oct: "stop every task" -> she cancelled 6 tasks, said "every watch cancelled" (the watch tools were not even
+      // loaded), and a watch started a new WhatsApp reply 5 min later. One call now stops everything that acts on its own.
+      name: 'stop_everything', risk: 'safe',
+      description: 'Stop EVERYTHING that runs on its own: all queued/running background and laptop tasks, all watches, and all live chats (Instagram/WhatsApp). Use whenever he says stop everything / stop all tasks / leave it all / cancel everything. Reminders and scheduled jobs are kept unless he asks (then use reminder_cancel). Report exactly the counts it returns.',
+      parameters: obj({}),
+      run: () => {
+        let tasks = 0;
+        for (const t of store.listTasks().filter((x) => ['queued', 'planning', 'running', 'waiting', 'blocked'].includes(x.status))) {
+          ctx.worker?.cancel(t.id); if (!store.transition(t.id, 'cancelled').error) tasks++;
+        }
+        let watches = 0; for (const w of ctx.watches?.list?.('active') ?? []) if (ctx.watches.cancel(w.id)) watches++;
+        const chats = (ctx.dmChats?.stop?.(null) ?? 0) + (ctx.waChats?.stop?.(null) ?? 0);
+        const kept = (ctx.jobs?.list?.() ?? []).length;
+        return { stopped: { tasks, watches, chats }, still_scheduled_reminders_and_jobs: kept };
+      },
+    },
+    {
       name: 'task_cancel', risk: 'safe',
       description: 'Cancel a background task by id prefix.',
       parameters: obj({ id: { type: 'string' } }, ['id']),
@@ -649,16 +666,19 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
     },
     {
       name: 'dm_chat_start', risk: 'gated', category: 'messaging', riskClass: 'consequential',
-      description: 'Let Friday chat on Instagram DM with specific people (by username) for a limited time, replying on her own whenever they message — the user approves ONCE for the whole session. Use this for "chat with X when they reply", "keep talking to them", "have a chat with both". Optionally send an intro first. Friday stays an openly-AI, friendly assistant, never shares his private info, and tells him if someone needs him. Find exact usernames with instagram_read LIST_ALL_CONVERSATIONS (fields participants) first.',
-      parameters: obj({ usernames: { type: 'array', items: { type: 'string' } }, minutes: { type: 'integer', description: 'How long to keep chatting (default 60, max 180)' }, goal: { type: 'string', description: 'What he wants, e.g. "introduce yourself, keep it playful"' }, intro: { type: 'string', description: 'Optional first message to send now (same for everyone)' } }, ['usernames']),
-      summarize: (a) => `Chat on Instagram with ${(a.usernames ?? []).map((u) => `@${String(u).replace(/^@/, '')}`).join(', ')} for ${Math.min(180, a.minutes ?? 60)} min, replying on my own${a.goal ? ` (${clip(a.goal, 200)})` : ''}${a.intro ? ` — first message: “${clip(a.intro, 400)}”` : ''}`,
-      run: async (a, { conversationId } = {}) => ({ sessions: await ctx.dmChats.start({ usernames: a.usernames, minutes: a.minutes, goal: a.goal ?? null, introText: a.intro ?? null, conversationId: conversationId ?? null }) }),
+      description: 'Let Friday chat with specific people for a limited time, replying on her own within seconds whenever they message — the user approves ONCE for the whole session. platform "whatsapp": in his WhatsApp Web tab already open in Chrome, usernames = [the contact name exactly as shown in WhatsApp] (one person); platform "instagram" (default): Instagram usernames. Use this for ANY "chat with X", "keep talking to them", "reply to her whenever she texts" — never watches or repeated computer_task for an ongoing chat. Asked again while a chat runs (e.g. "reply faster"), do NOT start another; it already answers each new message in seconds. Optionally send an intro first. Friday stays an openly-AI, friendly assistant, never shares his private info, and tells him if someone needs him. Find exact usernames with instagram_read LIST_ALL_CONVERSATIONS (fields participants) first.',
+      parameters: obj({ platform: { type: 'string', enum: ['instagram', 'whatsapp'] }, usernames: { type: 'array', items: { type: 'string' } }, minutes: { type: 'integer', description: 'How long to keep chatting (default 60, max 180)' }, goal: { type: 'string', description: 'What he wants, e.g. "introduce yourself, keep it playful"' }, intro: { type: 'string', description: 'Optional first message to send now (same for everyone)' } }, ['usernames']),
+      summarize: (a) => `Chat on ${a.platform === 'whatsapp' ? 'WhatsApp' : 'Instagram'} with ${(a.usernames ?? []).map((u) => (a.platform === 'whatsapp' ? String(u) : `@${String(u).replace(/^@/, '')}`)).join(', ')} for ${Math.min(180, a.minutes ?? 60)} min, replying on my own${a.goal ? ` (${clip(a.goal, 200)})` : ''}${a.intro ? ` — first message: “${clip(a.intro, 400)}”` : ''}`,
+      run: async (a, { conversationId } = {}) => (a.platform === 'whatsapp'
+        ? { sessions: [await ctx.waChats.start({ contact: (a.usernames ?? [])[0], minutes: a.minutes, goal: a.goal ?? null, introText: a.intro ?? null, conversationId: conversationId ?? null })] }
+        : { sessions: await ctx.dmChats.start({ usernames: a.usernames, minutes: a.minutes, goal: a.goal ?? null, introText: a.intro ?? null, conversationId: conversationId ?? null }) }),
     },
     {
       name: 'dm_chat_status', risk: 'safe',
-      description: 'Which Instagram DM chats Friday is currently running, until when, and how many replies she sent.',
+      description: 'Which chats (Instagram DM and WhatsApp) Friday is currently running, until when, and how many replies she sent.',
       parameters: obj({}),
-      run: () => ({ chats: ctx.dmChats.list().map((s) => ({ username: s.username, until: s.until, replies: s.replies, last: s.last_note })) }),
+      run: () => ({ chats: [...ctx.dmChats.list().map((s) => ({ platform: 'instagram', username: s.username, until: s.until, replies: s.replies, last: s.last_note })),
+        ...(ctx.waChats?.list() ?? []).map((s) => ({ platform: 'whatsapp', contact: s.contact, until: s.until, replies: s.replies, last: s.last_note }))] }),
     },
     {
       name: 'dm_chat_reply_now', risk: 'safe',
@@ -668,9 +688,9 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
     },
     {
       name: 'dm_chat_stop', risk: 'safe',
-      description: 'Stop Friday chatting with one person (username) or everyone (omit username).',
+      description: 'Stop Friday chatting (Instagram and WhatsApp) with one person (username / contact name) or everyone (omit it). Also use when he says stop everything.',
       parameters: obj({ username: { type: 'string' } }),
-      run: (a) => ({ stopped: ctx.dmChats.stop(a.username ?? null) }),
+      run: (a) => ({ stopped: ctx.dmChats.stop(a.username ?? null) + (ctx.waChats?.stop(a.username ?? null) ?? 0) }),
     },
     {
       name: 'app_action_schema', risk: 'safe',

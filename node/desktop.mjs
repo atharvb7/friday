@@ -326,6 +326,8 @@ export function makeDesktop({ allowedDirs = defaultAllowedDirs(), fullAccess = t
       return { ...g, locked: isLocked, idleMs: ms, userActive: ms !== null && ms < 3000 && Date.now() - ms > input.lastInjectAt + 400 };
     },
     async screen_capture({ maxWidth = 1280, quality = 70 } = {}) { return capture({ maxWidth, quality }); },
+    // A part of the screen (0-1 fractions): fingerprint for cheap change detection, JPEG only when image=true (live chat).
+    async screen_region({ x = 0, y = 0, w = 1, h = 1, image = false, maxWidth = 900 } = {}) { return clip('region', { x, y, w, h, image: Boolean(image), maxWidth }); },
     async key_press({ keys, repeat = 1 }) {
       if (!keys || String(keys).length > 60) throw new Error('keys like "ctrl+l", "Return", "alt+F4"');
       await guardInput();

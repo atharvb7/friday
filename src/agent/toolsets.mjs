@@ -8,7 +8,7 @@
 // Always loaded: small, and needed in almost any conversation.
 export const CORE = new Set(['memory_save', 'memory_search', 'memory_forget', 'time_now', 'set_timezone', 'profile_set',
   'reminder_create', 'reminder_list', 'reminder_cancel', 'reminder_snooze', 'task_create', 'task_list', 'task_cancel', 'answer_task_question',
-  'web_search', 'web_fetch', 'skill_load', 'files_list', 'file_share', 'tools_load', 'todo_add', 'todo_list', 'todo_update', 'reminder_update']);
+  'web_search', 'web_fetch', 'skill_load', 'files_list', 'file_share', 'tools_load', 'todo_add', 'todo_list', 'todo_update', 'reminder_update', 'stop_everything']);
 
 // group -> { about (shown to the model in tools_load), tools, match (words in the user's message that need it) }
 export const GROUPS = {
@@ -18,8 +18,8 @@ export const GROUPS = {
     match: /\b(leads?|prospect\w*|outreach|pipeline|clients?|customers?|pitch\w*|cold|follow[- ]?ups?|sales?|sell\w*|offers?|business profile|deals?|crm|campaign|agency|freelanc\w*|do[- ]not[- ]contact|bounce\w*)\b/i },
   laptop: { about: 'his laptop: play music/videos (laptop_play), open any app/site/file instantly, look at the screen, run shell commands, and multi-step control of the browser and whole desktop (websites, WhatsApp, bookings, forms, any app); laptop status', tools: ['computer_task', 'laptop_play', 'laptop_status', 'laptop_open', 'laptop_screen', 'laptop_shell'],
     match: /\b(laptop|computer|pc|browser|chrome|firefox|brave|play(ing)?|song|music|pause|volume|open (the |my |up )?\w+|launch|close (the |my )?\w+|website|site|whats ?app|book(ing)?|order|buy|fill|form|log ?in|sign ?up|click|download|upload|youtube|spotify|netflix|amazon|flipkart|zomato|swiggy|uber|ola|irctc|desktop|screen|tab|window|terminal|shell|volume|mute|brightness|battery|wi-?fi|bluetooth|vs ?code|calculator|clipboard|(play|pause|stop|skip) (the |some |my )?(music|song|video|track))\b/i },
-  social: { about: 'his Instagram: read, act, post, ongoing DM conversations; connect apps (Composio)', tools: ['instagram_read', 'instagram_action', 'instagram_post', 'dm_chat_start', 'dm_chat_status', 'dm_chat_stop', 'dm_chat_reply_now', 'connect_app', 'app_action_schema'],
-    match: /\b(insta\w*|ig|dms?|direct messages?|followers?|stor(y|ies)|post (it|this|on)|caption|connect (my |an? )?app|composio)\b/i },
+  social: { about: 'his Instagram (read, act, post) and LIVE CHATS with people on Instagram or WhatsApp (dm_chat_start: she keeps replying in seconds); connect apps (Composio)', tools: ['instagram_read', 'instagram_action', 'instagram_post', 'dm_chat_start', 'dm_chat_status', 'dm_chat_stop', 'dm_chat_reply_now', 'connect_app', 'app_action_schema'],
+    match: /\b(insta\w*|ig|dms?|direct messages?|followers?|stor(y|ies)|post (it|this|on)|caption|connect (my |an? )?app|composio|chat with|chatting|keep (talking|chatting)|whenever (she|he|they) repl\w*|repl(y|ies) (to )?(her|him|them)|text (her|him|them)|whats ?app)\b/i },
   reels: { about: 'make short videos/reels (storyboard -> generated clips -> zip), edit and send them', tools: ['reel_create', 'reel_edit', 'reel_send', 'reel_zip'],
     match: /\b(reels?|shorts?|videos?|clips?|storyboard|tiktok)\b/i },
   documents: { about: 'make Word/Excel/PowerPoint/PDF files, read or edit files he sent, read files in your workspace', tools: ['document_create', 'document_read', 'document_edit', 'file_read', 'file_search'],

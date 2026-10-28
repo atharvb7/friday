@@ -29,6 +29,7 @@ import { ContextBuilder } from './agent/context-builder.mjs';
 import { buildFridayTools } from './agent/friday-tools.mjs';
 import { ToolRouter, toolsLoadTool } from './agent/toolsets.mjs';
 import { Commitments, commitmentTools } from './commitments.mjs';
+import { WaChats } from './wa-chat.mjs';
 import { Brain } from './agent/brain.mjs';
 import { Notifications } from './notifications.mjs';
 import { Mood } from './mood.mjs';
@@ -261,6 +262,7 @@ export function createContext({ appRoot, env = process.env }) {
   kindRouter.byKind.hermes = ctx.hermes;
   kindRouter.byKind.watch = kindRouter.byKind.computer; // read-only laptop checks for watches
   ctx.dmChats = new DmChats({ store, ai, composio: ctx.composio, nodes: ctx.nodes, chat: ctx.chat, notifications: ctx.notifications, bus, settings });
+  ctx.waChats = new WaChats({ store, ai, nodes: ctx.nodes, chat: ctx.chat, notifications: ctx.notifications, bus, settings });
   // Deliver a finished reel to the owner's own WhatsApp (laptop task); shared by reel_send and the reel pipeline.
   ctx.reelSendTask = ({ path, caption = '', conversationId = null }) => store.createTask({ title: 'Laptop: send reel to your WhatsApp', kind: 'computer', conversationId, meta: { grant: true, autoSubmit: true },
     instruction: `Send a file to the user's OWN WhatsApp chat (not to anyone else). Open https://web.whatsapp.com (wait for the chat list). Open the chat with the user himself — search his name or "You"; it is marked "(You)" / "Message yourself". Verify the open chat header is his own chat before attaching. Use the attach (+ / paperclip) control → "Photos & videos", and attach this file with browser_upload: ${path}\n${caption ? `Type the caption exactly: ${String(caption).slice(0, 500)}\n` : ''}Press Send (intent submit_external, expect the Send button label), wait until the video finishes uploading, and confirm it appears in the chat. If the chat is not clearly his own, stop and report.` });
@@ -320,6 +322,7 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.pipeline.start();
     ctx.prospector.start();
     ctx.dmChats.start_timer();
+    if (ctx.waChats.list().length) ctx.waChats.start_timer(); // a session that was running before a restart
     pruneTimer = setInterval(() => { try { prune(store.db); } catch { /* retention is best effort */ } }, 6 * 3600_000); pruneTimer.unref();
     try { prune(store.db); } catch {}
     ctx.rules.start();
@@ -331,7 +334,7 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.watches.stop();
     ctx.pipeline.stop();
     ctx.prospector.stop();
-    ctx.dmChats.stop_timer();
+    ctx.dmChats.stop_timer(); ctx.waChats.stop_timer();
     ctx.nodes?.stopAll();
     ctx.voiceServer?.stop();
     clearInterval(governorTimer); clearInterval(pruneTimer); dshInner.stop?.();
