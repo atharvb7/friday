@@ -1,6 +1,6 @@
 // Conversational brain: persona + retrieved context + tool-calling loop.
 // Heavy/long work is handed to the background agent via task_create.
-import { buildSystemPrompt, buildGuestPrompt, buildMemberPrompt, normalizePersonality } from '../personality.mjs';
+import { buildSystemPrompt, buildGuestPrompt, buildMemberPrompt, normalizePersonality, feminize } from '../personality.mjs';
 // Approved members (other people) only get general-purpose tools — nothing that touches the owner's world.
 export const MEMBER_TOOLS = new Set(['web_search', 'web_fetch', 'time_now', 'document_create', 'document_read', 'document_edit', 'files_list', 'file_share']);
 import { pickRegister } from '../mood.mjs';
@@ -132,7 +132,7 @@ export class Brain {
     }
     const final = String(last.content ?? '').trim();
     if (final && said.at(-1) !== final) said.push(final);
-    const spoken = stripFileNotes(said.join('\n\n')); // the history's "[attached files: …]" notes are bookkeeping; she sometimes copies the format
+    const spoken = feminize(stripFileNotes(said.join('\n\n'))); // she is a woman in Hinglish too ("dungi", never "dunga") // the history's "[attached files: …]" notes are bookkeeping; she sometimes copies the format
     const reply = channel === 'voice' ? spoken : stripStageDirections(spoken);
     if (!member) this.habits?.record(reply);
     if (routed) this.toolRouter.remember(conversationId, [...toolsUsed.map((t) => t.name), ...[...loadedByModel].map((g) => GROUPS[g].tools[0])]);
@@ -144,7 +144,7 @@ export class Brain {
     const moodNow = this.mood?.current({ moodiness: this.personality().moodiness }) ?? null;
     const messages = [{ role: 'system', content: buildGuestPrompt({ ownerName: this.settings.get('user_name', null), mood: moodNow }) }, ...this.chat.historyForProvider(conversationId, 12)];
     const out = await this.ai.chat(messages, { signal, stream: Boolean(onDelta), onDelta, maxTokens: 1024, temperature: 0.8 });
-    return { reply: out.content.trim(), model: out.model, provider: out.provider, toolsUsed: [], usage: out.usage, usedVector: false, memoryIds: [] };
+    return { reply: feminize(out.content.trim()), model: out.model, provider: out.provider, toolsUsed: [], usage: out.usage, usedVector: false, memoryIds: [] };
   }
 
   async #runTool(call, conversationId, who = {}) {

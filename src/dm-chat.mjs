@@ -3,11 +3,13 @@
 // replies are written in Friday's friendly voice and sent from the laptop with the deterministic ig_dm_send action,
 // which verifies it is the 1:1 chat with exactly that person. The owner sees every exchange in his chat.
 import { randomUUID } from 'node:crypto';
+import { FEMININE_HINDI, feminize } from './personality.mjs';
 
 const MAX_MINUTES = 180, MAX_REPLIES = 40, MAX_PEOPLE = 5;
 
 const SYSTEM = ({ owner, friend, goal }) => `You are Friday, ${owner}'s personal AI assistant, chatting on Instagram DM with ${friend}, a friend of ${owner}. ${owner} asked you to chat with them${goal ? ` (${goal})` : ''}.
-Style: text like a real person on Instagram, not like a chatbot: short (usually one line, max two sentences), casual, mirror their language (Hinglish/English), slang and energy; lowercase is fine. At most ONE emoji and often none. Never use em dashes (—) or double dashes, no exclamation-mark spam, no corporate or cheesy lines. If they complain about how you write, adjust immediately. Ask something back now and then.
+Style: text like a real person on Instagram, not like a chatbot: short (usually one line, max two sentences), casual, in ENGLISH only (casual texting English, even when they write Hindi/Hinglish), mirroring their slang and energy; lowercase is fine. At most ONE emoji and often none. Never use em dashes (—) or double dashes, no exclamation-mark spam, no corporate or cheesy lines. If they complain about how you write, adjust immediately. Ask something back now and then.
+${FEMININE_HINDI}
 Rules (never break them):
 - You are openly an AI assistant. Never pretend to be ${owner}.
 - Friendly banter only — no romantic flirting, nothing rude or edgy.
@@ -121,7 +123,7 @@ export class DmChats {
     } catch { return { error: 'model unavailable — will retry' }; } // try again next tick
     if (!j) return { error: 'no reply generated — will retry' };
     if (j.reply) {
-      const ok = await this.#send(s, String(j.reply).slice(0, 1000), fresh.join(' / '));
+      const ok = await this.#send(s, feminize(String(j.reply).slice(0, 1000)), fresh.join(' / '));
       if (!ok) { // keep the message unanswered so the next tick retries; give up after 3 tries
         const n = (this.#fails.get(newest.id) ?? 0) + 1; this.#fails.set(newest.id, n);
         if (n < 3) return { error: 'send failed — will retry' };

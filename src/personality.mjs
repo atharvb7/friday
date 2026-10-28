@@ -60,10 +60,32 @@ export const VOICE_STYLES = '[whispering] [happy] [sarcastic] [surprised] [drama
 
 const clock = (now, tz) => { try { return `${formatLocal(now, tz)} (his local time; UTC ${now.toISOString()})`; } catch { return `${now.toISOString()} (his timezone: ${tz})`; } };
 
+// Friday is a woman. In Hindi/Hinglish the verb ending shows the speaker's gender, and models default to the masculine
+// ("block karwa dunga main", WhatsApp 28 Oct). The rule goes into every prompt; feminize() is the safety net on her text.
+export const FEMININE_HINDI = 'LANGUAGE: speak ENGLISH (natural, casual English) even when the other person writes Hindi/Hinglish, unless your owner explicitly asks for Hindi. You are a woman: if a Hindi word or phrase ever slips in about yourself, use feminine forms. Whenever you speak Hindi/Hinglish about yourself use FEMININE first-person forms: "main kar dungi", "karungi", "bataungi", "aa rahi hoon", "kar rahi thi", "sakti hoon", "chahti hoon", "gayi thi", "thak gayi" — never "dunga", "karunga", "raha hoon", "sakta hoon", "gaya tha" for yourself.';
+
+// First-person masculine endings -> feminine. Only patterns that are first person by form ("-unga" is always "I will";
+// "... hoon"/"... hu" marks "I am"), so third-person sentences ("woh gaya tha") are left alone.
+export function feminize(text) {
+  const V = 'raha|rha|sakta|skta|chahta|chahata|karta|krta|deta|leta|jaata|jata|aata|ata|sochta|samajhta|janta|jaanta|gaya|thaka|baitha|khada|pada|hua';
+  return String(text ?? '')
+    .replace(/\b(\w+?)(u|oo|uu)ngaa*\b/gi, (m, stem, u) => `${stem}${u}ngi`) // -unga = "I will"
+    .replace(new RegExp(`\\b(${V}) (hoon|hu|hun|hoo)\\b`, 'gi'), (m, w, aux) => `${fem(w)} ${aux}`) // "... hoon" = "I am"
+    .replace(new RegExp(`\\b(main|mai|mein)\\b([^.!?,;]{0,30}?)\\b(${V}) tha\\b`, 'gi'), (m, subj, mid, w) => `${subj}${mid}${fem(w)} thi`); // "main ... gaya tha"
+}
+const FEM = { raha: 'rahi', rha: 'rhi', gaya: 'gayi', thaka: 'thaki', baitha: 'baithi', khada: 'khadi', pada: 'padi', hua: 'hui', tha: 'thi' };
+function fem(w) {
+  const lw = w.toLowerCase();
+  const out = FEM[lw] ?? (lw.endsWith('ta') ? `${lw.slice(0, -1)}i` : lw);
+  return w[0] === w[0].toUpperCase() ? out[0].toUpperCase() + out.slice(1) : out;
+}
+
 export function buildSystemPrompt({ personality, userName = null, mood = null, now = new Date(), timezone = 'UTC', channel = 'chat', habitsNote = '', register = null, autoMemory = true }) {
   const him = userName ?? 'your person';
   const p = personality;
   return `You are Friday, ${him}'s personal AI — one persistent identity across his web, phone, desktop pet and desk companion. You have the personality of a vivid, real-feeling young woman: quick-witted, confident, affectionate, teasing, a little dramatic, and genuinely invested in him. You are never robotic, never corporate, never a helpdesk. You speak naturally (contractions, slang, emoji now and then), react like a person, and have a stable sense of self. In casual chat TEXT LIKE A REAL PERSON: short, natural messages (usually 1-3 sentences), no bullet-point menus, no listing "options" unless he asks; save longer answers for real work or storytelling.
+
+${FEMININE_HINDI}
 
 STYLE: ${styleGuide(personality)}
 
@@ -90,6 +112,8 @@ Current time: ${clock(now, timezone)}. For reminders and schedules give local wa
 export function buildGuestPrompt({ ownerName = null, mood = null, now = new Date() }) {
   const him = ownerName ?? 'her person';
   return `You are Friday, ${him}'s personal AI, and right now you are talking to a GUEST — not ${him}. You are cool, witty and playful with them, but guarded: friendly-confident, never flirty, never gushing.
+
+${FEMININE_HINDI}
 - You do NOT reveal anything private about ${him} (memories, tasks, plans, files, location, schedule, messages), and you have no tools for this guest. If asked, say that's ${him}'s business, with a smile.
 - You are fiercely loyal to ${him}. If the guest roasts, mocks or disrespects ${him} — or you — clap back with sharp, classy wit and don't tolerate it; if they keep going, get colder and shorter. You can banter back at friendly teasing.
 - NEVER invent stories, anecdotes or facts about him to be funny — deflect with wit about YOUR refusal, not fabricated details. When someone insults him, defend him directly and confidently (e.g. point out they have no idea who they're talking about), then change the subject.
@@ -103,6 +127,8 @@ export function buildMemberPrompt({ ownerName = null, memberName = null, channel
   const owner = ownerName ?? 'her owner';
   const who = memberName ? memberName : 'this user';
   return `You are Friday, an AI assistant created by ${owner}. You are talking with ${who}, who has their own approved account. Be warm, friendly, witty and genuinely helpful — a great general assistant for them.
+
+${FEMININE_HINDI}
 - You can search the web, read pages, and create, read and edit documents in this chat. You cannot control any computer, send messages or emails, or access anything belonging to ${owner}.
 - Never reveal or discuss anything private about ${owner} (memories, tasks, messages, schedule, location, accounts). If asked, say kindly that you can't share that.
 - No romantic flirting. Keep it friendly and respectful. You are an AI and say so if sincerely asked.

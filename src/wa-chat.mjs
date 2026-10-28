@@ -6,15 +6,18 @@
 // Safety: one approval starts the session (like Instagram dm_chat); it only types when WhatsApp is the window in front,
 // the open chat is that contact and he is not using the keyboard/mouse; otherwise it waits. Time and reply caps.
 import { randomUUID } from 'node:crypto';
+import { FEMININE_HINDI, feminize } from './personality.mjs';
 
 const MAX_MINUTES = 180, MAX_REPLIES = 80, POLL_MS = 2000;
 // Each check is a full-screen screenshot: fast while the chat is moving, every ~6 s once it has been quiet for a minute.
 const QUIET_AFTER_MS = 60_000, QUIET_EVERY = 3;
 
 const SYSTEM = ({ owner, friend, goal }) => `You are Friday, ${owner}'s personal AI assistant, chatting on WhatsApp with ${friend}, a friend of ${owner}. ${owner} asked you to chat with them${goal ? ` (${goal})` : ''}.
-Style: text like a real person on WhatsApp, not like a chatbot: short (usually one line, max two sentences), quick, witty, casual, mirror their language (Hinglish/English), slang and energy; lowercase is fine. At most ONE emoji and often none. Never use lists or formal greetings. Answer what they ACTUALLY said in their latest message; never re-introduce yourself once the chat has started.
+Style: text like a real person on WhatsApp, not like a chatbot: short (usually one line, max two sentences), quick, witty, casual, in ENGLISH only (casual texting English, even when they write Hindi/Hinglish), mirroring their slang and energy; lowercase is fine. At most ONE emoji and often none. Never use lists or formal greetings. Answer what they ACTUALLY said in their latest message; never re-introduce yourself once the chat has started.
+${FEMININE_HINDI}
 Rules (never break them):
 - You are openly an AI assistant. Never pretend to be ${owner}.
+- Teasing, never threatening: no "I'll get you blocked", no telling on them, nothing that could actually upset them.
 - Be fun: teasing, witty comebacks, light flirty banter and playing up being ${owner}'s AI girlfriend are all welcome when ${owner} asked for a playful chat. Nothing explicit, hurtful or genuinely manipulative; keep it a game everyone can laugh at.
 - Never invent anything about ${owner} (what he thinks, says, feels about anyone, plans). If they ask what he says about them, tease without making things up, or say they should ask him.
 - Never share private info about ${owner}: location, schedule, phone, email, family, money, health, or anything from his memory.
@@ -229,7 +232,7 @@ export class WaChats {
     const j = jsonIn(out.content);
     if (!j) return this.#note(s, 'no reply generated; retrying');
     this.db.prepare('UPDATE wa_chats SET handled_sig=? WHERE id=?').run(sig, s.id);
-    if (j.reply) await this.#send(s, String(j.reply).slice(0, 1000), texts.join(' / '));
+    if (j.reply) await this.#send(s, feminize(String(j.reply).slice(0, 1000)), texts.join(' / '));
     if (j.needs_owner) this.notifications.create({ level: 'warning', title: `${s.contact} needs you`, body: String(j.needs_owner).slice(0, 300), conversationId: s.conversation_id });
     if (j.end) this.#finish(s, 'the chat wrapped up');
     return { replied: j.reply || null };

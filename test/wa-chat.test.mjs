@@ -155,3 +155,24 @@ test('wa chat via the Chrome extension: no screenshots or mouse; answers her new
     assert.ok(!r.ai.calls.includes('vision'), 'no vision model needed');
   } finally { r.done(); }
 });
+
+test('Friday speaks as a woman in Hinglish: masculine first-person forms are fixed before sending; third person untouched', async () => {
+  const { feminize, buildSystemPrompt, normalizePersonality } = await import('../src/personality.mjs');
+  assert.equal(feminize('tumhe block karwa dunga main'), 'tumhe block karwa dungi main');
+  assert.equal(feminize('Main abhi aa raha hoon'), 'Main abhi aa rahi hoon');
+  assert.equal(feminize('main bata sakta hu, kal milunga'), 'main bata sakti hu, kal milungi');
+  assert.equal(feminize('mai so gaya tha lol'), 'mai so gayi thi lol');
+  assert.equal(feminize('woh gaya tha market, Atharv aa raha tha'), 'woh gaya tha market, Atharv aa raha tha', 'he/she sentences stay');
+  assert.equal(feminize('I will be there at 9'), 'I will be there at 9');
+  assert.match(buildSystemPrompt({ personality: normalizePersonality({}) }), /FEMININE first-person/);
+  const r = rig();
+  try {
+    r.wa.ai.run = async (role) => (role === 'vision' ? { content: JSON.stringify({ whatsapp_visible: true, chat_name: 'Gauri', messages_box: [300, 100, 990, 880], compose: [640, 940], search: [150, 120] }) } : { content: '{"reply":"haan haan, main bata dunga use","end":false}' });
+    r.world.messages = [{ from: 'them', text: 'tell him' }];
+    await r.wa.start({ contact: 'Gauri', minutes: 5 });
+    // the read call goes through the same stub: make it return messages
+    const run = r.wa.ai.run; r.wa.ai.run = async (role, o) => (role === 'vision' && !/laptop desktop/.test(o.messages[0].content[0].text) ? { content: JSON.stringify({ messages: r.world.messages }) } : run(role, o));
+    await r.wa.tick();
+    assert.deepEqual(r.world.typed, ['haan haan, main bata dungi use']);
+  } finally { r.done(); }
+});
