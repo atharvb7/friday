@@ -33,7 +33,9 @@ const NODE_ACTION = { screen_look: 'screen_capture' };
 // escalates the action no matter what `intent` the model declared.
 const SPEND_RE = /\b(buy|pay|purchase|checkout|check ?out|place (an? )?order|order now|subscribe|donate|upgrade|add (a )?payment)\b/i;
 const DELETE_RE = /\b(delete|remove|erase|discard|clear all|empty (trash|bin)|uninstall|deactivate|close account)\b/i;
-const SEND_RE = /\b(send|post|publish|tweet|share|submit|reply|comment|forward|invite|confirm|transfer|sign ?out|log ?out|unsubscribe|apply|email|message|chat|compose)\b/i;
+// Verbs that send or commit. Nouns like "chat", "message", "email" name places, not actions: with them, opening his own
+// WhatsApp chat ("(You) chat") raised the task's one send-approval, which then also covered the real Send (28 Oct).
+const SEND_RE = /\b(send|post|publish|tweet|share|submit|reply|comment|forward|invite|confirm|transfer|sign ?out|log ?out|unsubscribe|apply)\b/i;
 // Pressing Enter in a search/address box looks things up; it sends nothing to anyone (28 Oct: "play Starboy" sat on an
 // approval card because typing into YouTube's search with submit=true counted as messaging).
 const SEARCH_FIELD_RE = /\b(search|find|filter|query|look ?up|address( and search)? bar|url)\b|searchbox|combobox/i;
@@ -120,6 +122,18 @@ Rules:
 - If a result says screen_locked, stop and report that the laptop is locked.
 - Finish with a short factual report: what you did, what you verified, anything that did not work. Never claim success you did not verify.`;
 
+// His real Chrome instead of Friday's own automation browser (owner, 28 Oct: "just use the main Chrome app"). It holds
+// his logins (WhatsApp Web, Gmail...) and nothing pops up that he did not open. Used whenever the node can drive the
+// desktop; FRIDAY_COMPUTER_BROWSER=internal (or meta.browser='internal') brings the old browser_* tools back.
+export const REAL_BROWSER_NOTE = `
+BROWSER = HIS OWN GOOGLE CHROME (already logged in: WhatsApp Web, Gmail, ...). You have NO browser_* tools; ignore any rule above about browser snapshots/refs. How to work in it:
+- Start: window_focus "google-chrome", then key_press "ctrl+t" for a NEW tab (never reuse, close or navigate his existing tabs), key_press "ctrl+l", type_text the URL, key_press "Return". If the site is already open in a tab (e.g. WhatsApp Web), you may switch to that tab instead (ctrl+1..8 or click it).
+- See: screen_look with a specific question ("is the chat list loaded? where is the search box?"). It lists controls as [n] label @x,y. Act with mouse_click element n, type_text into the field you just clicked, key_press for Enter/Tab/shortcuts. screen_look again after anything that changes the page; pages take a moment to load, so look again rather than assume.
+- Keyboard beats clicking: ctrl+f to find text, Tab/shift+Tab between fields, Escape closes popups.
+- Files to upload: click the site's attach/upload button; in the file dialog press "ctrl+l", type the full path (e.g. /home/<user>/Downloads/name.jpg), press Return. Find exact paths first with file_find or shell_run (ls).
+- WhatsApp Web: click "Search or start a new chat", type the contact name, press Return to open the chat, CHECK the chat header shows exactly that contact (his own chat is "(You)" / "Message yourself"), then attach or type. Pressing Send asks him for approval: just do it and wait.
+- When done, leave his Chrome as it is (your tab may stay open).`;
+
 export class ComputerAgent {
   constructor({ ai, nodes, policy, approvals, bus, audit = null, profile = null, questions = null, learner = null, now = () => Date.now(), sleep = (ms, sig) => new Promise((r, j) => { const t = setTimeout(r, ms); sig?.addEventListener('abort', () => { clearTimeout(t); j(sig.reason ?? new Error('aborted')); }, { once: true }); }) }) {
     Object.assign(this, { ai, nodes, policy, approvals, bus, audit, sleep, profile, questions, learner, now });
@@ -143,7 +157,7 @@ export class ComputerAgent {
       const text = `${label} ${args?.action ?? ''} ${args?.text ?? ''}`;
       if (SPEND_RE.test(text)) { cat = 'spending'; risk = 'critical'; }
       else if (DELETE_RE.test(text)) { cat = 'deletion'; risk = 'consequential'; }
-      else if (SEND_RE.test(text) || (args?.submit === true && !SEARCH_FIELD_RE.test(label)) || (action === 'browser_press' && /^(Enter|Return)$/i.test(String(args?.key)) && SEND_RE.test(this.lastTyped))) { cat = 'messaging'; risk = 'consequential'; }
+      else if ((SEND_RE.test(text) && !SEARCH_FIELD_RE.test(label)) || (args?.submit === true && !SEARCH_FIELD_RE.test(label)) || (action === 'browser_press' && /^(Enter|Return)$/i.test(String(args?.key)) && SEND_RE.test(this.lastTyped))) { cat = 'messaging'; risk = 'consequential'; }
       else if (desktop && SYSTEM_RE.test(text)) { cat = 'system'; risk = 'consequential'; }
     }
     // Desktop typing isn't sending, but Enter (or a trailing newline) right after typing into a chat/mail box is.
@@ -297,11 +311,14 @@ export class ComputerAgent {
     const deadline = this.now() + Math.min(Math.max(Number(meta?.maxMinutes) || MAX_MINUTES, 1), 120) * 60_000;
     // Offer the desktop tools only if the connected node can do them (an old node keeps the browser-only set).
     const caps = this.nodes.list?.()?.[0]?.caps;
-    const tools = COMPUTER_TOOLS.filter((x) => !DESKTOP.has(x.function.name) || !caps || caps.includes(NODE_ACTION[x.function.name] ?? x.function.name));
+    const desktopOk = Boolean(caps) && ['key_press', 'type_text', 'mouse_click', 'screen_capture'].every((c) => caps.includes(c));
+    const realBrowser = desktopOk && (meta?.browser ?? process.env.FRIDAY_COMPUTER_BROWSER ?? 'real') !== 'internal';
+    const tools = COMPUTER_TOOLS.filter((x) => (!DESKTOP.has(x.function.name) || !caps || caps.includes(NODE_ACTION[x.function.name] ?? x.function.name))
+      && !(realBrowser && (x.function.name.startsWith('browser_') || x.function.name === 'describe_screen')));
     this.marks = new Map(); this.lastTypedTarget = '';
     const known = this.profile ? this.profile.knownFields() : {};
     const profileNote = `\nUSER DETAILS STATUS (values are hidden from you): ${Object.entries(known).map(([k, v]) => `${k}=${v}`).join(', ') || 'none'}.`;
-    const messages = [{ role: 'system', content: COMPUTER_PROMPT + profileNote + (this.learner?.hintsFor(instruction) ?? '') }, { role: 'user', content: String(instruction) }];
+    const messages = [{ role: 'system', content: COMPUTER_PROMPT + (realBrowser ? REAL_BROWSER_NOTE : '') + profileNote + (realBrowser ? '' : (this.learner?.hintsFor(instruction) ?? '')) }, { role: 'user', content: String(instruction) }];
     const seen = new Map();
     const pages = new Set(); // tool messages that still carry a full page listing
     let waitStreak = 0;

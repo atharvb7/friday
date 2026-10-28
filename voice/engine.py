@@ -221,6 +221,18 @@ def expressive():
     if _expressive is None: _expressive = Expressive()
     return _expressive
 
+# Chatterbox holds ~1.2 GB plus ONNX arenas. On the server it shares the core container's 2.5 GB with Friday herself:
+# left loaded after a switch to Kokoro it pushed the container to 98% and the governor stopped every task (28 Oct).
+# Drop it as soon as a request uses the other engine; it reloads (~10 s) if expressive is picked again.
+def release_expressive():
+    global _expressive
+    if _expressive is None: return
+    _expressive = None
+    import gc; gc.collect()
+    try:
+        import ctypes; ctypes.CDLL("libc.so.6").malloc_trim(0)  # hand freed arenas back to the OS
+    except Exception: pass
+
 def tts(req):
     import soundfile as sf
     engine = "kokoro"
@@ -232,6 +244,7 @@ def tts(req):
             sys.stderr.write(f"expressive tts failed, using kokoro: {type(e).__name__}: {e}\n")
             samples, rate = kokoro_tts(req["text"], req.get("voice"), req.get("speed"))
     else:
+        release_expressive()
         samples, rate = kokoro_tts(req["text"], req.get("voice"), req.get("speed"))
     sf.write(req["out"], samples, rate)
     return {"rate": rate, "seconds": round(len(samples) / rate, 2), "engine": engine}
@@ -241,7 +254,7 @@ def warm(req):
     if req.get("engine") == "expressive" and cbx_ready():
         expressive().cond(req.get("voice") or "af_heart", float(req.get("pitch") or 1.0))
         return {"engine": "expressive"}
-    kokoro(); return {"engine": "kokoro"}
+    release_expressive(); kokoro(); return {"engine": "kokoro"}
 
 def status(_):
     return {"stt_model": STT_MODEL, "stt_loaded": _whisper is not None, "tts_loaded": _kokoro is not None,

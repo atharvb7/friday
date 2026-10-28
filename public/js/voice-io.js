@@ -50,6 +50,17 @@ export function startRecording({ onLevel = () => {}, maxMs = 60_000, silenceMs =
 }
 
 // Speak via the server (Kokoro). Fetches the next sentence while the current one plays. Returns { cancel, finished }.
+// Mobile browsers block audio that does not start inside a tap. Her reply arrives seconds after the mic tap, so a fresh
+// Audio() was refused and the phone stayed silent (28 Oct). One shared element, unlocked during the tap, plays every part.
+let player = null;
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+export function unlockAudio() {
+  if (typeof Audio === 'undefined') return null;
+  player ??= new Audio();
+  try { player.src = SILENT_WAV; const p = player.play(); p?.catch?.(() => {}); } catch { /* not allowed here: try again on the next tap */ }
+  return player;
+}
+
 export function speakServer(text, fetchWav) {
   let cancelled = false, current = null;
   const parts = chunkSpeak(String(text).replace(/[`*#>|_]/g, ''), 220).slice(0, 14);
@@ -61,7 +72,7 @@ export function speakServer(text, fetchWav) {
       if (!blob) { await new Promise((r) => setTimeout(r, 600)); if (cancelled) return; blob = await fetchWav(parts[i]); } // one retry
       if (!blob) continue; // skip a part that still failed instead of going silent for the rest
       const url = URL.createObjectURL(blob);
-      await new Promise((resolve) => { current = new Audio(url); current.onended = current.onerror = () => { URL.revokeObjectURL(url); resolve(); }; current.play().catch(resolve); });
+      await new Promise((resolve) => { current = player ?? new Audio(); current.src = url; current.onended = current.onerror = () => { URL.revokeObjectURL(url); resolve(); }; current.play().catch(resolve); });
     }
   })();
   return { cancel() { cancelled = true; try { current?.pause(); } catch { /* ignore */ } }, finished };

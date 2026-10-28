@@ -237,3 +237,29 @@ test('tool routing: everyday laptop requests load the laptop group; unrelated ch
   for (const t of ['remind me in 2 hours to call the CA', 'what should I eat tonight', 'run the research again']) assert.ok(!tr.select({ conversationId: `d${t}`, text: t }).has('laptop'), t);
   assert.ok(COMPUTER_TOOLS.filter((t) => ['screen_look', 'file_read', 'windows_list', 'clipboard_get'].includes(t.function.name)).every((t) => !('intent' in t.function.parameters.properties)), 'read-only tools carry no intent field (tokens)');
 });
+
+test('his real Chrome, not an internal browser: a desktop-capable node gets no browser_* tools; opt back in with browser:internal', async () => {
+  const r = rig();
+  try {
+    let sys = null; const run0 = r.agent.ai.run;
+    r.agent.ai.run = async (role, o) => { if (role !== 'vision') sys ??= o.messages[0].content; return run0(role, o); };
+    r.script.push(end('x'));
+    await r.agent.run({ taskId: 't', instruction: 'send a photo on WhatsApp', meta: { grant: true } });
+    assert.ok(r.seenTools[0].every((n) => !n.startsWith('browser_') && n !== 'describe_screen'), r.seenTools[0].join(','));
+    assert.ok(r.seenTools[0].includes('window_focus') && r.seenTools[0].includes('screen_look'));
+    assert.match(sys, /HIS OWN GOOGLE CHROME/);
+    r.script.push(end('x'));
+    await r.agent.run({ taskId: 't', instruction: 'x', meta: { grant: true, browser: 'internal' } });
+    assert.ok(r.seenTools[1].includes('browser_open'), 'explicit opt-in keeps the old browser');
+  } finally { r.done(); }
+});
+
+test('clicking a search box is not a send, even in a chat app ("Search or start a new chat")', () => {
+  const r = rig();
+  try {
+    assert.equal(r.agent.decision('browser_click', { ref: 13, intent: 'input' }, true, 'Search or start a new chat textbox').decision, 'allow');
+    assert.equal(r.agent.decision('mouse_click', { element: 4 }, true, 'Send').decision, 'ask', 'the real Send button still asks');
+    assert.equal(r.agent.decision('mouse_click', { element: 10 }, true, '@atharv_b_07 (You) chat - own chat').decision, 'allow', 'opening a chat is not sending');
+    assert.equal(r.agent.decision('mouse_click', { element: 3 }, true, 'New message').decision, 'allow', 'opening a composer is not sending');
+  } finally { r.done(); }
+});

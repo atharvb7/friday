@@ -270,7 +270,12 @@ export function buildFridayTools(ctx) {
       run: (a, { conversationId, approvalId } = {}) => {
         // Approved up front (autonomy "ask"): that approval covers the final submit, as before. Otherwise the first send asks.
         const t = store.createTask({ title: `Laptop: ${a.title ? clip(a.title, 60) : clip(a.goal, 60)}`, kind: 'computer', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: Boolean(approvalId) && a.autoSubmit !== false, sendOnce: a.autoSubmit !== false, mustShow: Array.isArray(a.mustShow) ? a.mustShow.slice(0, 6).map((x) => String(x).slice(0, 80)) : [] } });
-        return { queued: true, id: t.id.slice(0, 8), laptop_online: nodes.online };
+        // Tell her the truth about when it starts: on 28 Oct the governor held it (memory emergency) and, with no reason
+        // given, she polled task_list 8 times and then invented "the browser isn't launching".
+        const adm = ctx.governor?.canAdmit?.('background') ?? { allowed: true };
+        const startsNow = nodes.online && adm.allowed;
+        return { queued: true, id: t.id.slice(0, 8), laptop_online: nodes.online, starts: startsNow ? 'now' : !nodes.online ? 'when his laptop connects' : `waiting: ${adm.reason === 'memory_emergency' || adm.reason === 'memory_pressure' ? 'the server is short of memory right now; it starts by itself when that clears' : adm.reason}`,
+          note: 'Runs in the background; the result arrives as a notification. Do not poll task_list in a loop; tell him it is under way (or why it waits) in one line.' };
       },
     },
     {

@@ -2,7 +2,7 @@ import { h, md, clear, timeAgo } from '../util.js';
 import { streamChat, auth } from '../api.js';
 import { chunkSpeak } from '/voice.js';
 import { emojiPicker, insertAtCursor } from '../emoji.js';
-import { startRecording, speakServer } from '../voice-io.js';
+import { startRecording, speakServer, unlockAudio } from '../voice-io.js';
 import { svgIcon } from '../icons.js';
 
 const FILE_ICON = { docx: '📝', doc: '📝', odt: '📝', rtf: '📝', xlsx: '📊', xls: '📊', csv: '📊', tsv: '📊', pptx: '📽️', ppt: '📽️', pdf: '📕', md: '🗒️', txt: '🗒️', html: '🌐', json: '🧾', png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', webp: '🖼️', zip: '🗜️' };
@@ -199,7 +199,7 @@ export function render({ app, api, toast }) {
         delta: (d) => { acc += d.text; paintReply(); },
         thinking: () => {},
         tool: (t) => { if (acc.trim() && !acc.endsWith('\n')) acc += '\n\n'; tools.push(t); toolsEl.append(h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`)); },
-        done: (d) => { for (const id of d.messageIds ?? []) shown.add(id); acc = d.reply; paintReply(); if (d.files?.length) live.append(h('div', { class: 'files' }, d.files.map((f) => fileView(f, toast)))); if (speak && acc) say(acc); },
+        done: (d) => { for (const id of d.messageIds ?? []) shown.add(id); acc = d.reply; paintReply(); if (d.files?.length) live.append(h('div', { class: 'files' }, d.files.map((f) => fileView(f, toast)))); if ((speak || viaVoice) && acc) say(acc); }, // asked by voice -> answered by voice, speaker toggle or not
         error: () => { acc ||= '(That didn’t go through. Try again?)'; paintReply(); },
       }, abort.signal);
     } catch (e) { acc ||= `Couldn’t reach my brain: ${e.message}`; paintReply(); }
@@ -221,6 +221,7 @@ export function render({ app, api, toast }) {
 
   async function serverMic() {
     if (recording) { recording.stop(); return; }
+    unlockAudio(); // phones only let audio play from a tap: unlock now, her spoken reply arrives seconds later
     speaking?.cancel(); speechSynthesis?.cancel();
     try {
       recording = startRecording({ onLevel: (l) => mic.style.setProperty('--lvl', String(Math.min(1, l * 12))) });
@@ -245,7 +246,7 @@ export function render({ app, api, toast }) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { toast('Voice input needs a browser with speech recognition, or install Friday’s voice engine.'); return; }
     if (listening) { rec?.stop(); return; }
-    speechSynthesis?.cancel();
+    speechSynthesis?.cancel(); unlockAudio();
     rec = new SR(); rec.interimResults = true; rec.lang = navigator.language || 'en-US';
     rec.onstart = () => { listening = true; mic.classList.add('primary'); };
     rec.onresult = (e) => { input.value = [...e.results].map((r) => r[0].transcript).join(' '); };

@@ -72,6 +72,7 @@ export class Brain {
     const attachments = []; // files tools produced this turn (documents) — attached to the reply
     let calls = 0;
     const failures = new Map(); // "tool|error" -> count: a tool failing the same way again is not retried blindly
+    const repeats = new Map(); // "tool|args" -> count: the same call a third time in one turn returns nothing new (task_list x8, 28 Oct)
     let guardTries = 0;
     let lookupTries = 0;
     let last = null;
@@ -105,7 +106,8 @@ export class Brain {
       messages.push({ role: 'assistant', content: last.content || null, tool_calls: last.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.argumentsText || '{}' }, ...(c.extra ? { extra_content: c.extra } : {}) })) });
       for (const call of last.toolCalls) {
         calls += 1;
-        const result = calls > MAX_TOOL_CALLS ? { error: 'tool_call_limit_reached' } : member && !MEMBER_TOOLS.has(call.name) ? { error: 'not_available' } : await this.#runTool(call, conversationId, member ? { member: true, userId } : {});
+        const sig = `${call.name}|${call.argumentsText ?? ''}`; repeats.set(sig, (repeats.get(sig) ?? 0) + 1);
+        const result = calls > MAX_TOOL_CALLS ? { error: 'tool_call_limit_reached' } : repeats.get(sig) > 2 ? { error: 'repeated_call', note: 'You already made this exact call twice this turn; the answer will not change right now. Stop and answer him with what you know (say plainly if something is still running or waiting).' } : member && !MEMBER_TOOLS.has(call.name) ? { error: 'not_available' } : await this.#runTool(call, conversationId, member ? { member: true, userId } : {});
         if (result?.error) {
           const k = `${call.name}|${String(result.error).slice(0, 120)}`;
           const n = (failures.get(k) ?? 0) + 1; failures.set(k, n);
