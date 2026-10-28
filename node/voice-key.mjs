@@ -151,7 +151,9 @@ async function api(path, { body, type = 'application/json', signal, timeoutMs = 
   return raw ? Buffer.from(await res.arrayBuffer()) : res.json();
 }
 
-const sttPrompt = 'Friday, Atharv, hey Friday. Casual conversation, mixed English and Hindi words like yaar, na, accha, kya, haan, bro.';
+// Whisper leans towards words in this prompt. Short spoken commands carry little context ("play Starboy" was heard as
+// "Police Starboy" and "Plishtarva", 28 Oct), so it lists the command verbs and app names he actually uses.
+const sttPrompt = 'Friday, play Starboy on Brave. Pause the music. Open YouTube, Spotify, WhatsApp, VS Code on my laptop. What is on my screen? Remind me tomorrow. Atharv, yaar, accha, haan, bro.';
 const pyWorker = () => (worker ??= new PythonWorker({ python: py, script: ENGINE, idleMs: Math.max(60_000, cfg.lingerMinutes * 60_000), timeoutMs: 120_000, env: { FRIDAY_VOICE_HOME: cfg.localVoiceHome, FRIDAY_STT_MODEL: cfg.sttModel ?? 'small', FRIDAY_VOICE_THREADS: String(cfg.sttThreads ?? 6), ...(cfg.ttsThreads ? { FRIDAY_TTS_THREADS: String(cfg.ttsThreads) } : {}) } }));
 
 async function transcribe(wav, { signal }) {

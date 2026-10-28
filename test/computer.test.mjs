@@ -140,7 +140,9 @@ test('computer agent: risk is decided from the TARGET LABEL, not the model\'s se
     assert.equal(a.decision('browser_click', { ref: 1 }, true, 'Buy now').decision, 'ask');
     assert.equal(a.decision('browser_click', { ref: 1 }, true, 'Delete account').cat, 'deletion');
     assert.equal(a.decision('browser_click', { ref: 1 }, true, 'Read more').decision, 'allow');
-    assert.equal(a.decision('browser_type', { ref: 2, text: 'hi', submit: true }, true, 'Search').decision, 'ask', 'submit=true presses Enter -> escalates');
+    assert.equal(a.decision('browser_type', { ref: 2, text: 'hi', submit: true }, true, 'Type a message').decision, 'ask', 'submit=true in a message box presses Enter -> escalates');
+    assert.equal(a.decision('browser_type', { ref: 4, text: 'Starboy The Weeknd', submit: true }, true, 'Search combobox').decision, 'allow', 'Enter in a search box only looks things up (28 Oct: "play Starboy" waited on an approval)');
+    assert.equal(a.decision('browser_type', { ref: 4, text: 'hi', submit: true }, true, 'Search messages').decision, 'allow', 'searching inside a chat app still only searches');
     assert.equal(a.decision('browser_upload', { ref: 3, path: '/x' }, true).decision, 'ask', 'an approved goal does not pre-approve uploads');
     // labels learned from the last snapshot drive the decision end to end
     r.nodes.dispatch = async ({ action }) => (action === 'browser_snapshot' ? { elements: [{ ref: 7, name: 'Send', role: 'button' }, { ref: 8, name: 'Read more' }] } : { ok: true });

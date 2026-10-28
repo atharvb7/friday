@@ -34,6 +34,9 @@ const NODE_ACTION = { screen_look: 'screen_capture' };
 const SPEND_RE = /\b(buy|pay|purchase|checkout|check ?out|place (an? )?order|order now|subscribe|donate|upgrade|add (a )?payment)\b/i;
 const DELETE_RE = /\b(delete|remove|erase|discard|clear all|empty (trash|bin)|uninstall|deactivate|close account)\b/i;
 const SEND_RE = /\b(send|post|publish|tweet|share|submit|reply|comment|forward|invite|confirm|transfer|sign ?out|log ?out|unsubscribe|apply|email|message|chat|compose)\b/i;
+// Pressing Enter in a search/address box looks things up; it sends nothing to anyone (28 Oct: "play Starboy" sat on an
+// approval card because typing into YouTube's search with submit=true counted as messaging).
+const SEARCH_FIELD_RE = /\b(search|find|filter|query|look ?up|address( and search)? bar|url)\b|searchbox|combobox/i;
 const INTENTS = ['read', 'navigate', 'input', 'submit_external', 'purchase'];
 
 const INTENT = { type: 'string', enum: INTENTS, description: 'submit_external = sends/posts/shares to another person or service; purchase = spends money. Be honest: it decides whether the user must approve.' };
@@ -140,7 +143,7 @@ export class ComputerAgent {
       const text = `${label} ${args?.action ?? ''} ${args?.text ?? ''}`;
       if (SPEND_RE.test(text)) { cat = 'spending'; risk = 'critical'; }
       else if (DELETE_RE.test(text)) { cat = 'deletion'; risk = 'consequential'; }
-      else if (SEND_RE.test(text) || args?.submit === true || (action === 'browser_press' && /^(Enter|Return)$/i.test(String(args?.key)) && SEND_RE.test(this.lastTyped))) { cat = 'messaging'; risk = 'consequential'; }
+      else if (SEND_RE.test(text) || (args?.submit === true && !SEARCH_FIELD_RE.test(label)) || (action === 'browser_press' && /^(Enter|Return)$/i.test(String(args?.key)) && SEND_RE.test(this.lastTyped))) { cat = 'messaging'; risk = 'consequential'; }
       else if (desktop && SYSTEM_RE.test(text)) { cat = 'system'; risk = 'consequential'; }
     }
     // Desktop typing isn't sending, but Enter (or a trailing newline) right after typing into a chat/mail box is.

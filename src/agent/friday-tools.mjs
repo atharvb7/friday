@@ -132,6 +132,30 @@ const whenFrom = (a) => {
   return new Date(Date.now() + m * 60_000).toISOString();
 };
 
+// Pause every MPRIS player (Brave/Chrome tabs, Spotify, VLC...) so a new song never plays over another.
+const PAUSE_ALL_MEDIA = `for p in $(gdbus call --session --dest org.freedesktop.DBus --object-path / --method org.freedesktop.DBus.ListNames | grep -o "org.mpris.MediaPlayer2[^']*"); do gdbus call --session --dest "$p" --object-path /org/mpris/MediaPlayer2 --method org.mpris.MediaPlayer2.Player.Pause >/dev/null 2>&1; done; true`;
+// A tab opened on another workspace never autoplays (the browser defers media in unseen tabs): wait until Brave's
+// media session shows the new video, then press play through MPRIS — the same as his keyboard's play key.
+const PLAY_WHEN_LOADED = (needle) => `N=${shq(needle)}; for i in $(seq 1 20); do p=$(gdbus call --session --dest org.freedesktop.DBus --object-path / --method org.freedesktop.DBus.ListNames | grep -o "org.mpris.MediaPlayer2.brave[^']*" | head -1); if [ -n "$p" ] && gdbus call --session --dest "$p" --object-path /org/mpris/MediaPlayer2 --method org.freedesktop.DBus.Properties.Get org.mpris.MediaPlayer2.Player Metadata | grep -qiF -- "$N"; then gdbus call --session --dest "$p" --object-path /org/mpris/MediaPlayer2 --method org.mpris.MediaPlayer2.Player.Play >/dev/null; sleep 1; gdbus call --session --dest "$p" --object-path /org/mpris/MediaPlayer2 --method org.freedesktop.DBus.Properties.Get org.mpris.MediaPlayer2.Player PlaybackStatus | grep -q Playing && { echo playing; exit 0; }; fi; sleep 0.5; done; echo not_confirmed`;
+const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
+// First video for a query from YouTube's own results page (no API key, no search quota): ytInitialData carries
+// videoRenderer entries in result order; ads and shorts use other renderers, so the first videoRenderer is the top hit.
+export async function findYouTube(query, { fetchImpl = globalThis.fetch, timeoutMs = 8000 } = {}) {
+  const r = await fetchImpl(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&hl=en`, { headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'accept-language': 'en' }, signal: AbortSignal.timeout(timeoutMs) });
+  if (!r.ok) return null;
+  const html = await r.text();
+  const i = html.indexOf('"videoRenderer":{"videoId":"');
+  if (i < 0) return null;
+  const chunk = html.slice(i, i + 4000);
+  const id = /"videoId":"([\w-]{11})"/.exec(chunk)?.[1];
+  if (!id) return null;
+  const title = /"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/.exec(chunk)?.[1];
+  const channel = /"ownerText":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/.exec(chunk)?.[1];
+  const un = (s) => { try { return s ? JSON.parse(`"${s}"`) : null; } catch { return s ?? null; } };
+  return { id, title: un(title) ?? query, channel: un(channel) };
+}
+
 export function buildFridayTools(ctx) {
   const { memory, store, tools, indexer, skills, jobs, proactive, settings, researchMemory, nodes } = ctx;
   // Members (other people) may only touch files that live in their own conversations.
@@ -260,6 +284,31 @@ export function buildFridayTools(ctx) {
         const target = /^(https?:\/\/|mailto:|~|\/)/i.test(t);
         try { return await nodes.dispatch({ action: target ? 'open_target' : 'open_app', args: target ? { target: t } : { name: t }, timeoutMs: 20_000 }); }
         catch (e) { return { error: e.message, ...(/app_not_found/.test(e.message) ? { hint: 'Not an installed app. If it is a website, pass its URL; to install software use laptop_shell or computer_task.' } : {}) }; }
+      },
+    },
+    {
+      // 28 Oct: "play Starboy" went to computer_task, which opened Friday's own browser and then waited on an approval,
+      // while his Brave kept playing another song. Playing something is one fast, fixed sequence instead.
+      name: 'laptop_play', risk: 'safe',
+      description: 'Play a song, video or playlist on his laptop NOW: finds it on YouTube, pauses whatever is already playing, and opens it in his Brave (default browser if Brave is missing). Use for any "play X" request instead of computer_task; say what is playing from the result.',
+      parameters: obj({ query: { type: 'string', description: 'what to play, e.g. "Starboy The Weeknd" or "lofi hip hop"' } }, ['query']),
+      run: async (a) => {
+        if (!nodes.online) return { error: 'laptop_offline', note: 'His laptop node is not connected; nothing is playing.' };
+        const q = str(a.query, 'query', 200);
+        let found = null;
+        try { found = await findYouTube(q); } catch { /* fall back to the results page */ }
+        const url = found ? `https://www.youtube.com/watch?v=${found.id}` : `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+        const sh = (command, ms = 15_000) => nodes.dispatch({ action: 'shell_run', args: { command, timeoutMs: ms }, timeoutMs: ms + 10_000 });
+        try { await sh(PAUSE_ALL_MEDIA); } catch { /* nothing playing / no D-Bus: fine */ }
+        let browser = 'brave';
+        try { const r = await sh(`command -v brave-browser >/dev/null && setsid -f brave-browser ${shq(url)} >/dev/null 2>&1 && echo ok`); if (!/ok/.test(r.stdout ?? '')) throw new Error('no brave'); }
+        catch { browser = 'default'; try { await nodes.dispatch({ action: 'open_target', args: { target: url }, timeoutMs: 20_000 }); } catch (e) { return { error: e.message }; } }
+        let confirmed = null;
+        if (found && browser === 'brave') { // a key phrase of the title is enough to recognise the tab
+          const needle = found.title.replace(/\(.*?\)|\[.*?\]/g, ' ').split(/\s+-\s+|\s+/).filter((w) => w.length > 2).slice(0, 3).join(' ');
+          try { confirmed = /playing/.test((await sh(PLAY_WHEN_LOADED(needle.split(' ').at(-1) || found.title.slice(0, 20)), 25_000)).stdout ?? ''); } catch { confirmed = false; }
+        }
+        return found ? { playing: found.title, channel: found.channel ?? null, url, browser, paused_other_media: true, ...(confirmed === false ? { note: 'Opened, but the browser has not confirmed playback yet; it may need a click on the tab.' } : {}) } : { opened_search: q, url, browser, note: 'Could not pick a video automatically; the YouTube results are open for him.' };
       },
     },
     {
