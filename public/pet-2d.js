@@ -7,7 +7,7 @@
 import { PET_STATES, poseFor, isCompactMode, lineFor } from './pet-viewer.js';
 
 export const PET_IMAGE = '/assets/friday.webp';
-const SESSION_TOKEN_KEY = 'friday.sessionToken';
+const SESSION_TOKEN_KEY = 'friday.token'; // where the web app keeps it (js/api.js): local when "remember me", else session
 const PRESENCE_POLL_MS = 5000;
 const FIG_ASPECT = 720 / 1158; // width / height of friday.webp
 // Where her face is in the artwork (fractions of the figure), for the bubble.
@@ -209,7 +209,7 @@ export async function initPet2D(opts = {}) {
   // Tap her: a little hop and a heart.
   canvas.addEventListener('click', () => { hopUntil = performance.now() + 900; showBubble({ kind: 'heart' }); });
 
-  const token = () => { try { return sessionStorage.getItem(SESSION_TOKEN_KEY) || ''; } catch { return ''; } };
+  const token = () => { try { return localStorage.getItem(SESSION_TOKEN_KEY) || sessionStorage.getItem(SESSION_TOKEN_KEY) || ''; } catch { return ''; } };
   async function pollPresence() {
     const t = token();
     if (!t) { setState('offline', 'no session token — connect via the main panel first'); return; }

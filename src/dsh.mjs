@@ -20,6 +20,7 @@ import { ensureRealDir, writeFileReplacing } from './safefs.mjs';
 import { join, resolve } from 'node:path';
 import { RESEARCH_CONTRACT } from './research-memory.mjs';
 import { bwrapPath, bwrapUsable, buildBwrapArgs, dshInstallRoot } from './sandbox.mjs';
+import { StringDecoder } from 'node:string_decoder';
 
 const DEFAULT_TIMEOUT_MS = 20 * 60_000;
 const DEFAULT_MAX_OUTPUT = 64 * 1024;
@@ -147,8 +148,10 @@ export class DshAdapter {
         else if (e.type === 'status' && e.phase === 'turn_end') turnReason = e.reason?.kind ?? null;
         else if (e.type === 'final') final = String(e.text ?? '');
       };
-      child.stdout.on('data', (c) => { buf += c.toString('utf8'); let i; while ((i = buf.indexOf('\n')) >= 0) { handle(buf.slice(0, i)); buf = buf.slice(i + 1); } });
-      child.stderr.on('data', (c) => { if (stderr.length < 8192) stderr += c.toString('utf8'); });
+      // StringDecoder: a multi-byte character split across pipe chunks must not become U+FFFD in the report.
+      const outDec = new StringDecoder('utf8'), errDec = new StringDecoder('utf8');
+      child.stdout.on('data', (c) => { buf += outDec.write(c); let i; while ((i = buf.indexOf('\n')) >= 0) { handle(buf.slice(0, i)); buf = buf.slice(i + 1); } });
+      child.stderr.on('data', (c) => { if (stderr.length < 8192) stderr += errDec.write(c); });
       child.on('error', (e) => done(resolvePromise, { status: 'failed', error: redactAll(`dsh_spawn_failed: ${e.message}`, secrets) }));
       child.on('close', (code, sig) => {
         if (buf.trim()) handle(buf.trim());

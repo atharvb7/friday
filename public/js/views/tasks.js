@@ -5,8 +5,34 @@ const STATUS = { completed: 'good', failed: 'bad', blocked: 'warn', running: 'ac
 
 export function render({ app, api, toast }) {
   const list = h('div', { class: 'list' });
+  const hunting = h('div', { class: 'stack' });
   const drawerHost = h('div');
-  const el = h('div', { class: 'page' }, h('div', { class: 'page-head' }, h('h2', {}, 'Tasks'), h('button', { class: 'btn small', onclick: newTask }, '+ New')), list, drawerHost);
+  const el = h('div', { class: 'page' }, h('div', { class: 'page-head' }, h('h2', {}, 'Tasks'), h('button', { class: 'btn small', onclick: newTask }, '+ New')), hunting, list, drawerHost);
+
+  // Client-hunting runs (the server's prospecting pipeline): shown only when the pipeline exists.
+  async function loadHunting() {
+    let data; try { data = await api('/v1/prospecting/runs'); } catch { clear(hunting); return; }
+    clear(hunting);
+    const p = data.running;
+    if (!p && !data.runs.length) return;
+    hunting.append(h('h3', {}, 'Client hunting'));
+    if (p) hunting.append(h('div', { class: 'card item' }, h('div', { class: 'big' }, '🎯'),
+      h('div', { class: 'grow' }, h('div', { class: 'title' }, `Qualified ${p.qualified} · ${p.phase}${p.current ? `: ${p.current}` : ''}`),
+        h('div', { class: 'meta' }, `audited ${p.audited} · searches ${p.searches} · drafts ${p.drafts} · ${p.minutes} min`)),
+      h('span', { class: 'chip accent' }, 'running')));
+    for (const r of data.runs.filter((x) => x.status !== 'running').slice(0, 5)) {
+      hunting.append(h('div', { class: 'card click item', onclick: () => runDetail(r) }, h('div', { class: 'big' }, '🎯'),
+        h('div', { class: 'grow' }, h('div', { class: 'title' }, r.summary ?? 'Prospecting run'), h('div', { class: 'meta' }, `${r.reason ?? 'run'} · ${timeAgo(r.finished_at ?? r.started_at)}`)),
+        h('span', { class: `chip ${r.status === 'done' ? 'good' : r.status === 'failed' ? 'bad' : 'warn'}` }, r.status)));
+    }
+  }
+  function runDetail(r) {
+    clear(drawerHost);
+    drawerHost.append(h('div', { class: 'drawer stack' },
+      h('div', { class: 'row' }, h('h2', { class: 'grow' }, 'Client-hunting run'), h('button', { class: 'btn quiet icon', 'aria-label': 'Close', onclick: () => clear(drawerHost) }, '✕')),
+      h('div', { class: 'row wrap' }, h('span', { class: 'chip' }, r.status), h('span', { class: 'faint' }, `started ${timeAgo(r.started_at)}`)),
+      r.report ? h('div', { class: 'card bubble' }, md(r.report)) : h('div', { class: 'muted' }, r.summary ?? 'No report.')));
+  }
 
   async function load() {
     const { tasks } = await api('/v1/tasks');
@@ -58,7 +84,7 @@ export function render({ app, api, toast }) {
       h('details', {}, h('summary', { class: 'muted' }, 'Instruction'), h('pre', { class: 'mono bubble' }, task.instruction))));
   }
 
-  const onEvent = (e) => { if (e.type.startsWith('task.')) load(); };
-  app.listeners.add(onEvent); load();
+  const onEvent = (e) => { if (e.type.startsWith('task.')) load(); if (e.type.startsWith('prospecting.')) loadHunting(); };
+  app.listeners.add(onEvent); load(); loadHunting();
   return { el, destroy() { app.listeners.delete(onEvent); } };
 }

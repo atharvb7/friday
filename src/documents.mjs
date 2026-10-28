@@ -76,8 +76,16 @@ export class Documents {
     const work = mkdtempSync(join(tmpdir(), 'friday-docin-'));
     try {
       const p = join(work, `in.${ext}`); writeFileSync(p, this.files.read(f.id));
-      // append_pdf may reference another chat file by id
-      const fixed = ops.map((o) => (o?.op === 'append_pdf' && o.file ? (() => { const g = this.files.resolve(o.file); if (!g) return o; const q = join(work, `${g.id}.pdf`); writeFileSync(q, this.files.read(g.id)); return { ...o, path: q }; })() : o));
+      // append_pdf references another chat file by id. The engine reads `path` from disk, so it is only ever set here:
+      // a caller-supplied path (model or injected text) could otherwise pull any PDF on the server into a chat file.
+      const fixed = [];
+      for (const o of ops) {
+        const { path: _ignored, ...rest } = o && typeof o === 'object' ? o : {};
+        if (rest.op !== 'append_pdf') { fixed.push(rest); continue; }
+        const g = rest.file ? this.files.resolve(rest.file) : null;
+        if (!g || extOf(g.name) !== 'pdf') return { error: 'append_pdf needs file = the id of a PDF in this chat' };
+        const q = join(work, `${g.id}.pdf`); writeFileSync(q, this.files.read(g.id)); fixed.push({ ...rest, path: q });
+      }
       const v = (/ \(v(\d+)\)$/.exec(f.name.replace(/\.[^.]+$/, ''))?.[1] ?? 1) * 1 + 1;
       const outName = name ? `${safeName(name).replace(/\.[a-z0-9]{1,5}$/i, '')}.${ext}` : `${f.name.replace(/\.[^.]+$/, '').replace(/ \(v\d+\)$/, '')} (v${v}).${ext}`;
       return await this.#run({ op: 'edit', path: p, ops: fixed }, { outName, conversationId: conversationId ?? f.conversation_id, parentId: f.id });

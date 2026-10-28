@@ -168,7 +168,7 @@ export function createContext({ appRoot, env = process.env }) {
 
   // Chat brain: Nemotron direct when keyed, else the DSH worker path when
   // verified, else honest local fallback.
-  ctx.chat.onMessage = ({ conversationId, role }) => bus.publish('chat.message', { conversationId, role });
+  ctx.chat.onMessage = ({ conversationId, role, id }) => bus.publish('chat.message', { conversationId, role, id });
   ctx.notifications = new Notifications(store, bus);
   ctx.push = new WebPush({ store, settings, subject: env.FRIDAY_PUSH_SUBJECT ?? 'mailto:friday@localhost' });
   bus.subscribe((e) => { if (e.type === 'notification.created') void ctx.push.send({ title: e.data.title, body: e.data.body, tag: e.data.id }); });
@@ -270,7 +270,6 @@ export function createContext({ appRoot, env = process.env }) {
   { const prev = store.onEvent; store.onEvent = (e) => { prev?.(e); if (['task.completed', 'task.failed'].includes(e.kind)) setTimeout(() => { ctx.watches.onTaskFinished(e.taskId, e.kind).catch(() => {}); }, 500).unref?.(); }; }
   kindRouter.byKind.team = new TeamOrchestrator({ store, router: kindRouter, ai });
   ctx.rules.proactive = ctx.proactive;
-  ctx.proactive.mood = ctx.mood;
   ctx.salesJudge = new SalesJudge({ jev: new JevClient({ apiKey: env.FRIDAY_JEV_KEY ?? null, timeoutMs: 20_000 }) });
   ctx.pipeline = new Pipeline({ store, settings, gmail: ctx.gmailOutreach, notifications: ctx.notifications, bus, judge: ctx.salesJudge });
   ctx.prospector = new Prospector({ store, settings, ai, judge: ctx.salesJudge, pipeline: ctx.pipeline, approvals: ctx.approvals, notifications: ctx.notifications, bus, serpKey: env.SERPAPI_API_KEY ?? null, hunterKey: env.HUNTER_API_KEY ?? null, reoonKey: env.REOON_API_KEY ?? null });
@@ -283,6 +282,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.fridayTools.register(toolsLoadTool());
   for (const t of commitmentTools(ctx.commitments)) ctx.fridayTools.register(t);
   ctx.mood = new Mood({ settings, store });
+  ctx.proactive.mood = ctx.mood; // after it exists (it was assigned while still undefined)
   ctx.habits = new Habits({ settings });
   ctx.autoMemory = new AutoMemory({ ai, memory, settings, indexer, bus, commitments: ctx.commitments });
   ctx.brain = new Brain({

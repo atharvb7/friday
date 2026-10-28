@@ -17,5 +17,5 @@ if ! "${SSH[@]}" '[ -f ~/friday/.env ]'; then
   echo "created server .env (mode 600)"
 fi
 
-"${SSH[@]}" 'cd ~/friday && docker compose up -d --build 2>&1 | tail -15'
+"${SSH[@]}" 'set -o pipefail; cd ~/friday && docker compose up -d --build 2>&1 | tail -15' # pipefail: a failed build must fail the deploy, not report tail's 0
 "${SSH[@]}" 'cd ~/friday && docker compose ps'

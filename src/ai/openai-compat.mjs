@@ -63,8 +63,8 @@ export class OpenAICompatProvider {
     return out;
   }
 
-  #signal(signal, extra = null) {
-    const t = AbortSignal.timeout(this.timeoutMs);
+  #signal(signal, extra = null, ms = this.timeoutMs) {
+    const t = AbortSignal.timeout(ms);
     return AbortSignal.any([t, ...(signal ? [signal] : []), ...(extra ? [extra] : [])]);
   }
 
@@ -86,12 +86,12 @@ export class OpenAICompatProvider {
     });
   }
 
-  async #post(path, body, signal, stall = null) {
+  async #post(path, body, signal, stall = null, timeoutMs = this.timeoutMs) {
     let res;
     try {
       res = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method: 'POST',
-        signal: this.#signal(signal, stall?.signal),
+        signal: this.#signal(signal, stall?.signal, timeoutMs),
         headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', ...this.headers },
         body: JSON.stringify(body),
       });
@@ -111,8 +111,9 @@ export class OpenAICompatProvider {
 
   // Returns { content, toolCalls, reasoning, usage, finishReason, model }.
   // onDelta(text) receives visible content only; onThinking(text) receives
-  // reasoning deltas (never part of the reply).
-  async complete({ model, messages, tools = null, toolChoice = 'auto', maxTokens = 4096, temperature = 0.4, stream = false, onDelta = null, onThinking = null, signal = null, thinking = true, extra = {}, stallMs = this.stallMs }) {
+  // reasoning deltas (never part of the reply). timeoutMs: this call's own limit (background jobs that have a fallback
+  // would rather move on after a minute than wait the provider's full two). stallMs: give up when nothing arrives.
+  async complete({ model, messages, tools = null, toolChoice = 'auto', maxTokens = 4096, temperature = 0.4, stream = false, onDelta = null, onThinking = null, signal = null, thinking = true, allowEmpty = false, extra = {}, stallMs = this.stallMs, timeoutMs = null }) {
     const body = { model, messages: this.#messages(messages), temperature, max_tokens: maxTokens, ...(thinking === false && this.noThinking ? this.noThinking : {}), ...extra };
     if (tools?.length) { body.tools = tools; body.tool_choice = toolChoice; }
     const wire = stream || this.alwaysStream;
@@ -120,7 +121,7 @@ export class OpenAICompatProvider {
     const stall = wire ? this.#stallGuard(stallMs) : null;
     let out;
     try {
-      const res = await this.#post('/chat/completions', body, signal, stall);
+      const res = await this.#post('/chat/completions', body, signal, stall, timeoutMs ?? this.timeoutMs);
       stall?.ping();
       const ctype = res.headers?.get?.('content-type') ?? 'application/json';
       out = (wire && /event-stream/.test(ctype))
@@ -131,7 +132,7 @@ export class OpenAICompatProvider {
       throw error;
     } finally { stall?.stop(); }
     out.model = model;
-    if (!out.content.trim() && !out.toolCalls.length) {
+    if (!out.content.trim() && !out.toolCalls.length && !allowEmpty) { // allowEmpty: the caller already has something to show
       throw new ProviderError(`${this.name}: empty reply (finish=${out.finishReason ?? '?'})`, { retryable: true, kind: 'empty' });
     }
     if (onDelta && !stream && out.content) onDelta(out.content);

@@ -32,11 +32,14 @@ export class Rules {
 
   create({ name, event, where = {}, action, cooldownSec = 300, maxPerDay = 20 }) {
     if (typeof name !== 'string' || !name.trim() || name.length > 100) throw new TypeError('name required');
-    if (typeof event !== 'string' || FORBIDDEN_TRIGGERS.has(event) || !EVENT_PREFIXES.some((p) => event.startsWith(p))) throw new TypeError(`event must start with one of: ${EVENT_PREFIXES.join(' ')} (and not be a rule-produced event)`);
+    // A trigger ending in '.' is a prefix (#matches): it must not cover a forbidden event either.
+    const covers = (e) => event === e || (event.endsWith('.') && e.startsWith(event));
+    if (typeof event !== 'string' || [...FORBIDDEN_TRIGGERS].some(covers) || !EVENT_PREFIXES.some((p) => event.startsWith(p))) throw new TypeError(`event must start with one of: ${EVENT_PREFIXES.join(' ')} (and not be a rule-produced event)`);
     if (!where || typeof where !== 'object' || Array.isArray(where) || Object.keys(where).length > 5) throw new TypeError('where must be an object with <=5 keys');
     for (const [k, v] of Object.entries(where)) if (!/^[a-zA-Z0-9_.]{1,40}$/.test(k) || !['string', 'number', 'boolean'].includes(typeof v)) throw new TypeError('where values must be string/number/boolean');
     if (!action || !['notify', 'task', 'briefing'].includes(action.kind)) throw new TypeError('action.kind must be notify|task|briefing');
-    if (action.kind === 'task' && (event.startsWith('task.') || event === 'job.task_queued' || event.startsWith('research.'))) throw new TypeError('a task rule cannot trigger on task/research events (it would loop); use notify');
+    // Agent tasks produce task/research/job events, ask for approvals and save memories: a task rule on any of them loops.
+    if (action.kind === 'task' && (covers('job.task_queued') || ['task.', 'research.', 'approval.', 'memory.'].some((p) => event.startsWith(p) || p.startsWith(event)))) throw new TypeError('a task rule cannot trigger on task/research/approval/memory events (it would loop); use notify');
     if (action.kind !== 'briefing' && (typeof action.title !== 'string' || !action.title.trim() || action.title.length > 200)) throw new TypeError('action.title required');
     if (action.kind === 'task' && (typeof action.instruction !== 'string' || !action.instruction.trim() || action.instruction.length > 8000)) throw new TypeError('action.instruction required for task rules');
     if (!(Number.isInteger(cooldownSec) && cooldownSec >= 30 && cooldownSec <= 86400)) throw new TypeError('cooldownSec 30..86400');

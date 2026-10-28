@@ -96,7 +96,7 @@ export class ChatStore {
       this.db.exec('ROLLBACK');
       throw error;
     }
-    try { this.onMessage?.({ conversationId, role }); } catch { /* observers never break writes */ }
+    try { this.onMessage?.({ conversationId, role, id }); } catch { /* observers never break writes */ }
     return { id, conversation_id: conversationId, role, content: content.trim(), created_at: now, attachments: att };
   }
 

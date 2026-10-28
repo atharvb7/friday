@@ -31,14 +31,25 @@ export const OUTREACH_QUESTIONS = {
     criteria: { true: 'One clear, low-effort question such as "Want me to send it?"', false: 'No question, several asks, or it asks for a long meeting' } },
 };
 
+// The questions asked about an FDE introduction: the gap questions do not apply (there is no claimed gap); instead the
+// email must not invent one.
+// FDE introductions (no evidenced gap): the email may describe what usually happens in businesses like theirs, or ask,
+  // but must never present a problem at THIS company as something we saw.
+const CLAIMS_UNSEEN_PROBLEM = { type: 'noul', instructions: 'Does `email.body` state, as a fact, that the company in `lead` has a specific problem, inefficiency or manual process?',
+  criteria: { true: 'It asserts that this company has a problem, a slow or manual step, or lost revenue (for example "your team re-types every order", "you are losing leads")', false: 'It only states what the company does, describes what is common in businesses like theirs as a possibility, or asks a question' } };
+export const FDE_OUTREACH_QUESTIONS = { ...Object.fromEntries(Object.entries(OUTREACH_QUESTIONS).filter(([k]) => !['gap_specific', 'offer_fits_gap'].includes(k))), claims_unseen_problem: CLAIMS_UNSEEN_PROBLEM };
+
 // Truth table for one email. Hard blocks stop the batch; holds ask Friday to improve the email first.
-export function judgeOutreach(answers) {
+// pitch 'fde': a forward-deployed-engineer introduction without an evidenced gap (the owner allows it): no gap checks,
+// but claiming an unseen problem is a fix.
+export function judgeOutreach(answers, { pitch = 'gap' } = {}) {
   const n = (k) => answers?.[k]?.noul;
   const s = answers?.gap_specific?.score;
   const problems = [];
   if (n('sells_software') >= YES) problems.push({ block: true, why: 'the company sells software/AI/automation itself (competitor or has engineers): drop this lead' });
-  if (typeof s === 'number' && s < 1.5) problems.push({ block: true, why: 'no specific, evidenced gap at this company: research it more or drop it' });
-  if (n('offer_fits_gap') <= NO) problems.push({ block: true, why: 'the offer does not fix the gap described: pick the right offer or drop the lead' });
+  if (pitch !== 'fde' && typeof s === 'number' && s < 1.5) problems.push({ block: true, why: 'no specific, evidenced gap at this company: research it more or drop it' });
+  if (pitch !== 'fde' && n('offer_fits_gap') <= NO) problems.push({ block: true, why: 'the offer does not fix the gap described: pick the right offer or drop the lead' });
+  if (pitch === 'fde' && n('claims_unseen_problem') >= YES) problems.push({ why: 'it states a problem at their company that nobody saw: this is an FDE introduction, so say what they do, then what you would look for or what is common in businesses like theirs, framed as a question' });
   if (n('opener_specific') <= NO) problems.push({ why: 'the first sentence is generic: open with the specific thing you saw at this company' });
   if (n('lists_services') >= YES) problems.push({ why: 'it lists services/technologies: describe one end-to-end outcome instead' });
   if (n('mentions_price') >= YES) problems.push({ why: 'it mentions pricing: remove it (pricing comes after a call)' });
@@ -67,6 +78,16 @@ export function judgeQualify(answers) {
   if (n('operations_heavy') <= NO) return { verdict: 'skip', why: 'little repeated operational work to automate' };
   if (gap >= 2 && n('offer_fits_gap') >= YES) return { verdict: 'qualify', why: 'specific evidenced gap that our offer fits', gap };
   return { verdict: 'hold', why: 'possible fit, evidence not strong enough yet', gap };
+}
+
+// FDE introduction: no evidenced gap is needed, but the company must be a real operations business, not a competitor.
+export const FDE_QUALIFY_QUESTIONS = { sells_software: OUTREACH_QUESTIONS.sells_software, operations_heavy: QUALIFY_QUESTIONS.operations_heavy };
+export function judgeQualifyFde(answers) {
+  const n = (k) => answers?.[k]?.noul;
+  if (n('sells_software') >= YES) return { verdict: 'skip', why: 'sells software/AI/automation itself (competitor or in-house engineers)' };
+  if (n('operations_heavy') <= NO) return { verdict: 'skip', why: 'little repeated operational work for an engineer to take over' };
+  if (n('operations_heavy') >= YES && n('sells_software') <= NO) return { verdict: 'qualify', why: 'operations-heavy business, fit for a forward-deployed engineer introduction' };
+  return { verdict: 'hold', why: 'unclear whether they have enough repeated operational work' };
 }
 
 // ---- reply classification ----
@@ -100,14 +121,16 @@ export class SalesJudge {
   // emails: [{ lead, offer, subject, body }] -> per-email verdicts. Throws if JEV fails (callers decide the fallback).
   async reviewOutreach(items) {
     return Promise.all(items.map(async (it) => {
+      const pitch = it.lead?.pitch === 'fde' ? 'fde' : 'gap';
       const state = {
-        lead: { company: clip(it.lead?.company, 200), website: clip(it.lead?.website, 200), what_they_do: clip(it.lead?.research, 1500), gap: clip(it.lead?.signal || it.lead?.research, 1500) },
+        lead: { company: clip(it.lead?.company, 200), website: clip(it.lead?.website, 200), what_they_do: clip(it.lead?.research, 1500),
+          ...(pitch === 'fde' ? { seen_on_their_pages: clip(it.lead?.signal, 1500), gap: 'None observed. This is an introduction from a forward-deployed AI engineer; no problem at this company was seen.' } : { gap: clip(it.lead?.signal || it.lead?.research, 1500) }) },
         offer: clip(it.offer, 300),
         proof: clip(it.proof, 3000),
         email: { subject: clip(it.subject, 200), body: clip(it.body, 3000) },
       };
-      const { answers } = await this.jev.decide({ state, questions: OUTREACH_QUESTIONS });
-      return { to: it.to, company: it.lead?.company ?? null, ...judgeOutreach(answers) };
+      const { answers } = await this.jev.decide({ state, questions: pitch === 'fde' ? FDE_OUTREACH_QUESTIONS : OUTREACH_QUESTIONS });
+      return { to: it.to, company: it.lead?.company ?? null, ...judgeOutreach(answers, { pitch }) };
     }));
   }
 
@@ -131,6 +154,11 @@ export class SalesJudge {
   async qualify({ lead, offer }) {
     const { answers } = await this.jev.decide({ state: { lead: { company: clip(lead.company, 200), website: clip(lead.website, 200), what_they_do: clip(lead.what_they_do, 1500), gap: clip(lead.gap, 2000) }, offer: clip(offer, 300) }, questions: QUALIFY_QUESTIONS });
     return judgeQualify(answers);
+  }
+
+  async qualifyFde({ lead }) {
+    const { answers } = await this.jev.decide({ state: { lead: { company: clip(lead.company, 200), website: clip(lead.website, 200), what_they_do: clip(lead.what_they_do, 1500), seen_on_their_pages: clip(lead.seen, 1500) } }, questions: FDE_QUALIFY_QUESTIONS });
+    return judgeQualifyFde(answers);
   }
 
   async classifyReply({ ourSubject, replyText }) {

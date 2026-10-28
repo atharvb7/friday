@@ -64,6 +64,9 @@ const noActions = (t) => t.replace(/(^|[\s(])\*(?!\*)([^*\n]{2,90}?)\*(?=[\s).,!
 export function render({ app, api, toast }) {
   const voiceCaps = { stt: false, tts: false }; let speaking = null, recording = null;
   api('/v1/voice/status').then((v) => { voiceCaps.stt = v.stt === 'ready'; voiceCaps.tts = v.tts === 'ready'; }).catch(() => {});
+  // Ids of the messages on screen: a chat.message event for one of them needs no reload; any other (a picture that
+  // finished, a reminder) reloads the chat, after the reply in progress if one is streaming.
+  const shown = new Set(), missed = new Set();
   let convoId = null, busy = false, abort = null, speak = false, listening = false, rec = null, lastInputWasVoice = false;
   const convos = h('aside', { class: 'convos', id: 'convos' });
   const msgs = h('div', { class: 'msgs', id: 'msgs', 'aria-live': 'polite' });
@@ -162,11 +165,13 @@ export function render({ app, api, toast }) {
   }
 
   async function open(id) {
-    convoId = id; convos.classList.remove('open');
+    convoId = id; app.lastChat = id; convos.classList.remove('open');
     if (!id) { hello(); loadConvos(); return; }
     try {
       const { messages } = await api(`/v1/chat/${id}`);
-      clear(msgs); for (const m of messages) msgs.append(bubble(m.role, m.content, { files: m.attachments }));
+      if (id !== convoId) return; // another chat was opened meanwhile
+      shown.clear(); missed.clear();
+      clear(msgs); for (const m of messages) { shown.add(m.id); msgs.append(bubble(m.role, m.content, { files: m.attachments })); }
       pinned = true; scroll(true); loadConvos();
     } catch { toast('Could not open that conversation'); }
   }
@@ -177,7 +182,7 @@ export function render({ app, api, toast }) {
     if ((!text && !files.length) || busy) { pending.push(...files); paintTray(); return; }
     busy = true; app.chatBusy = true; app.paint(); send.disabled = true;
     input.value = ''; input.style.setProperty('height', 'auto'); speechSynthesis?.cancel();
-    if (!convoId) clear(msgs);
+    if (!convoId) { clear(msgs); shown.clear(); }
     pinned = true; msgs.append(bubble('user', text, { files }));
     const tools = []; let acc = '';
     const viaVoice = lastInputWasVoice; lastInputWasVoice = false;
@@ -190,15 +195,16 @@ export function render({ app, api, toast }) {
     try {
       // Speaker on = she is talking: the voice channel lets her write for speech (emotion tags, no emoji/markdown).
       await streamChat({ message: text, conversationId: convoId, channel: viaVoice || speak ? 'voice' : 'chat', attachments: files.map((f) => f.id) }, {
-        meta: (d) => { convoId = d.conversationId; },
+        meta: (d) => { convoId = d.conversationId; app.lastChat = convoId; },
         delta: (d) => { acc += d.text; paintReply(); },
         thinking: () => {},
-        tool: (t) => { tools.push(t); toolsEl.append(h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`)); },
-        done: (d) => { acc = d.reply; paintReply(); if (d.files?.length) live.append(h('div', { class: 'files' }, d.files.map((f) => fileView(f, toast)))); if (speak && acc) say(acc); },
+        tool: (t) => { if (acc.trim() && !acc.endsWith('\n')) acc += '\n\n'; tools.push(t); toolsEl.append(h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`)); },
+        done: (d) => { for (const id of d.messageIds ?? []) shown.add(id); acc = d.reply; paintReply(); if (d.files?.length) live.append(h('div', { class: 'files' }, d.files.map((f) => fileView(f, toast)))); if (speak && acc) say(acc); },
         error: () => { acc ||= '(That didn’t go through. Try again?)'; paintReply(); },
       }, abort.signal);
     } catch (e) { acc ||= `Couldn’t reach my brain: ${e.message}`; paintReply(); }
     busy = false; app.chatBusy = false; app.paint(); send.disabled = false; loadConvos(); input.focus();
+    if ([...missed].some((id) => !shown.has(id))) open(convoId); else missed.clear();
   }
 
   async function fetchWav(text) {
@@ -250,12 +256,14 @@ export function render({ app, api, toast }) {
 
   // Server-side additions (task results, reminders, approvals) show up live.
   const onEvent = (e) => {
-    if (e.type === 'chat.message' && e.data.conversationId === convoId && !busy) open(convoId);
+    if (e.type === 'chat.message' && e.data.conversationId === convoId && !shown.has(e.data.id)) { if (busy) missed.add(e.data.id); else open(convoId); }
     if (e.type === 'chat.message' || e.type === 'chat.deleted') loadConvos();
     if (e.type === 'chat.deleted' && e.data.conversationId === convoId && !busy) { convoId = null; hello(); }
   };
   app.listeners.add(onEvent);
 
-  hello(); loadConvos();
-  return { el, destroy() { speaking?.cancel(); recording?.stop(); emoji.close(); app.listeners.delete(onEvent); abort?.abort(); rec?.stop(); speechSynthesis?.cancel(); } };
+  if (app.lastChat) open(app.lastChat); else { hello(); loadConvos(); }
+  // Leaving the view must not cancel a reply in progress (the server drops an aborted turn, so her answer was lost):
+  // the stream finishes in the background and the chat reopens on return.
+  return { el, destroy() { speaking?.cancel(); recording?.stop(); emoji.close(); app.listeners.delete(onEvent); rec?.stop(); speechSynthesis?.cancel(); } };
 }

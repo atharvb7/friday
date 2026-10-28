@@ -201,5 +201,3 @@ export class ResourceGovernor {
     }
   }
 }
-
-export const WORKER_CLASSES = Object.freeze(Object.keys(WORKER_RULES));

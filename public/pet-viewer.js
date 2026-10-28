@@ -109,7 +109,7 @@ export function poseFor(state) {
 // Browser-only viewer below. Never runs on import in node (no top-level DOM).
 // ---------------------------------------------------------------------------
 
-const SESSION_TOKEN_KEY = 'friday.sessionToken';
+const SESSION_TOKEN_KEY = 'friday.token'; // where the web app keeps it (js/api.js): local when "remember me", else session
 const PRESENCE_POLL_MS = 5000;
 const MODEL_URL = '/pet.glb';
 
@@ -264,7 +264,7 @@ export async function initPetViewer(opts = {}) {
   }, { passive: true });
 
   const token = () => {
-    try { return sessionStorage.getItem(SESSION_TOKEN_KEY) || ''; } catch { return ''; }
+    try { return localStorage.getItem(SESSION_TOKEN_KEY) || sessionStorage.getItem(SESSION_TOKEN_KEY) || ''; } catch { return ''; }
   };
 
   async function pollPresence() {

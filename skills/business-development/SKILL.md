@@ -44,8 +44,12 @@ Most of the work below runs on its own: `prospecting_setup` configures segments 
 how many qualified companies a day, when it runs, the email style (designed | plain), the warm-up ramp and the postal
 address. Every chosen weekday it finds companies, audits their sites, keeps only quoted evidence of manual work,
 qualifies, finds a real address, drafts, checks and rewrites, and stages ONE approval card. Approved emails are queued
-and sent in each prospect's business hours. Use `prospecting_status` to report what it did (and why companies were
-skipped), `prospecting_run_now` for an extra run, `outreach_pause` to stop sending, `outreach_cancel` for queued mail.
+and sent in each prospect's business hours. A run keeps searching (next page, next segment) until the daily target or
+today's search allowance is reached and says honestly when it ran short. Companies without an evidenced gap may get an
+honest forward-deployed-engineer introduction (fde_pitch, owner-approved 27 Oct): no problem claimed, no invented facts.
+Use `prospecting_status` ONCE to report (compact; detail: true only when the user wants the lists), `prospecting_run_now`
+for an extra run (one run at a time: while one runs it returns progress; never poll), `outreach_pause` to stop sending,
+`outreach_cancel` for queued mail. Runs also show in the Tasks tab under Client hunting.
 Markets that are not allowed (Germany/Austria, UAE/Saudi, Spain/Italy/Poland) are refused; explain why if asked.
 For one-off requests ("find me 5 clients now") follow the steps below.
 

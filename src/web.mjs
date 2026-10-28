@@ -78,7 +78,13 @@ export function htmlToText(html) {
 }
 
 export function safeFetch(urlStr, { allowPrivate = false, maxBytes = MAX_BYTES, timeoutMs = TIMEOUT_MS, redirects = 0, headers = {} } = {}) {
-  return new Promise((resolve, reject) => {
+  return new Promise((res0, rej0) => {
+    // timeoutMs is the socket's idle limit; a server that drips a byte at a time also hits this overall deadline.
+    let req = null;
+    const deadline = setTimeout(() => { reject(new Error('fetch_failed: timeout')); req?.destroy(); }, timeoutMs * 2);
+    deadline.unref?.();
+    const resolve = (v) => { clearTimeout(deadline); res0(v); };
+    const reject = (e) => { clearTimeout(deadline); rej0(e); };
     let url;
     try { url = new URL(urlStr); } catch { return reject(new TypeError('invalid url')); }
     if (!['http:', 'https:'].includes(url.protocol)) return reject(new TypeError('only http(s) urls are allowed'));
@@ -95,11 +101,12 @@ export function safeFetch(urlStr, { allowPrivate = false, maxBytes = MAX_BYTES, 
       if (opts?.all) return cb(null, list);
       cb(null, list[0].address, list[0].family);
     });
-    const req = mod.request(url, { method: 'GET', lookup, timeout: timeoutMs, headers: { 'User-Agent': 'Friday/1.0 (+personal agent)', Accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5', ...headers } }, (res) => {
+    req = mod.request(url, { method: 'GET', lookup, timeout: timeoutMs, headers: { 'User-Agent': 'Friday/1.0 (+personal agent)', Accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5', ...headers } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
         res.resume();
         if (redirects >= MAX_REDIRECTS) return reject(new Error('too_many_redirects'));
-        return resolve(safeFetch(new URL(res.headers.location, url).toString(), { allowPrivate, maxBytes, timeoutMs, redirects: redirects + 1, headers }));
+        let next; try { next = new URL(res.headers.location, url).toString(); } catch { return reject(new Error('bad_redirect')); } // a bad Location must not throw out of this callback (it crashed the server)
+        return resolve(safeFetch(next, { allowPrivate, maxBytes, timeoutMs, redirects: redirects + 1, headers }));
       }
       const type = String(res.headers['content-type'] ?? '');
       if (!/^(text\/|application\/(json|xml|xhtml|rss|atom))/i.test(type) && type) { res.resume(); return reject(new Error(`unsupported_content_type: ${type.split(';')[0]}`)); }

@@ -7,7 +7,8 @@ import { parseWhen } from './time.mjs';
 
 const HOUR = 3600_000;
 const MAX_OPEN = 100;
-const words = (t) => new Set(String(t).toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);
+// Numbers count at any length: "assignment 2" and "assignment 3" are different to-dos.
+const words = (t) => new Set(String(t).toLowerCase().match(/\p{N}+|\p{L}[\p{L}\p{N}]{2,}/gu) ?? []);
 const similar = (a, b) => { const A = words(a), B = words(b); if (!A.size || !B.size) return 0; let i = 0; for (const x of A) if (B.has(x)) i++; return i / Math.min(A.size, B.size); };
 
 export class Commitments {
@@ -33,21 +34,22 @@ export class Commitments {
   }
 
   // Adds a commitment unless an open one already says the same thing (then its date/priority are refreshed).
-  add({ title, due = null, priority = 'normal', source = 'chat', conversationId = null, notes = null }) {
+  add({ title, due = null, priority = null, source = 'chat', conversationId = null, notes = null }) {
     const t = String(title ?? '').trim();
     if (!t || t.length > 200) throw new TypeError('title required (<=200 chars)');
-    if (!['low', 'normal', 'high'].includes(priority)) priority = 'normal';
+    if (!['low', 'normal', 'high'].includes(priority)) priority = null; // unset: a refresh keeps the existing one
     const d = this.#due(due);
     const iso = this.now().toISOString();
     const dup = this.list({ status: 'open' }).find((c) => similar(c.title, t) >= 0.75);
     if (dup) {
-      this.db.prepare('UPDATE commitments SET due_at=COALESCE(?, due_at), all_day=CASE WHEN ? IS NULL THEN all_day ELSE ? END, priority=?, updated_at=? WHERE id=?').run(d.at, d.at, d.allDay, priority, iso, dup.id);
+      // A moved deadline is nudged again; a priority he did not give leaves the old one.
+      this.db.prepare('UPDATE commitments SET nudged_at=CASE WHEN ? IS NOT NULL AND ? IS NOT due_at THEN NULL ELSE nudged_at END, due_at=COALESCE(?, due_at), all_day=CASE WHEN ? IS NULL THEN all_day ELSE ? END, priority=COALESCE(?, priority), updated_at=? WHERE id=?').run(d.at, d.at, d.at, d.at, d.allDay, priority, iso, dup.id);
       return { ...this.get(dup.id), updated: true };
     }
     if (this.db.prepare("SELECT COUNT(*) n FROM commitments WHERE status='open'").get().n >= MAX_OPEN) throw new TypeError('too many open commitments');
     const id = randomUUID();
     this.db.prepare('INSERT INTO commitments (id, title, due_at, all_day, priority, source, conversation_id, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-      .run(id, t, d.at, d.allDay, priority, source, conversationId, notes ? String(notes).slice(0, 1000) : null, iso, iso);
+      .run(id, t, d.at, d.allDay, priority ?? 'normal', source, conversationId, notes ? String(notes).slice(0, 1000) : null, iso, iso);
     this.bus?.publish('commitment.added', { id, title: t });
     return { ...this.get(id), created: true };
   }

@@ -55,7 +55,7 @@ export class GoogleAuth {
     const r = await this.fetchImpl('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: this.clientId, client_secret: this.clientSecret, ...params }), signal: AbortSignal.timeout(20_000) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
-      if (j.error === 'invalid_grant') {
+      if (j.error === 'invalid_grant' && params.grant_type === 'refresh_token') { // a reused/expired code on reconnect must not delete the working token
         const email = this.#read()?.email ?? null;
         rmSync(this.file, { force: true }); this.cache = null;
         try { this.onReauth?.({ account: this.account, email }); } catch { /* never mask the error */ }

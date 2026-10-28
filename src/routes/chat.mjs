@@ -39,7 +39,7 @@ export function chatRoutes(router, ctx) {
   // message so the brain sees it, but guards, tool loading and auto-memory look only at what he actually said.
   async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner', channel = 'chat', attachments = [], member = null, note = '' }) {
     if (attachments.length) ctx.files?.claim(attachments, convo.id);
-    chat.addMessage(convo.id, 'user', note ? `${text}\n\n${note}` : text, { attachments });
+    const asked = chat.addMessage(convo.id, 'user', note ? `${text}\n\n${note}` : text, { attachments });
     let replyFiles = [];
     const brain = ctx.chatBrain();
     // JEV is off unless enabled; the local classifier is the deterministic default.
@@ -81,7 +81,7 @@ export function chatRoutes(router, ctx) {
     try { audit.append(convo.id, 'chat.reply', { intent: route.intent, brain: brain.name, source: route.source, tools: toolsUsed.map((t) => t.name) }); } catch {}
     bus.publish('chat.reply', { conversationId: convo.id, brain: brain.name });
     const files = (saved.attachments ?? []).map((id) => ctx.files?.public(ctx.files.get(id))).filter(Boolean);
-    return { conversation: chat.getConversation(convo.id), route, reply, brain: brain.name, model, toolsUsed, files };
+    return { conversation: chat.getConversation(convo.id), route, reply, brain: brain.name, model, toolsUsed, files, messageIds: [asked.id, saved.id] };
   }
 
   function openConversation(b, principal) {
@@ -132,7 +132,7 @@ export function chatRoutes(router, ctx) {
             ...opened, signal: ctrl.signal,
             hooks: { onDelta: (t) => { thinking = false; send('delta', { text: t }); }, onThinking: () => { if (!thinking) { thinking = true; send('thinking', {}); } }, onTool: (t) => { thinking = false; send('tool', t); } },
           });
-          send('done', { reply: out.reply, brain: out.brain, model: out.model, toolsUsed: out.toolsUsed, conversationId: out.conversation.id, files: out.files });
+          send('done', { reply: out.reply, brain: out.brain, model: out.model, toolsUsed: out.toolsUsed, conversationId: out.conversation.id, files: out.files, messageIds: out.messageIds });
         } catch (error) { send('error', { error: ctrl.signal.aborted ? 'cancelled' : 'internal_error' }); }
         res.end();
       },

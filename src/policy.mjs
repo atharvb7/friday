@@ -27,14 +27,19 @@ export class Policy {
 
   #state() {
     const s = this.settings.get('autonomy', {});
-    return { levels: { ...DEFAULT_LEVELS, ...(s.levels ?? {}) }, highUntil: s.highUntil ?? {} };
+    return { levels: { ...DEFAULT_LEVELS, ...(s.levels ?? {}) }, highUntil: s.highUntil ?? {}, beforeHigh: s.beforeHigh ?? {} };
   }
+
+  // A lapsed or revoked `high` grant returns to the level the category had before it (not `autonomous`, which for
+  // spending/messaging/deletion would quietly leave consequential actions unapproved). Grants made before this was
+  // recorded fall back to the category's default.
+  #fallback(s, category) { const b = s.beforeHigh[category]; return LEVELS.includes(b) && b !== 'high' ? b : DEFAULT_LEVELS[category] ?? 'ask'; }
 
   // Effective level after expiring any lapsed `high` grant.
   level(category) {
     const s = this.#state();
     const l = s.levels[category] ?? 'ask';
-    if (l === 'high' && !(Date.parse(s.highUntil[category] ?? '') > this.now())) return 'autonomous';
+    if (l === 'high' && !(Date.parse(s.highUntil[category] ?? '') > this.now())) return this.#fallback(s, category);
     return l;
   }
 
@@ -47,6 +52,8 @@ export class Policy {
     if (!CATEGORIES.includes(category)) throw new TypeError('unknown category');
     if (!LEVELS.includes(level)) throw new TypeError('unknown level');
     const s = this.#state();
+    if (level === 'high' && this.level(category) !== 'high') s.beforeHigh[category] = this.level(category);
+    if (level !== 'high') delete s.beforeHigh[category];
     s.levels[category] = level;
     if (level === 'high') {
       if (!(hours > 0 && hours <= MAX_HIGH_HOURS)) throw new TypeError(`high autonomy lasts at most ${MAX_HIGH_HOURS}h`);
@@ -57,11 +64,11 @@ export class Policy {
     return this.snapshot()[category];
   }
 
-  // Panic button: every `high` grant ends immediately (levels fall back to autonomous).
+  // Panic button: every `high` grant ends immediately (levels go back to what they were before it).
   revokeHigh() {
     const s = this.#state();
-    for (const c of CATEGORIES) if (s.levels[c] === 'high') s.levels[c] = 'autonomous';
-    s.highUntil = {};
+    for (const c of CATEGORIES) if (s.levels[c] === 'high') s.levels[c] = this.#fallback(s, c);
+    s.highUntil = {}; s.beforeHigh = {};
     this.settings.set('autonomy', s);
     this.bus?.publish('autonomy.changed', { category: '*', level: 'revoked-high' });
   }

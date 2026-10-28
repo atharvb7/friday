@@ -74,12 +74,16 @@ function rawReader(req) {
 function bodyReader(req) {
   return async ({ optional = false, max = MAX_BODY } = {}) => {
     try {
-      let text = '';
+      // Decoded once at the end: a multi-byte character split across two chunks must not turn into U+FFFD.
+      const chunks = []; let size = 0;
       for await (const chunk of req) {
-        text += chunk;
-        if (text.length > max) throw new Error('body_too_large');
+        size += chunk.length;
+        if (size > max) throw new Error('body_too_large');
+        chunks.push(chunk);
       }
-      return JSON.parse(text || '{}');
+      const v = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      if (v === null || typeof v !== 'object') throw new SyntaxError('invalid_json'); // routes read fields off it: `null` crashed sign-in
+      return v;
     } catch (error) {
       if (optional && error.message !== 'body_too_large') return {};
       throw error;
@@ -239,8 +243,14 @@ const handler = async (req, res) => {
     return send(res, status, payload);
   }
 };
-const server = createServer(handler);
-const publicServer = publicPort ? createServer(handler) : null;
+// Nothing a request does may take the process down (Node exits on an unhandled rejection): a malformed request line
+// ("GET //[") used to throw in new URL() before any route ran.
+const guarded = (req, res) => handler(req, res).catch((error) => {
+  if (!res.headersSent) { try { return send(res, 400, { error: 'bad_request' }); } catch { /* fall through */ } }
+  res.destroy(error);
+});
+const server = createServer(guarded);
+const publicServer = publicPort ? createServer(guarded) : null;
 
 
 server.listen(port, host, () => console.log(`Friday core listening on http://${host}:${port}`));

@@ -75,9 +75,16 @@ export class Brain {
     let guardTries = 0;
     let lookupTries = 0;
     let last = null;
+    // Text she wrote alongside tool calls ("Ooh, drawing it now!") is streamed to him as it comes, so it is part of
+    // the reply: keeping only the last step's text made it vanish when the reply (with the picture) was saved.
+    const said = [];
 
     for (let step = 0; step < MAX_STEPS; step++) {
-      last = await this.ai.execute(messages, { tools: schemas, stream: Boolean(onDelta), onDelta, onThinking, signal, maxTokens: 4096 });
+      // After a tool already gave him something (her words, a picture), saying nothing more is a valid answer, and a
+      // brain outage at this point must not throw away what was already shown.
+      const shown = said.length > 0 || attachments.length > 0;
+      try { last = await this.ai.execute(messages, { tools: schemas, stream: Boolean(onDelta), onDelta, onThinking, signal, maxTokens: 4096, allowEmpty: shown }); }
+      catch (error) { if (!shown || signal?.aborted) throw error; last = { content: '', toolCalls: [], model: last?.model ?? null, provider: last?.provider ?? null }; break; }
       if (!last.toolCalls.length) {
         if (guardTries < 1 && claimsActionWithoutTool(last.content, toolsUsed)) { // she said she did it, but no tool ran: make her actually do it (or retract)
           guardTries += 1;
@@ -94,6 +101,7 @@ export class Brain {
         }
         break;
       }
+      if (last.content?.trim()) said.push(last.content.trim());
       messages.push({ role: 'assistant', content: last.content || null, tool_calls: last.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.argumentsText || '{}' }, ...(c.extra ? { extra_content: c.extra } : {}) })) });
       for (const call of last.toolCalls) {
         calls += 1;
@@ -110,15 +118,20 @@ export class Brain {
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, RESULT_CHARS) });
       }
     }
-    if (last.toolCalls.length && !last.content.trim()) {
-      // Step budget exhausted mid-tool-use: force a plain-language wrap-up.
-      last = await this.ai.chat([...messages, { role: 'user', content: 'Wrap up now in plain language using only what the tools returned.' }], { signal, onDelta, stream: Boolean(onDelta) });
+    if (last.toolCalls.length) {
+      // Step budget exhausted mid-tool-use (even if that step also said something): the last tools' results still need
+      // reporting. Like the loop, a failure here keeps what was already shown.
+      const shown = said.length > 0 || attachments.length > 0;
+      try { last = await this.ai.chat([...messages, { role: 'user', content: 'Wrap up now in plain language using only what the tools returned.' }], { signal, onDelta, stream: Boolean(onDelta), allowEmpty: shown }); }
+      catch (error) { if (!shown || signal?.aborted) throw error; last = { ...last, content: '', toolCalls: [] }; }
     }
     if (claimsActionWithoutTool(last.content, toolsUsed)) { // still claiming without a tool after the retry: be honest instead
       last = { ...last, content: 'Hold on — I said I’d do that, but I didn’t actually run anything, so nothing is queued and no approval was sent. Tell me again and I’ll do it properly, or say what you want changed.' };
     }
-    const said = stripFileNotes(last.content); // the history's "[attached files: …]" notes are bookkeeping; she sometimes copies the format
-    const reply = channel === 'voice' ? said : stripStageDirections(said);
+    const final = String(last.content ?? '').trim();
+    if (final && said.at(-1) !== final) said.push(final);
+    const spoken = stripFileNotes(said.join('\n\n')); // the history's "[attached files: …]" notes are bookkeeping; she sometimes copies the format
+    const reply = channel === 'voice' ? spoken : stripStageDirections(spoken);
     if (!member) this.habits?.record(reply);
     if (routed) this.toolRouter.remember(conversationId, [...toolsUsed.map((t) => t.name), ...[...loadedByModel].map((g) => GROUPS[g].tools[0])]);
     return { reply, model: last.model, provider: last.provider, toolsUsed, attachments: [...new Set(attachments)], usage: last.usage, usedVector: ctxInfo.usedVector, memoryIds: ctxInfo.memoryIds };

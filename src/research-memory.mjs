@@ -50,6 +50,7 @@ export class ResearchMemory {
       const byTopic = new Map();
       const rows = [];
       for (const c of claims) {
+        if (!c || typeof c !== 'object') continue; // findings.json is written by the agent: one bad entry must not drop the rest
         const text = clip(c.claim, 2000).trim(); if (!text) continue;
         let sid = null; try { sid = urlToId.get(new URL(String(c.sourceUrl)).toString()) ?? null; } catch {}
         const row = { id: randomUUID(), sid, topic: c.topic ? clip(c.topic, 200) : null, text, conf: CONF.includes(c.confidence) ? c.confidence : null, contradicted: 0, note: null };
@@ -59,8 +60,8 @@ export class ResearchMemory {
       for (const g of byTopic.values()) {
         if (new Set(g.map((r) => norm(r.text))).size > 1 && new Set(g.map((r) => r.sid ?? r.id)).size > 1) g.forEach((r) => { r.contradicted = 1; });
       }
-      for (const c of findings.contradictions ?? []) {
-        const t = norm(c.topic ?? ''); for (const r of rows) if (t && r.topic && norm(r.topic) === t) { r.contradicted = 1; r.note = clip(c.note, 500); }
+      for (const c of Array.isArray(findings.contradictions) ? findings.contradictions : []) {
+        const t = norm(c?.topic ?? ''); for (const r of rows) if (t && r.topic && norm(r.topic) === t) { r.contradicted = 1; r.note = clip(c.note, 500); }
       }
       for (const r of rows) {
         this.db.prepare('INSERT INTO rm_claims VALUES (?,?,?,?,?,?,?,?,?)').run(r.id, pid, r.sid, r.topic, r.text, r.conf, r.contradicted, r.note, now);

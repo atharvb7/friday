@@ -58,6 +58,8 @@ test('chat api: local brain answers, persists, validates', async () => {
     // History round-trip + conversation list.
     const hist = await (await api(`/v1/chat/${cid}`)).json();
     assert.equal(hist.messages.length, 6);
+    // The reply names its saved message ids, so the web app can tell its own messages from ones that arrive later (pictures).
+    assert.deepEqual(r3.messageIds, hist.messages.slice(-2).map((m) => m.id));
     assert.deepEqual(hist.messages.map((m) => m.role), ['user', 'assistant', 'user', 'assistant', 'user', 'assistant']);
     const chats = await (await api('/v1/chats')).json();
     assert.ok(chats.conversations.some((c) => c.id === cid));

@@ -16,6 +16,7 @@ const jsonIn = (s) => { try { return JSON.parse(/\{[\s\S]*\}/.exec(String(s ?? '
 
 export class Watches {
   #timer = null;
+  #ticking = false; // a slow check (page fetch, model call) must not let the next interval tick act on stale rows
   constructor({ store, ai, jobs, notifications, chat, bus, settings, gmail = null, fetchText = async (u) => (await safeFetch(u)).text, now = () => Date.now() }) {
     Object.assign(this, { store, ai, jobs, notifications, chat, bus, settings, gmail, fetchText, now });
     this.db = store.db;
@@ -44,16 +45,31 @@ export class Watches {
   }
   get(id) { const r = this.db.prepare('SELECT * FROM watches WHERE id=?').get(id); return r ? { ...r, action: JSON.parse(r.action) } : null; }
   list(status = 'active') { return this.db.prepare('SELECT * FROM watches WHERE status=? ORDER BY created_at DESC').all(status).map((r) => ({ ...r, action: JSON.parse(r.action) })); }
-  cancel(id) { return this.db.prepare("UPDATE watches SET status='cancelled' WHERE id LIKE ? AND status='active'").run(`${String(id)}%`).changes > 0; }
+  // By full id or an unambiguous id prefix (the model sees 8 characters); never a pattern that could match several.
+  cancel(id) {
+    const p = String(id ?? '').trim().toLowerCase();
+    if (!/^[0-9a-f-]{8,36}$/.test(p)) return false;
+    const rows = this.db.prepare("SELECT id FROM watches WHERE status='active' AND substr(id,1,?)=?").all(p.length, p);
+    return rows.length === 1 && this.db.prepare("UPDATE watches SET status='cancelled' WHERE id=? AND status='active'").run(rows[0].id).changes > 0;
+  }
 
   start(intervalMs = 60_000) { if (!this.#timer) { this.#timer = setInterval(() => void this.tick().catch(() => {}), intervalMs); this.#timer.unref?.(); } }
   stop() { clearInterval(this.#timer); this.#timer = null; }
 
   async tick() {
+    if (this.#ticking) return;
+    this.#ticking = true;
+    try { await this.#tick(); } finally { this.#ticking = false; }
+  }
+
+  async #tick() {
     const nowIso = new Date(this.now()).toISOString();
     this.db.prepare("UPDATE watches SET status='expired' WHERE status='active' AND expires_at < ?").run(nowIso);
     for (const w of this.list('active')) {
-      if (w.pending_task) continue; // a laptop check is still running
+      if (w.pending_task) { // a laptop check is still running, unless it ended without completing (cancelled, blocked, restart)
+        if (['queued', 'planning', 'running'].includes(this.store.getTask(w.pending_task)?.status)) continue;
+        this.db.prepare('UPDATE watches SET pending_task=NULL WHERE id=?').run(w.id);
+      }
       if (w.last_check && this.now() - Date.parse(w.last_check) < w.every_min * 60_000) continue;
       this.db.prepare('UPDATE watches SET last_check=? WHERE id=?').run(nowIso, w.id);
       if (w.kind === 'web') await this.#checkWeb(w).catch((e) => this.db.prepare('UPDATE watches SET last_note=? WHERE id=?').run(`error: ${String(e.message).slice(0, 120)}`, w.id));
@@ -90,7 +106,7 @@ export class Watches {
     const ids = list.map((m) => m.id).filter(Boolean);
     const seen = new Set(String(w.last_hash ?? '').split(',').filter(Boolean));
     this.db.prepare('UPDATE watches SET last_hash=? WHERE id=?').run(ids.slice(0, 30).join(','), w.id);
-    if (!w.last_hash) { this.db.prepare('UPDATE watches SET last_note=? WHERE id=?').run(`baseline: ${ids.length} matching emails`, w.id); return; }
+    if (w.last_hash == null) { this.db.prepare('UPDATE watches SET last_note=? WHERE id=?').run(`baseline: ${ids.length} matching emails`, w.id); return; } // '' = a baseline of no emails
     const fresh = list.filter((m) => !seen.has(m.id));
     if (!fresh.length) return;
     const text = fresh.map((m) => `From: ${m.from ?? '?'}\nSubject: ${m.subject ?? '?'}\n${String(m.snippet ?? '').slice(0, 600)}`).join('\n---\n');

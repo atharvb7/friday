@@ -68,7 +68,9 @@ For each candidate, spend real effort (5-10 minutes of reading) before deciding.
 
 Write the result as a **gap hypothesis**: "<Company> handles <process> by <manual way>; evidence: <what you saw +
 source URL>. That likely costs them <time/leads/customers>. We would automate it by <one system, in plain words>."
-If you cannot write a specific, evidenced gap, the company is not ready: skip it.
+If you cannot write a specific, evidenced gap, the company is not ready for a gap pitch. The owner allows (27 Oct) a
+forward-deployed-engineer introduction instead when it is an operations-heavy, non-software business: open with a true
+fact from their site, claim no problem, invent no facts or numbers, ask whether a one-page plan would help. Otherwise skip.
 
 ## Rule 4: score before you write
 

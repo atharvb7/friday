@@ -96,9 +96,12 @@ test('prospector: source -> audit with verified evidence -> qualify -> contact -
     assert.equal(r.drafts, 1); assert.deepEqual(w.writes, [2, 4], 'first draft failed review, the rewrite passed');
     assert.equal(w.approvals.length, 1); assert.equal(w.approvals[0].tool, 'outreach_send');
     assert.equal(w.approvals[0].payload.emails[0].lead_id, lead.id); assert.match(w.approvals[0].payload.emails[0].body, /one-page architecture plan/);
-    assert.match(w.notes.at(-1).title, /Outreach ready: 1 new/); assert.match(w.notes.at(-1).body, /Skipped: AgentAI/);
+    assert.match(w.notes.at(-1).title, /Outreach ready: 1 new/); assert.match(w.notes.at(-1).body, /Skipped 1: AgentAI/);
+    assert.match(w.notes.at(-1).title, /1\/2 qualified/); assert.match(w.notes.at(-1).body, /Ran short: every configured segment has been searched through/);
+    assert.equal(r.short, 'segments_exhausted');
     assert.equal(w.prospector.serpUsed(), w.serpCalls.length);
-    assert.equal(w.serpCalls.filter((c) => c.engine === 'google_maps_reviews').length, 1, 'reviews only for the listing with enough reviews');
+    assert.equal(w.serpCalls.filter((c) => c.engine === 'google_maps_reviews').length, 0, 'enough evidence on the site: no review search spent');
+    assert.deepEqual(w.serpCalls.filter((c) => c.engine === 'google_maps').map((c) => c.start), ['0', '20'], 'next results page searched before giving up');
 
     const weekly = w.prospector.weeklyReport();
     assert.equal(weekly.segments.length, 1); assert.match(weekly.segments[0].segment, /freight forwarders · Mumbai · automation/);
@@ -111,6 +114,7 @@ test('prospector: source -> audit with verified evidence -> qualify -> contact -
     w.store.db.prepare("UPDATE prospects SET status='new' WHERE id=?").run(again.id); w.store.db.prepare('DELETE FROM leads').run();
     const held = await w.prospector.audit({ ...again, status: 'new' });
     assert.equal(held.status, 'hold'); assert.match(held.reason, /only 2 piece/);
+    assert.equal(w.serpCalls.filter((c) => c.engine === 'google_maps_reviews').length, 1, 'one piece short: the reviews are searched');
     w.prospector.setConfig({ min_evidence: 2 });
 
     // titles are not names, and dashes/arrows are fixed in code

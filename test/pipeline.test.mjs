@@ -124,7 +124,7 @@ test('business tools: email_send refuses do-not-contact and logs touches; outrea
     const ctx = { memory: {}, store: s.store, tools: null, indexer: null, jobs: {}, proactive: {}, settings: s.settings, researchMemory: null, nodes: null, pipeline: s.p,
       skills: new Skills({ roots: [new URL('../skills', import.meta.url).pathname] }), files: { resolve: () => null },
       gmail: { async send(a) { sends.push(a); return { sent: true, id: 'g1', thread_id: 'gt1' }; }, async search() { return { from: 'personal' }; } },
-      gmailOutreach: { async search() { return { from: 'outreach' }; } } };
+      gmailOutreach: { async send(a) { sends.push(a); return { sent: true, id: 'o1', thread_id: 'ot1' }; }, async search() { return { from: 'outreach' }; } } };
     const tools = buildFridayTools(ctx);
     assert.equal(tools.get('outreach_send').risk, 'gated');
     await assert.rejects(() => tools.get('outreach_send').validate({ emails: [{ to: 'stranger@nowhere.io', subject: 's', body: 'A specific observation about your business here.' }] }), /not in the pipeline/);
@@ -134,8 +134,12 @@ test('business tools: email_send refuses do-not-contact and logs touches; outrea
     await tools.get('do_not_contact').run({ value: 'stop@delta.dev' });
     const refused = await tools.get('email_send').run({ op: 'send', to: 'stop@delta.dev', subject: 's', body: 'b' });
     assert.match(refused.error, /do_not_contact/); assert.equal(sends.length, 0);
+    // A personal-inbox email is not part of the outreach sequence (its message id would break the outreach thread replies).
     await tools.get('email_send').run({ op: 'send', to: 'cto@delta.dev', subject: 'hello', body: 'b' });
+    assert.equal(s.p.byEmail('cto@delta.dev').touches, 0);
+    await tools.get('email_send').run({ op: 'send', account: 'outreach', to: 'cto@delta.dev', subject: 'hello', body: 'A specific note about your quoting process.' });
     assert.equal(s.p.byEmail('cto@delta.dev').touches, 1);
+    assert.equal(s.p.byEmail('cto@delta.dev').last_message_id, 'o1');
 
     assert.equal((await tools.get('email_search').run({})).from, 'personal');
     assert.equal((await tools.get('email_search').run({ account: 'outreach' })).from, 'outreach');

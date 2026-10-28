@@ -52,6 +52,7 @@ export class Questions {
   // Resolves with the answer text (or '[saved to profile]'), rejects on timeout/abort.
   wait(id, signal, timeoutMs = TTL_MS) {
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) { reject(signal.reason ?? new Error('aborted')); return; } // its abort event already fired
       const done = (fn, v) => { clearTimeout(timer); off(); signal?.removeEventListener('abort', onAbort); fn(v); };
       const off = this.bus.subscribe((e) => { if (e.type === 'question.answered' && e.data.id === id) done(resolve, this.get(id).answer); });
       const timer = setTimeout(() => done(reject, new Error('question_timeout')), timeoutMs);

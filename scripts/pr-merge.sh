@@ -15,11 +15,13 @@ PR=$(api "$R/pulls?state=open&head=atharvb7:$BR" | python3 -c "import sys,json; 
 if [ -z "$PR" ]; then PR=$(api -X POST $R/pulls -d "$PAYLOAD" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('number') or d)"); echo "PR #$PR opened"; else echo "reusing open PR #$PR"; fi; sleep 8
 SHA=$(api $R/pulls/$PR | python3 -c "import sys,json; print(json.load(sys.stdin)['head']['sha'])")
 for i in $(seq 1 60); do
-  S=$(api "$R/commits/$SHA/check-runs" | python3 -c "import sys,json; c=json.load(sys.stdin).get('check_runs',[]); print((c[0]['status']+' '+str(c[0]['conclusion'])) if c else 'none')")
+  # Every check run must be finished and green, not just the first one.
+  S=$(api "$R/commits/$SHA/check-runs" | python3 -c "import sys,json; c=json.load(sys.stdin).get('check_runs',[]); print('none' if not c else 'running' if any(x['status']!='completed' for x in c) else 'completed success' if all(x['conclusion'] in ('success','skipped','neutral') for x in c) else 'completed failure')")
   echo "ci: $S"; case "$S" in completed*) break;; esac; sleep 10
 done
 if [ "$S" = "completed success" ]; then
-  api -X PUT $R/pulls/$PR/merge -d '{"merge_method":"merge"}' | python3 -c "import sys,json; d=json.load(sys.stdin); print('merged:', d.get('merged'), d.get('message'))"
+  M=$(api -X PUT $R/pulls/$PR/merge -d '{"merge_method":"merge"}' | python3 -c "import sys,json; d=json.load(sys.stdin); print('merged:', d.get('merged'), d.get('message'))"); echo "$M"
+  case "$M" in "merged: True"*) ;; *) echo "merge refused: PR #$PR and its branch left as they are"; exit 1;; esac # never delete the branch of an unmerged PR
   api -X DELETE $R/git/refs/heads/$BR -o /dev/null -w "branch deleted: http %{http_code}\n"
 else echo "CI not green: PR #$PR left open"; exit 1; fi
 REMOTE

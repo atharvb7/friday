@@ -32,12 +32,18 @@ export function makeProxy({ allowPrivate = false, ports = ALLOWED_PORTS } = {}) 
     } catch (e) { res.writeHead(403, { 'Content-Type': 'text/plain' }); res.end(`blocked: ${e.message}\n`); }
   });
   server.on('connect', async (req, socket, head) => {          // HTTPS tunnel
+    // Node drops its own error listener from a CONNECT socket: without this, a client reset during the DNS lookup
+    // (or after the 403) is an unhandled 'error' event that kills the proxy.
+    let up = null;
+    socket.on('error', () => { up?.destroy(); socket.destroy(); });
+    socket.on('close', () => up?.destroy());
     try {
       const [host, p] = req.url.split(/:(?=\d+$)/); const port = Number(p || 443);
       if (!ports.has(port)) throw new Error('blocked_port');
       const ip = await resolvePublic(host, allowPrivate);
-      const up = net.connect(port, ip, () => { socket.write('HTTP/1.1 200 Connection Established\r\n\r\n'); if (head.length) up.write(head); up.pipe(socket); socket.pipe(up); });
-      up.on('error', () => socket.destroy()); socket.on('error', () => up.destroy()); socket.setTimeout(10 * 60_000, () => socket.destroy());
+      if (socket.destroyed) return;
+      up = net.connect(port, ip, () => { socket.write('HTTP/1.1 200 Connection Established\r\n\r\n'); if (head.length) up.write(head); up.pipe(socket); socket.pipe(up); });
+      up.on('error', () => socket.destroy()); socket.setTimeout(10 * 60_000, () => socket.destroy());
     } catch (e) { socket.end(`HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n`); }
   });
   return server;

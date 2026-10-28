@@ -5,6 +5,10 @@ export function taskRoutes(router, ctx) {
 
   router.get('/v1/tasks', () => [200, { tasks: store.listTasks() }]);
 
+  // Client-hunting runs are not agent tasks (no worker, no retry/cancel semantics), so the Tasks tab lists them in
+  // their own section from here: the run in progress (live via prospecting.* events) and the last ten.
+  router.get('/v1/prospecting/runs', () => (ctx.prospector ? [200, ctx.prospector.runs(10)] : [404, { error: 'not_configured' }]));
+
   router.post('/v1/tasks', async ({ req, body }) => {
     const b = await body();
     if (typeof b.title !== 'string' || !b.title.trim() || b.title.length > 200 || typeof b.instruction !== 'string' || !b.instruction.trim() || b.instruction.length > 20000) return [400, { error: 'invalid_task' }];

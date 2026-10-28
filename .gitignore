@@ -41,3 +41,6 @@ public/assets/icon-192.png
 public/assets/icon-512.png
 public/assets/apple-touch-icon.png
 public/assets/favicon-64.png
+
+# ESP32 companion: Wi-Fi password and device token (copy of secrets.h.example)
+physical/**/secrets.h

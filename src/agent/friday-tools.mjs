@@ -87,32 +87,39 @@ function businessTools(pipeline) {
 }
 
 // The 24/7 client-hunting pipeline (src/prospector.mjs): configure it, run it now, see what it did.
-function prospectingTools(prospector) {
+export function prospectingTools(prospector) {
   const seg = obj({ vertical: { type: 'string', description: 'what kind of business, e.g. "freight forwarders"' }, location: { type: 'string', description: 'city/region, e.g. "Dubai"' },
     timezone: { type: 'string', description: 'IANA zone of that location, e.g. Asia/Dubai' }, offer: { type: 'string', enum: ['automation', 'freelance', 'friday'] } }, ['vertical', 'location', 'timezone']);
   return [
     {
       name: 'prospecting_setup', risk: 'gated', category: 'system', riskClass: 'routine',
-      description: 'Configure the autonomous client-hunting pipeline that runs on the server every chosen weekday: segments (vertical + location + timezone + offer), daily_new (qualified prospects per day, 1-15), run_at (HH:MM, user time), days (1-7, Mon=1), serp_budget (Google Maps searches per month), enabled. It finds companies, audits their sites for evidenced gaps, drafts emails and stages ONE approval a day; it never sends without approval. Needs approval.',
+      description: 'Configure the autonomous client-hunting pipeline that runs on the server every chosen weekday: segments (vertical + location + timezone + offer), daily_new (qualified prospects per day, 1-15; a run keeps searching until it reaches this or a limit), run_at (HH:MM, user time), days (1-7, Mon=1), serp_budget (searches per month), day_searches (most searches per day), max_audits (companies audited per run), fde_pitch (true: companies without a visible gap may get an honest forward-deployed-engineer introduction), enabled. It finds companies, audits their sites for evidenced gaps, drafts emails and stages ONE approval a day; it never sends without approval. Needs approval.',
       parameters: obj({ enabled: { type: 'boolean' }, segments: { type: 'array', items: seg }, daily_new: { type: 'integer' }, run_at: { type: 'string' }, days: { type: 'array', items: { type: 'integer' } }, serp_budget: { type: 'integer' }, reviews: { type: 'boolean' }, followups: { type: 'boolean' },
-        min_evidence: { type: 'integer' }, postal_address: { type: 'string', description: 'sender postal address, shown in every outreach footer (required by US law for US prospects)' },
+        min_evidence: { type: 'integer' }, day_searches: { type: 'integer' }, max_audits: { type: 'integer' }, max_minutes: { type: 'integer' }, fde_pitch: { type: 'boolean' }, postal_address: { type: 'string', description: 'sender postal address, shown in every outreach footer (required by US law for US prospects)' },
         style: { type: 'string', enum: ['designed', 'plain'], description: 'designed = header bar + sections (approved look); plain = Gmail-compose look, 60-110 words (what cold-email data favours)' },
         ramp_start: { type: 'string', description: '"today" or an ISO date: the day the outreach mailbox started; the daily cap then follows the warm-up ramp (2 weeks 0, then 5,8,12,15,20,25,30)' },
         daily_cap: { type: 'integer', description: 'upper bound on cold emails per day (1-40)' } }, []),
-      summarize: (a) => `Client-hunting pipeline: ${a.enabled === false ? 'OFF' : a.enabled ? 'ON' : 'settings'}${a.segments ? ` · ${a.segments.map((s) => `${s.vertical} in ${s.location} (${s.offer ?? 'automation'})`).join('; ')}` : ''}${a.daily_new ? ` · ${a.daily_new}/day` : ''}${a.run_at ? ` · at ${a.run_at}` : ''}${a.serp_budget !== undefined ? ` · ${a.serp_budget} searches/month` : ''}`,
+      summarize: (a) => `Client-hunting pipeline: ${a.enabled === false ? 'OFF' : a.enabled ? 'ON' : 'settings'}${a.segments ? ` · ${a.segments.map((s) => `${s.vertical} in ${s.location} (${s.offer ?? 'automation'})`).join('; ')}` : ''}${a.daily_new ? ` · ${a.daily_new}/day` : ''}${a.run_at ? ` · at ${a.run_at}` : ''}${a.serp_budget !== undefined ? ` · ${a.serp_budget} searches/month` : ''}${a.fde_pitch !== undefined ? ` · FDE introductions ${a.fde_pitch ? 'on' : 'off'}` : ''}`,
       run: (a) => ({ saved: true, config: prospector.setConfig(a) }),
     },
     {
       name: 'prospecting_run_now', risk: 'safe',
-      description: 'Run the client-hunting pipeline once now, in the background (takes several minutes). The report and, if there are drafts, one approval card arrive as notifications. Uses Google Maps searches from the monthly budget.',
-      parameters: obj({}, []),
-      run: () => { if (!prospector.config().segments.length) return { error: 'no segments configured: use prospecting_setup first' }; void prospector.runOnce({ reason: 'manual' }).catch(() => {}); return { started: true, note: 'Running in the background; the report arrives as a notification.' }; },
+      description: 'Start the client-hunting pipeline once now, in the background (often 10-40 minutes). Only one run at a time: while one is running this returns its progress instead of starting another. The report and, if there are drafts, one approval card arrive as notifications. force: run again even though today\'s target was already reached.',
+      parameters: obj({ force: { type: 'boolean' } }, []),
+      run: (a = {}) => {
+        if (!prospector.config().segments.length) return { error: 'no segments configured: use prospecting_setup first' };
+        if (prospector.running) return { already_running: true, progress: prospector.progress(), note: 'Not started again: a run is already in progress. Its report arrives as a notification.' };
+        const done = prospector.todayDone();
+        if (done && a.force !== true) return { not_started: true, note: `Today's run already qualified ${done.qualified.length}/${done.target}. Ask the user before running again with force: true (it spends today's remaining searches: ${prospector.searchAllowance()}).` };
+        void prospector.runOnce({ reason: 'manual' }).catch(() => {});
+        return { started: true, progress: prospector.progress(), note: 'Running in the background; the report arrives as a notification. Progress is in prospecting_status and the Tasks tab.' };
+      },
     },
     {
       name: 'prospecting_status', risk: 'safe',
-      description: 'Client-hunting pipeline: configuration, prospect counts by status (new/qualified/skipped/hold/no_contact), searches used this month and the last run report (who qualified, who was skipped and why).',
-      parameters: obj({}, []),
-      run: () => ({ ...prospector.status(), last_7_days: prospector.weeklyReport() }),
+      description: 'Client-hunting pipeline, compact: whether a run is in progress (with progress), the last run in one line, searches left and prospect counts. Call it once per question; never poll it while a run is in progress. detail: true adds the configuration, the last report\'s company lists and the 7-day segment table (larger: only when the user asks for those).',
+      parameters: obj({ detail: { type: 'boolean' } }, []),
+      run: (a = {}) => prospector.status({ detail: a.detail === true }),
     },
   ];
 }
@@ -211,7 +218,7 @@ export function buildFridayTools(ctx) {
       run: async (a) => { const r = (await tools.run({ taskId: 'ad-hoc-local', tool: 'file.read', args: { path: str(a.path, 'path', 500), maxBytes: 8192 } })).result; return { path: r.path, truncated: r.truncated, text: clip(r.bytes, 6000) }; },
     },
     {
-      name: 'rule_create', risk: 'gated', category: 'system', riskClass: 'routine',
+      name: 'rule_create', risk: 'gated', category: 'system', riskClass: (a) => (a?.action?.kind === 'task' ? 'consequential' : 'routine'), // a task rule queues agent work on its own, like a watch
       description: 'Create a standing rule: when an event happens (e.g. task.failed, research.saved, node.ready, job.task_queued), notify the user or queue an agent task. Supports {{field}} templates from event data. Bounded by cooldown and daily cap.',
       parameters: obj({
         name: { type: 'string' }, event: { type: 'string', description: 'e.g. task.failed' }, where: { type: 'object', description: 'optional equality filters on event data, e.g. {"kind":"research"}' },
@@ -457,7 +464,12 @@ export function buildFridayTools(ctx) {
       description: 'Tidy the user\'s own mailbox (private, reversible): op mark_read, mark_unread, archive, unarchive, star, unstar, label/unlabel (label name), create_label (name); or op draft to save a draft (to, subject, body, cc, attachments = chat file ids, reply_to_message_id) — drafts are never sent by this tool. ids = message ids.',
       parameters: obj({ account: { type: 'string', enum: ['personal', 'outreach'], description: 'which inbox (default personal; outreach = the cold-outreach address and its replies)' }, op: { type: 'string', enum: ['mark_read', 'mark_unread', 'archive', 'unarchive', 'star', 'unstar', 'label', 'unlabel', 'create_label', 'draft'] }, ids: { type: 'array', items: { type: 'string' } }, label: { type: 'string' }, name: { type: 'string' },
         to: { type: 'string' }, cc: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' }, attachments: { type: 'array', items: { type: 'string' } }, reply_to_message_id: { type: 'string' } }, ['op']),
-      run: (a) => (a.op === 'draft' ? mail(a).draft(a) : mail(a).organize(a)),
+      run: (a) => {
+        // A draft can later go out with email_send send_draft: do-not-contact is checked when it is written.
+        const blocked = a.op === 'draft' ? ctx.pipeline?.blockedRecipients(a.to, a.cc, a.bcc) ?? [] : [];
+        if (blocked.length) return { error: `do_not_contact: ${blocked.join(', ')} asked not to be contacted; no draft was saved` };
+        return a.op === 'draft' ? mail(a).draft(a) : mail(a).organize(a);
+      },
     },
     {
       name: 'email_send', risk: 'gated',
@@ -479,7 +491,7 @@ export function buildFridayTools(ctx) {
         return r.ok ? null : { error: 'email_needs_work', note: 'Nothing was staged. Rewrite the email to fix every point, then call email_send again.', fix: r.fix };
       },
       run: async (a) => {
-        const blocked = ['send', 'forward'].includes(a.op) ? ctx.pipeline?.blockedRecipients(a.to, a.cc, a.bcc) ?? [] : [];
+        const blocked = ['send', 'forward', 'reply'].includes(a.op) ? ctx.pipeline?.blockedRecipients(a.to, a.cc, a.bcc) ?? [] : []; // a reply may name its own to/cc
         if (blocked.length) return { error: `do_not_contact: ${blocked.join(', ')} asked not to be contacted; nothing was sent` };
         // Outreach inbox: the designed template (header, signature, opt-out on first touches) for new mail and replies.
         if (a.account === 'outreach' && ['send', 'reply'].includes(a.op) && ctx.pipeline && a.body) {
@@ -487,7 +499,8 @@ export function buildFridayTools(ctx) {
           a = { ...a, body: r.text, html: r.html };
         }
         const out = await ({ send: () => mail(a).send(a), reply: () => mail(a).reply(a), forward: () => mail(a).forward(a), send_draft: () => mail(a).sendDraft(a), trash: () => mail(a).trash(a) }[a.op] ?? (() => ({ error: 'unknown op' })))();
-        if (out?.sent && a.op === 'send') { try { ctx.pipeline?.recordSend({ to: a.to, subject: a.subject, message_id: out.id, thread_id: out.thread_id }); } catch {} }
+        // Only the outreach inbox is part of a lead's sequence: a personal-inbox message id would break its thread replies.
+        if (out?.sent && a.op === 'send' && a.account === 'outreach') { try { ctx.pipeline?.recordSend({ to: a.to, subject: a.subject, message_id: out.id, thread_id: out.thread_id }); } catch {} }
         return out;
       },
     },
@@ -683,7 +696,7 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
       },
     },
     {
-      name: 'schedule_task', risk: 'gated', category: 'system', riskClass: 'routine',
+      name: 'schedule_task', risk: 'gated', category: 'system', riskClass: 'consequential', // queues background agent work, possibly forever
       description: 'Schedule a background agent task to run later or repeatedly (e.g. "every Monday 8am research X and write a report"). Same time rules as reminder_create.',
       parameters: obj({ title: { type: 'string' }, instruction: { type: 'string', description: 'Self-contained instructions for the agent' }, in_minutes: { type: 'number' }, when: { type: 'string' }, recurrence: { type: 'object' } }, ['title', 'instruction']),
       summarize: (a) => `Schedule agent task “${clip(a.title, 100)}”${a.recurrence ? ` (${JSON.stringify(a.recurrence)})` : a.when ? ` at ${a.when}` : ''}: ${clip(a.instruction, 300)}`,
@@ -711,6 +724,9 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
       run: (a) => {
         const j = jobs.findByPrefix(str(a.id, 'id', 64));
         if (!j) return { updated: false, reason: 'not_found_or_ambiguous', active: jobs.list().slice(0, 15).map((x) => ({ id: x.id.slice(0, 8), title: clip(x.title, 80), next_fire_local: formatLocal(new Date(x.due_at), x.timezone) })) };
+        // A scheduled agent task was approved for its time and recurrence: changing those here (no approval) could turn
+        // a one-off into an every-5-minutes task. Only its label may change; a new schedule goes through schedule_task.
+        if (j.kind === 'task' && (whenFrom(a) || a.recurrence !== undefined)) return { updated: false, reason: 'needs_approval', note: 'This is an approved scheduled agent task: to change when it runs, schedule it again with schedule_task (he approves the new schedule), then cancel this one with reminder_cancel.' };
         const u = jobs.update(j.id, { title: a.text ?? null, when: whenFrom(a), ...(a.recurrence !== undefined ? { recurrence: a.recurrence } : {}) });
         return u ? { updated: true, id: u.id.slice(0, 8), title: u.title, next_fire_local: formatLocal(new Date(u.due_at), u.timezone) } : { updated: false, reason: 'not_active' };
       },

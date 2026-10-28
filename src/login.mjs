@@ -57,6 +57,8 @@ export class OwnerLogin {
   googleStart() {
     if (!this.googleReady()) throw new Error('google_login_not_configured');
     for (const [k, v] of this.states) if (v.expires < this.now()) this.states.delete(k);
+    // Unauthenticated callers create these: cap them so a request loop cannot grow memory without bound.
+    while (this.states.size >= 500) this.states.delete(this.states.keys().next().value);
     const state = b64url(randomBytes(24)); const verifier = b64url(randomBytes(48));
     this.states.set(state, { verifier, expires: this.now() + 10 * 60_000 });
     const q = new URLSearchParams({ client_id: this.google.clientId, redirect_uri: this.redirectUri, response_type: 'code', scope: 'openid email profile', state, prompt: 'select_account',

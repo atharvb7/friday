@@ -28,8 +28,12 @@ const DEFAULT_CAP = 25;
 const RAMP = [5, 8, 12, 15, 20, 25, 30];
 export const DEFAULT_OPT_OUT = 'Not relevant? Reply "no" and I won\'t email again.';
 export const DEFAULT_PRIVACY_URL = 'https://fridayy.site/outreach-privacy';
-const OPT_OUT_RE = /unsubscribe|opt[ -]?out|reply\s+["“']?(no|stop|remove)|won['’]t (follow up|email|reach out)|not relevant\?/i;
-const UNSUB_RE = /\b(unsubscribe|remove me|take me off|stop (emailing|contacting|sending)|do not (contact|email)|don['’]t (contact|email) me|opt me out)\b|^\s*(no|stop)[.!]?\s*$/i;
+// The body's OWN opt-out instruction (then the footer line is not repeated). Merely mentioning "opt out" or
+// "unsubscribe" ("customers have to email you to opt out") is not one: the legal footer must stay.
+const OPT_OUT_RE = /reply\s+["“']?(no|stop|remove|unsubscribe)\b|won['’]t (follow up|email|reach out|write) again|not relevant\?|(to|you can) (unsubscribe|opt[ -]?out)[,:]? (just )?(reply|click|let me know)/i;
+// A bare "no"/"stop" (what the footer asks for) may carry "thanks" and a sign-off, since snippets collapse newlines;
+// "No problem, send it over" is not an opt-out.
+const UNSUB_RE = /\b(unsubscribe|remove me|take me off|stop (emailing|contacting|sending)|do not (contact|email)|don['’]t (contact|email) me|opt me out)\b|^\s*(no|stop)\b[\s.!,]*(thanks?( you)?|thank you|not interested)?[\s.!,]*((regards|best|cheers|thanks|sent from)\b.*)?$/i;
 const COMPLAINT_RE = /\bspam\b|report(ed|ing)? (you|this)|how did you get (my|this) (email|address)|\bgdpr\b|data protection|harass/i;
 const OOO_RE = /\b(out of (the )?office|on (annual |parental |sick )?leave|on vacation|automatic reply|auto-?reply|away until|currently away)\b/i;
 const DAY = 86_400_000;
@@ -45,7 +49,10 @@ const RESULT_CLAIM_RE = /\b(i|we)\s+(recently\s+|just\s+)?(helped|enabled|saved|
 const CLIENT_CLAIM_RE = /\b(built|deployed|automated|delivered|shipped|implemented)\b[^.!?\n]*\bfor\s+(a|an)\s+[^.!?\n]*(firm|company|client|startup|agency|forwarder|brand|business|group|institute)\b/i;
 const words = (s) => String(s ?? '').trim().split(/\s+/).filter(Boolean).length;
 // The reply's own words: Gmail snippets carry the quoted earlier mail after "On <date> <x> wrote:".
-const ownWords = (snippet) => String(snippet ?? '').split(/\s+On\s.{4,120}?wrote:|-{3,}\s*Original Message|\n>/i)[0].trim();
+const ENTITY = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+const unescape = (s) => s.replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (m, e) => (e[0] === '#' ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? Number.parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENTITY[e.toLowerCase()] ?? m));
+// Gmail API snippets are HTML-escaped ("don&#39;t email me").
+const ownWords = (snippet) => unescape(String(snippet ?? '')).split(/\s+On\s.{4,120}?wrote:|-{3,}\s*Original Message|\n>/i)[0].trim();
 
 const clean = (v, max = 500) => (v == null ? null : String(v).replace(/\s+/g, ' ').trim().slice(0, max) || null);
 const lower = (v) => String(v ?? '').trim().toLowerCase();
@@ -75,6 +82,9 @@ export class Pipeline {
       CREATE INDEX IF NOT EXISTS outbox_due ON outbox(status, scheduled_at);`);
     // The prospect's own time zone decides when their email goes out (added after the first release).
     if (!this.db.prepare('PRAGMA table_info(leads)').all().some((c) => c.name === 'timezone')) this.db.exec('ALTER TABLE leads ADD COLUMN timezone TEXT');
+    // How the first email pitches: 'gap' (an evidenced manual process) or 'fde' (a forward-deployed-engineer
+    // introduction without a visible gap: no problem may be claimed).
+    if (!this.db.prepare('PRAGMA table_info(leads)').all().some((c) => c.name === 'pitch')) this.db.exec('ALTER TABLE leads ADD COLUMN pitch TEXT');
   }
 
   #iso(t = this.now()) { return new Date(t).toISOString(); }
@@ -91,7 +101,7 @@ export class Pipeline {
 
   // ---- do-not-contact ----
   suppress(value, reason = 'user request') {
-    const v = lower(value).replace(/^mailto:/, '');
+    const v = (addrs(value)[0] ?? '').replace(/^mailto:/, ''); // "John <john@acme.com>" -> john@acme.com
     const key = EMAIL_RE.test(v) ? v : domainOf(v);
     if (!key || !/\./.test(key)) throw new TypeError('value must be an email address or a domain');
     this.db.prepare('INSERT OR REPLACE INTO suppressions (value,reason,at) VALUES (?,?,?)').run(key, clean(reason, 200), this.#iso());
@@ -100,8 +110,10 @@ export class Pipeline {
     return { suppressed: key, leads_updated: hit.length };
   }
   isSuppressed(email) {
-    const e = lower(email); const d = domainOf(e);
-    return Boolean(this.db.prepare('SELECT 1 FROM suppressions WHERE value=? OR value=?').get(e, d));
+    const e = lower(email); const d = domainOf(e) ?? '';
+    // The address, its domain, or any parent domain (a suppressed acme.com covers mail.acme.com).
+    const keys = [e, ...d.split('.').map((_, i, p) => p.slice(i).join('.')).filter((x) => x.includes('.'))];
+    return Boolean(this.db.prepare(`SELECT 1 FROM suppressions WHERE value IN (${keys.map(() => '?').join(',')})`).get(...keys));
   }
   // For any outgoing mail (email_send included): which recipients are on the do-not-contact list.
   blockedRecipients(...fields) { return fields.flatMap(addrs).filter((a) => this.isSuppressed(a)); }
@@ -123,7 +135,7 @@ export class Pipeline {
     if (contactName && ROLE_ONLY_RE.test(contactName)) { role = role ?? contactName; contactName = null; }
     const fields = { company, domain, website: clean(input.website, 300), contact_name: contactName, role, email,
       offer: clean(input.offer, 160), source: clean(input.source, 300), signal: clean(input.signal, 600), fit: clean(input.fit, 20), research: clean(input.research, 4000), next_action: clean(input.next_action, 300),
-      timezone: input.timezone && isValidTimezone(String(input.timezone)) ? String(input.timezone) : null };
+      timezone: input.timezone && isValidTimezone(String(input.timezone)) ? String(input.timezone) : null, pitch: ['gap', 'fde'].includes(input.pitch) ? input.pitch : null };
     const existing = (email && this.byEmail(email)) ?? (input.id ? this.get(input.id) : null)
       ?? (!email && domain && fields.contact_name ? this.#row(this.db.prepare('SELECT * FROM leads WHERE domain=? AND contact_name=?').get(domain, fields.contact_name)) : null)
       ?? (!email && domain && !fields.contact_name ? this.#row(this.db.prepare('SELECT * FROM leads WHERE domain=? AND email IS NULL AND contact_name IS NULL').get(domain)) : null);
@@ -131,7 +143,10 @@ export class Pipeline {
     const now = this.#iso();
     if (existing) {
       const set = Object.fromEntries(Object.entries(fields).filter(([, v]) => v != null));
-      if (input.stage) set.stage = input.stage;
+      // Never back to a sendable stage once the lead was contacted, replied, closed or opted out: a re-save (or the
+      // prospector finding the same address again) would otherwise make them cold-emailable again.
+      const reopen = ['new', 'researched', 'nurture'].includes(input.stage) && !['new', 'researched', 'nurture'].includes(existing.stage);
+      if (input.stage && !reopen) set.stage = input.stage;
       if (suppressed) set.stage = 'dnc';
       const cols = Object.keys(set);
       this.db.prepare(`UPDATE leads SET ${cols.map((c) => `${c}=?`).join(', ')}, updated_at=? WHERE id=?`).run(...cols.map((c) => set[c]), now, existing.id);
@@ -139,8 +154,8 @@ export class Pipeline {
     }
     const id = randomUUID();
     const stage = suppressed ? 'dnc' : (input.stage ?? (fields.research ? 'researched' : 'new'));
-    this.db.prepare(`INSERT INTO leads (id,company,domain,website,contact_name,role,email,offer,source,signal,fit,stage,research,next_action,timezone,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, company, domain, fields.website, fields.contact_name, fields.role, email, fields.offer, fields.source, fields.signal, fields.fit, stage, fields.research, fields.next_action, fields.timezone, now, now);
+    this.db.prepare(`INSERT INTO leads (id,company,domain,website,contact_name,role,email,offer,source,signal,fit,stage,research,next_action,timezone,pitch,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, company, domain, fields.website, fields.contact_name, fields.role, email, fields.offer, fields.source, fields.signal, fields.fit, stage, fields.research, fields.next_action, fields.timezone, fields.pitch, now, now);
     this.#event(id, 'created', `${company}${fields.source ? ` (source: ${fields.source})` : ''}`);
     this.bus?.publish('lead.created', { id });
     return { ...this.get(id), created: true, ...(suppressed ? { warning: 'on the do-not-contact list' } : {}) };
@@ -216,7 +231,8 @@ export class Pipeline {
       if (!lead2) throw new TypeError(`email ${i + 1}: ${to} is not in the pipeline; save it with lead_save first`);
       out.push({ to, lead_id: lead2.id, company: lead2.company, subject: followUp ? null : subject, follow_up: followUp,
         body, opt_out: !OPT_OUT_RE.test(body),
-        blocked: this.isSuppressed(to) ? 'do-not-contact' : ['dnc', 'won', 'lost', 'replied', 'meeting', 'proposal'].includes(lead2.stage) ? `lead stage is ${lead2.stage}` : null });
+        blocked: this.isSuppressed(to) ? 'do-not-contact' : ['dnc', 'won', 'lost', 'replied', 'meeting', 'proposal'].includes(lead2.stage) ? `lead stage is ${lead2.stage}`
+          : followUp && lead2.touches >= MAX_TOUCHES ? `the sequence is finished (${lead2.touches} emails sent)` : null });
     }
     return out;
   }
@@ -231,6 +247,13 @@ export class Pipeline {
     if (CLIENT_CLAIM_RE.test(text)) out.push(`it claims client work ("${CLIENT_CLAIM_RE.exec(text)[0].slice(0, 80)}"): only projects listed in the profile's Proof section may be mentioned`);
     if (lead && RULES[jurisdictionOf(lead.timezone)]?.postalAddress && !this.settings.get('outreach_postal_address', null)) out.push('US recipient: CAN-SPAM requires your postal address in the email; set it first (prospecting_setup postal_address)');
     if (RESULT_CLAIM_RE.test(text)) out.push(`it claims a past result ("${RESULT_CLAIM_RE.exec(text)[0].slice(0, 80)}"): only results listed in the profile's Proof section may be used, never invented ones`);
+    if (lead) {
+      // Numbers are where drafts invent things ("3 days to 4 hours", "80%"): every number must be in the evidence.
+      const known = `${lead.company} ${lead.website ?? ''} ${lead.signal ?? ''} ${lead.research ?? ''} ${this.proof()}`;
+      const stray = [...new Set((text.replace(/24\/7/g, '').match(/\d[\d,.]*\s*(%|percent|x\b|\+)?/g) ?? []).map((x) => x.trim().replace(/[.,]$/, '')))]
+        .filter((x) => !known.includes(x.replace(/\s*(%|percent|x|\+)$/, '')));
+      if (stray.length) out.push(`numbers that are not in the evidence or your Proof: ${stray.slice(0, 5).map((x) => `"${x}"`).join(', ')}: remove them (never estimate their volumes, hours, savings or prices)`);
+    }
     if (/→|->|=>/.test(text)) out.push('no arrow chains (a → b → c): describe the end result in one plain sentence');
     if (/[—–]/.test(text) || /[—–]/.test(m.subject ?? '')) out.push('no em/en dashes: use a full stop or comma');
     const extra = Array.isArray(this.settings.get('outreach_banned', null)) ? this.settings.get('outreach_banned') : [];
@@ -381,7 +404,7 @@ export class Pipeline {
   #scheduledOn(t, tz) {
     const p = partsInTz(new Date(t), tz);
     const from = zonedToUtc({ y: p.y, m: p.m, d: p.d, h: 0, mi: 0 }, tz).toISOString(); const to = zonedToUtc({ y: p.y, m: p.m, d: p.d + 1, h: 0, mi: 0 }, tz).toISOString();
-    return this.db.prepare("SELECT COUNT(*) n FROM outbox WHERE status IN ('queued','sent') AND COALESCE(sent_at, scheduled_at) >= ? AND COALESCE(sent_at, scheduled_at) < ?").get(from, to).n;
+    return this.db.prepare("SELECT COUNT(*) n FROM outbox WHERE status IN ('queued','sending','sent') AND COALESCE(sent_at, scheduled_at) >= ? AND COALESCE(sent_at, scheduled_at) < ?").get(from, to).n;
   }
 
   cancelQueued(leadId, reason) {
@@ -395,8 +418,13 @@ export class Pipeline {
   }
 
   // Send every queued email whose slot has come (normally one per minute-tick, because slots are spaced).
+  #flushing = false;
   async flushOutbox() {
-    if (!this.gmail?.ready || this.paused()) return 0;
+    if (!this.gmail?.ready || this.paused() || this.#flushing) return 0; // one flush at a time (the timer and send() both call it)
+    this.#flushing = true;
+    try { return await this.#flush(); } finally { this.#flushing = false; }
+  }
+  async #flush() {
     let sent = 0;
     for (const row of this.db.prepare("SELECT * FROM outbox WHERE status='queued' AND scheduled_at <= ? ORDER BY scheduled_at LIMIT 5").all(this.#iso())) {
       const lead = this.get(row.lead_id);
@@ -404,6 +432,8 @@ export class Pipeline {
       if (stop) { this.db.prepare("UPDATE outbox SET status='cancelled', error=? WHERE id=?").run(stop, row.id); continue; }
       if (this.sentToday() >= this.capAt()) { this.db.prepare('UPDATE outbox SET scheduled_at=? WHERE id=?').run(this.#iso(this.#slot(this.now() + 6 * 3600_000, this.#tzOf(lead))), row.id); continue; }
       const m = { to: row.to_addr, subject: row.subject, body: row.body, follow_up: Boolean(row.follow_up), opt_out: Boolean(row.opt_out), lead_id: row.lead_id };
+      // Claim the row before the network call: whoever else looks at it now sees 'sending', not 'queued'.
+      if (this.db.prepare("UPDATE outbox SET status='sending' WHERE id=? AND status='queued'").run(row.id).changes !== 1) continue;
       try {
         const { text, html } = this.render(m);
         const r = m.follow_up ? await this.gmail.reply({ message_id: lead.last_message_id, to: m.to, body: text, html }) : await this.gmail.send({ to: m.to, subject: m.subject, body: text, html });
@@ -417,11 +447,11 @@ export class Pipeline {
         if (/429|rate.?limit|user-rate|too many|suspend|disabled/i.test(err)) {
           this.settings.set('outreach_daily_cap', Math.max(1, Math.floor(this.capAt() / 2) || 1));
           this.pause(`Gmail refused sending (${err.slice(0, 80)}): paused for 24 hours and the daily cap halved`, { hours: 24 });
-          this.db.prepare('UPDATE outbox SET error=? WHERE id=?').run(err, row.id);
+          this.db.prepare("UPDATE outbox SET status='queued', error=? WHERE id=?").run(err, row.id);
           break;
         }
         if (attempts >= 3) { this.db.prepare("UPDATE outbox SET status='failed', attempts=?, error=? WHERE id=?").run(attempts, err, row.id); this.notifications?.create({ level: 'warning', title: `Outreach email to ${lead.company} failed`, body: err }); }
-        else this.db.prepare('UPDATE outbox SET attempts=?, error=?, scheduled_at=? WHERE id=?').run(attempts, err, this.#iso(this.now() + 30 * 60_000), row.id);
+        else this.db.prepare("UPDATE outbox SET status='queued', attempts=?, error=?, scheduled_at=? WHERE id=?").run(attempts, err, this.#iso(this.now() + 30 * 60_000), row.id);
       }
     }
     return sent;
@@ -444,6 +474,8 @@ export class Pipeline {
   // ---- background: replies, bounces, due follow-ups ----
   #outboxTimer = null;
   start(intervalMs = 10 * 60_000) {
+    // A row left 'sending' by a crash or restart may or may not have reached Gmail: never resend it blindly.
+    this.db.prepare("UPDATE outbox SET status='failed', error='interrupted while sending: check the Sent folder before sending it again' WHERE status='sending'").run();
     if (!this.#timer) { this.#timer = setInterval(() => void this.tick().catch(() => {}), intervalMs); this.#timer.unref?.(); }
     if (!this.#outboxTimer) { this.#outboxTimer = setInterval(() => void this.flushOutbox().catch(() => {}), 60_000); this.#outboxTimer.unref?.(); }
   }
@@ -542,7 +574,9 @@ export class Pipeline {
     return p;
   }
   pause(reason, { hours = null } = {}) {
-    if (this.paused()) return this.paused();
+    const cur = this.paused();
+    // An indefinite (or longer) stop, e.g. the bounce breaker, must not be swallowed by a shorter timed pause.
+    if (cur && (!cur.until || (hours && Date.parse(cur.until) >= this.now() + hours * 3600_000))) return cur;
     const p = { reason: clean(reason, 300), at: this.#iso(), ...(hours ? { until: this.#iso(this.now() + hours * 3600_000) } : {}) };
     this.settings.set('outreach_paused', p);
     this.notifications?.create({ level: 'warning', title: '⏸ Outreach paused', body: `${p.reason}\nQueued emails are held${p.until ? ` until ${p.until.slice(0, 16).replace('T', ' ')} UTC` : '. Ask me to resume outreach when it is fixed'}.` });

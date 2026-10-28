@@ -67,7 +67,7 @@ export class HermesAdapter {
       if (!res.ok || !res.body) throw new Error(`hermes_events_${res.status}`);
       const dec = new TextDecoder(); let buf = ''; let final = null;
       for await (const chunk of res.body) {
-        buf += dec.decode(chunk, { stream: true });
+        buf += dec.decode(chunk, { stream: true }).replace(/\r\n?/g, '\n'); // SSE may be framed with CRLF
         let i;
         while ((i = buf.indexOf('\n\n')) >= 0) {
           const frame = buf.slice(0, i); buf = buf.slice(i + 2);
