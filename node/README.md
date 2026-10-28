@@ -78,7 +78,7 @@ published `DISPLAY`/`WAYLAND_DISPLAY`/`XAUTHORITY`; without them the visible bro
 ## Push-to-talk voice key (`voice-key.mjs`)
 Press a key anywhere (any app focused): beep, talk, beep. Friday transcribes, answers and speaks the reply on the laptop;
 a notification shows what she heard and her answer (it stays in the notification list).
-- **Stops** after ~1.3 s of silence (energy VAD, noise floor learned per recording), at 30 s, or when you press the key
+- **Stops** after ~2.2 s of silence (energy VAD, noise floor learned per recording; quieter words still count once you are talking), at 30 s, or when you press the key
   again. Nothing said / a click / under 0.35 s of speech: nothing is sent.
 - **Press while she thinks** = cancel. **Press while she talks** = she stops and listens again.
 - **Screen questions** ("what's on my screen", "read this", "what does this error mean", "explain this code"): a
@@ -111,7 +111,7 @@ you how to free it. Logs: `~/.friday-node/voice-key.log` (events only, never tra
 
 ### Settings (`~/.friday-node/voice.json`, all optional)
 `token`, `server` (defaults to the node pairing), `stt`/`tts`: `auto` (laptop if installed, else server) | `local` |
-`server` (`tts` also `off`), `screen`: `auto` | `always` | `never`, `silenceMs` (1300), `maxSeconds` (30),
+`server` (`tts` also `off`), `screen`: `auto` | `always` | `never`, `silenceMs` (2200), `maxSeconds` (30),
 `noSpeechMs` (6000), `followupMinutes` (10), `lingerMinutes` (10, 0 = exit after each turn), `cues` (true), `volume`
 (0.25), `voice`: `{ engine, voice, speed, pitch }` for the laptop voice, `localVoiceHome`.
 

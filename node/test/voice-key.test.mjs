@@ -207,3 +207,16 @@ test('session: press while she talks interrupts playback and listens again', asy
   assert.ok(!h.calls.some((c) => c[0] === 'cue' && c[1] === 'cancel'), 'interrupt goes straight to the start beep');
   assert.equal(h.s.state, 'idle');
 });
+
+test('vad: a thinking pause and soft trailing words stay in one recording (28 Oct: "...and play stuff" was cut off)', () => {
+  const v = new Vad(); // defaults: the real hotkey settings
+  // room -50 dBFS (threshold -40 before speech), loud start, a 1.6 s pause, then softer words at -43 (7 dB over the floor)
+  const r = feed(v, noise(400, -50), tone(1500, -25), noise(1600, -50), tone(1200, -43), noise(3000, -50));
+  assert.equal(r.reason, 'silence');
+  const s = v.summary();
+  assert.ok(s.to > (400 + 1500 + 1600 + 1100) * 16, `kept the soft tail (cut at ${Math.round(s.to / 16)} ms)`);
+  assert.ok(s.speechMs >= 2400, `speechMs ${s.speechMs}`);
+  // the stop still comes: 2.2 s of real quiet after the last word
+  const quick = new Vad();
+  assert.equal(feed(quick, noise(400, -50), tone(800, -25), noise(2300, -50))?.reason, 'silence');
+});

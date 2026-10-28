@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Friday push-to-talk for the laptop. Bound to a GNOME custom shortcut (node/voice-key-install.sh), so it works whatever
 // app is focused:
-//   press      -> beep, listen (stops on ~1.3 s of silence, at 30 s, or when you press again) -> beep
+//   press      -> beep, listen (stops on ~2.2 s of silence, at 30 s, or when you press again) -> beep
 //              -> transcribe (laptop Whisper if installed, else the server) -> screenshot only if the question is about
 //                 the screen -> Friday answers (server brain, 'voice' channel) -> spoken here (laptop voice if installed,
 //                 else the server's voice) + a notification with the transcript and the answer.

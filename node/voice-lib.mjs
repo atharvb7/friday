@@ -12,7 +12,8 @@ export const LOCAL_VOICE = Object.freeze({ engine: 'kokoro', voice: 'af_heart:50
 export const DEFAULTS = Object.freeze({
   rate: 16000,
   maxSeconds: 30,        // hard cap on one recording
-  silenceMs: 1300,       // this much quiet after speech ends the recording
+  silenceMs: 2200,       // this much quiet after speech ends the recording (1.3 s cut him off mid-sentence on 28 Oct:
+                         // people pause 1-2 s while thinking "play... um... some lofi"); a second press still stops at once
   noSpeechMs: 6000,      // nothing said this long after the beep -> give up
   minSpeechMs: 350,      // shorter than this is a cough or a click, not a question
   followupMinutes: 10,   // presses within this window continue the same conversation
@@ -51,7 +52,8 @@ export const dbfs = (samples) => {
 // Energy VAD over 30 ms frames. The first ~240 ms calibrate the noise floor (median, ignoring the digital zeros a
 // stream starts with); afterwards the floor follows the room (fast down, slowly up, so a fan becomes "quiet" within
 // seconds but a sentence barely moves it). Speech = 3 consecutive frames 10 dB over the floor, threshold kept within
-// [-50, -30] dBFS. Measured on this laptop's digital mic: room -48 dBFS -> threshold -38.
+// [-50, -30] dBFS. Measured on this laptop's digital mic: room -48 dBFS -> threshold -38. Once he is talking the bar
+// drops to 6 dB over the floor (hysteresis), so soft trailing words ("...and play stuff") are not taken for silence.
 const CALIBRATION_FRAMES = 8;
 export class Vad {
   constructor({ rate = 16000, frameMs = 30, silenceMs = DEFAULTS.silenceMs, noSpeechMs = DEFAULTS.noSpeechMs, minSpeechMs = DEFAULTS.minSpeechMs, maxMs = DEFAULTS.maxSeconds * 1000 } = {}) {
@@ -61,7 +63,7 @@ export class Vad {
     this.speechStartFrame = null; this.speechFrames = 0; this.lastVoicedFrame = null; this.allZero = true; this.done = null;
   }
   get elapsedMs() { return this.frames * this.frameMs; }
-  get threshold() { return Math.min(-30, Math.max(-50, (this.floor ?? -60) + 10)); }
+  get threshold() { return Math.min(-30, Math.max(-50, (this.floor ?? -60) + (this.speechStartFrame === null ? 10 : 6))); }
   // samples: Int16Array (any length). Returns null while recording should continue, else { reason }.
   push(samples) {
     if (this.done) return this.done;
@@ -82,7 +84,9 @@ export class Vad {
       if (db > -85) {
         if (this.floor === null) this.floor = db;
         else if (db < this.floor) this.floor += 0.3 * (db - this.floor);
-        else this.floor += (voiced ? 0.004 : 0.05) * (db - this.floor);
+        // after he starts talking the floor creeps up only slowly: soft words just under the bar must not raise it
+        // (it climbed -50 -> -45 dB inside one soft phrase and cut "...and play stuff" off)
+        else this.floor += (voiced || this.speechStartFrame !== null ? 0.004 : 0.05) * (db - this.floor);
       }
     }
     if (voiced) { this.voicedRun += 1; this.quietRun = 0; } else { this.voicedRun = 0; this.quietRun += 1; }
