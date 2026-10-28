@@ -9,6 +9,14 @@
   const firstWord = (s) => norm(s).split(' ')[0] ?? '';
   const main = () => document.querySelector('#main');
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Wait for the page to reach a state by watching DOM changes, not by chained timers: Chrome throttles timers in a
+  // background tab (down to once a minute after 5 min hidden), but mutation callbacks still run right away.
+  const waitFor = (test, timeoutMs = 4000) => new Promise((resolve) => {
+    const now = test(); if (now) return resolve(now);
+    const obs = new MutationObserver(() => { const v = test(); if (v) { obs.disconnect(); clearTimeout(t); resolve(v); } });
+    obs.observe(document.body, { childList: true, subtree: true, characterData: true });
+    const t = setTimeout(() => { obs.disconnect(); resolve(test()); }, timeoutMs); // one timer, never a chain
+  });
 
   function chatName() {
     const h = main()?.querySelector('header');
@@ -80,8 +88,8 @@
     if (!hit) return { error: `no chat named "${name}" in the WhatsApp chat list (scroll it into the list or search it once)` };
     const row = hit.closest('[role="listitem"], [role="row"], [tabindex="-1"]') ?? hit;
     for (const type of ['mousedown', 'mouseup', 'click']) row.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
-    for (let i = 0; i < 20; i++) { await sleep(150); if (chatName() && firstWord(chatName()) === firstWord(name)) return { chat: chatName() }; }
-    return { error: `clicked "${hit.getAttribute('title')}" but the chat did not open` };
+    const opened = await waitFor(() => chatName() && firstWord(chatName()) === firstWord(name) && chatName(), 4000);
+    return opened ? { chat: opened } : { error: `clicked "${hit.getAttribute('title')}" but the chat did not open` };
   }
 
   async function send({ chat, text }) {
@@ -94,16 +102,12 @@
       if (i) document.execCommand('insertLineBreak', false, null);
       document.execCommand('insertText', false, line);
     }
-    await sleep(120);
-    const btn = main()?.querySelector('footer button[aria-label="Send" i], footer [data-icon="send"], footer [data-icon="wds-ic-send-filled"]');
+    const btn = await waitFor(() => main()?.querySelector('footer button[aria-label="Send" i], footer [data-icon="send"], footer [data-icon="wds-ic-send-filled"]'), 1500);
     if (btn) (btn.closest('button') ?? btn).click();
     else box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-    for (let i = 0; i < 20; i++) { // confirm: the box is empty again and our newest message is the text we sent
-      await sleep(150);
-      const last = messages(3).filter((m) => m.from === 'me').pop();
-      if (!box.innerText.trim() && last && norm(last.text).startsWith(norm(text).slice(0, 20))) return { sent: true, id: last.id, chat: chatName() };
-    }
-    return { error: 'typed but could not confirm it was sent', chat: chatName() };
+    // confirm: the box is empty again and our newest message is the text we sent
+    const ok = await waitFor(() => { const last = messages(3).filter((m) => m.from === 'me').pop(); return !box.innerText.trim() && last && norm(last.text).startsWith(norm(text).slice(0, 20)) && last; }, 5000);
+    return ok ? { sent: true, id: ok.id, chat: chatName() } : { error: 'typed but could not confirm it was sent', chat: chatName() };
   }
 
   const handlers = {
