@@ -2,6 +2,9 @@
 // It only answers commands from the laptop node (relayed by background.js): read the open chat, open a chat by name,
 // send text into the open chat. WhatsApp's DOM changes now and then, so every lookup has fallbacks.
 (() => {
+  const VERSION = chrome.runtime.getManifest().version;
+  if (window.__fridayWa === VERSION) return; // injected twice (manifest + background re-inject): keep one
+  window.__fridayWa = VERSION;
   const norm = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
   const firstWord = (s) => norm(s).split(' ')[0] ?? '';
   const main = () => document.querySelector('#main');
@@ -14,25 +17,58 @@
     return t ? t.trim() : null;
   }
 
-  // Every message row carries data-id "true_..." (sent by us) or "false_..." (received). The text sits in the
-  // .copyable-text block; a quoted reply has its own nested quote, which is skipped.
+  // Message rows: [role=row] in the conversation (fallbacks: elements with data-id, .message-in/.message-out). Who sent it
+  // is decided by LAYOUT (our bubbles sit on the right half of the conversation), with class/id hints as tie-breakers,
+  // so a renamed class cannot flip sides. Text: the .copyable-text block with data-pre-plain-text, quotes skipped.
+  function rows() {
+    const m = main(); if (!m) return [];
+    let r = [...m.querySelectorAll('[role="row"]')];
+    if (!r.length) r = [...m.querySelectorAll('[data-id]')];
+    if (!r.length) r = [...m.querySelectorAll('.message-in, .message-out')];
+    return r;
+  }
+  function side(row, mid) {
+    const id = row.getAttribute('data-id') ?? row.querySelector('[data-id]')?.getAttribute('data-id') ?? '';
+    if (/^true_/.test(id)) return 'me';
+    if (/^false_/.test(id)) return 'them';
+    if (row.querySelector('.message-out') || row.matches('.message-out')) return 'me';
+    if (row.querySelector('.message-in') || row.matches('.message-in')) return 'them';
+    if (row.querySelector('[data-icon^="msg-check"], [data-icon^="msg-dblcheck"], [data-icon="msg-time"]')) return 'me'; // ticks: only ours
+    const b = (row.querySelector('.copyable-text') ?? row).getBoundingClientRect();
+    return b.width && (b.left + b.right) / 2 > mid ? 'me' : 'them';
+  }
+  function textOf(row) {
+    const block = [...row.querySelectorAll('.copyable-text[data-pre-plain-text]')].pop() ?? [...row.querySelectorAll('.copyable-text')].pop();
+    let text = '';
+    if (block) {
+      const spans = [...block.querySelectorAll('span.selectable-text, span[dir="ltr"], span[dir="auto"]')].filter((x) => !x.closest('[aria-label*="uoted" i], [data-testid*="quoted" i], [role="button"]'));
+      text = (spans.length ? spans.reduce((a, b) => (b.innerText.length > a.innerText.length ? b : a)) : block).innerText ?? '';
+    }
+    if (!text.trim()) text = row.querySelector('img[src^="blob:"]') ? '[photo]' : row.querySelector('[data-icon*="audio" i], [data-icon*="ptt" i]') ? '[voice note]' : '';
+    return { text: text.trim(), pre: block?.getAttribute('data-pre-plain-text') ?? '' };
+  }
   function messages(limit = 20) {
     const m = main(); if (!m) return [];
-    const rows = [...m.querySelectorAll('[data-id]')].filter((el) => /^(true|false)_/.test(el.getAttribute('data-id') ?? ''));
+    const pane = m.getBoundingClientRect(); const mid = (pane.left + pane.right) / 2;
     const out = [];
-    for (const el of rows.slice(-limit)) {
-      const id = el.getAttribute('data-id');
-      const block = [...el.querySelectorAll('.copyable-text[data-pre-plain-text]')].pop() ?? el.querySelector('.copyable-text');
-      let text = '';
-      if (block) {
-        const spans = [...block.querySelectorAll('span.selectable-text')].filter((s) => !s.closest('[aria-label*="uoted" i], [data-testid*="quoted" i]'));
-        text = (spans.pop() ?? block).innerText ?? '';
-      }
-      if (!text) text = el.querySelector('img[src^="blob:"]') ? '[photo]' : el.querySelector('[data-icon*="audio" i], [data-icon*="ptt" i]') ? '[voice note]' : el.querySelector('img') ? '[sticker]' : '';
-      if (!text.trim()) continue;
-      out.push({ id, from: id.startsWith('true_') ? 'me' : 'them', text: text.trim().slice(0, 2000) });
+    for (const row of rows().slice(-limit * 2)) {
+      const { text, pre } = textOf(row);
+      if (!text) continue; // date separators, "unread messages", system notes
+      const id = row.getAttribute('data-id') ?? row.querySelector('[data-id]')?.getAttribute('data-id') ?? `h_${hash(pre + text)}`;
+      out.push({ id, from: side(row, mid), text: text.slice(0, 2000) });
     }
-    return out;
+    return out.slice(-limit);
+  }
+  function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+  // What the page looks like, for debugging selectors without guessing (no message text).
+  function probe() {
+    const m = main();
+    const count = (sel) => (m ? m.querySelectorAll(sel).length : 0);
+    const r = rows();
+    return { main: Boolean(m), rows: r.length, roleRow: count('[role="row"]'), dataId: count('[data-id]'), msgIn: count('.message-in'), msgOut: count('.message-out'),
+      copyable: count('.copyable-text'), prePlain: count('[data-pre-plain-text]'), selectable: count('span.selectable-text'),
+      sampleIds: [...(m?.querySelectorAll('[data-id]') ?? [])].slice(-3).map((e) => (e.getAttribute('data-id') ?? '').slice(0, 12)),
+      lastRowClasses: r.at(-1)?.className?.toString?.().slice(0, 120) ?? null, footerBox: Boolean(m?.querySelector('footer [contenteditable="true"]')) };
   }
 
   // Open a chat from the chat list by its title (fuzzy: first word must match; the exact title wins).
@@ -71,7 +107,8 @@
   }
 
   const handlers = {
-    status: async () => ({ ok: true, chat: chatName(), loggedIn: Boolean(document.querySelector('#pane-side')) }),
+    status: async () => ({ ok: true, version: VERSION, chat: chatName(), loggedIn: Boolean(document.querySelector('#pane-side')) }),
+    probe: async () => probe(),
     read: async ({ chat, limit }) => {
       if (chat && !(chatName() && firstWord(chatName()) === firstWord(chat))) { const o = await openChat(chat); if (o.error) return o; }
       return { chat: chatName(), messages: messages(Math.min(Number(limit) || 20, 40)) };
@@ -81,9 +118,10 @@
   };
 
   // A port to background.js keeps the extension's service worker alive while this tab is open.
-  let port = null;
+  let port = null; let dead = false;
   const connect = () => {
-    port = chrome.runtime.connect({ name: 'friday-wa' });
+    if (dead) return;
+    try { port = chrome.runtime.connect({ name: 'friday-wa' }); } catch { dead = true; return; } // extension reloaded: a newer copy takes over
     port.onMessage.addListener(async (msg) => {
       let result;
       try { result = await (handlers[msg.op] ?? (async () => ({ error: `unknown op ${msg.op}` })))(msg.args ?? {}); }

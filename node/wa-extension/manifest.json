@@ -1,9 +1,27 @@
 {
   "manifest_version": 3,
   "name": "Friday for WhatsApp Web",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Lets Friday (your assistant on this laptop) read and reply in the WhatsApp Web tab you already have open, only for chats you start with her.",
-  "host_permissions": ["https://web.whatsapp.com/*", "http://127.0.0.1/*"],
-  "background": { "service_worker": "background.js" },
-  "content_scripts": [{ "matches": ["https://web.whatsapp.com/*"], "js": ["content.js"], "run_at": "document_idle" }]
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "scripting"
+  ]
 }

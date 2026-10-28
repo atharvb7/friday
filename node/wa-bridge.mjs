@@ -31,7 +31,8 @@ export function ensureExtension({ srcDir, confDir, port, token }) {
 
 export class WaBridge {
   #queue = []; #waiters = []; #pending = new Map(); #lastSeen = 0; #server = null;
-  constructor({ port, token, now = () => Date.now() }) { Object.assign(this, { port, token, now }); }
+  // version: the manifest version on disk; an extension that polls with an older one is told to reload itself.
+  constructor({ port, token, version = null, now = () => Date.now() }) { Object.assign(this, { port, token, version, now }); }
 
   get connected() { return this.now() - this.#lastSeen < 40_000; } // the extension polls at least every ~28 s
 
@@ -59,6 +60,7 @@ export class WaBridge {
     if (req.headers['x-friday-wa'] !== this.token) return done(403, { error: 'forbidden' });
     this.#lastSeen = this.now();
     if (req.method === 'GET' && req.url === '/wa/next') {
+      if (this.version && req.headers['x-friday-wa-version'] && req.headers['x-friday-wa-version'] !== this.version) return done(200, { id: 'reload', op: '__reload' });
       const cmd = this.#queue.shift();
       if (cmd) return done(200, cmd);
       let settled = false;

@@ -54,7 +54,7 @@ const desktop = makeDesktop({ allowedDirs, fullAccess, input });
 // WhatsApp in his own Chrome through the "Friday for WhatsApp Web" extension (live chats: no screenshots, no mouse).
 const waConf = bridgeConfig(CONF_DIR);
 const waExtDir = ensureExtension({ srcDir: new URL('./wa-extension', import.meta.url).pathname, confDir: CONF_DIR, ...waConf });
-const wa = new WaBridge(waConf).start();
+const wa = new WaBridge({ ...waConf, version: JSON.parse(readFileSync(join(waExtDir, 'manifest.json'), 'utf8')).version }).start();
 const handlers = {
   wa_status: async () => (wa.connected ? { connected: true, ...(await wa.command('status', {}, 8000)) } : { connected: false, extensionFolder: waExtDir }),
   wa_read: (a) => wa.command('read', { chat: a.chat, limit: a.limit }),
