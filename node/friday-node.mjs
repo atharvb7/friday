@@ -11,6 +11,7 @@ import { reelEdit, reelFolder } from './reel-edit.mjs';
 import { zipFolder } from './zip.mjs';
 import { BrowserController } from './browser.mjs';
 import { atspiAvailable, defaultAllowedDirs, idleMs, InputDevice, makeDesktop } from './desktop.mjs';
+import { WaBridge, bridgeConfig, ensureExtension } from './wa-bridge.mjs';
 
 const CONF_DIR = process.env.FRIDAY_NODE_HOME ?? join(homedir(), '.friday-node');
 const CONF = join(CONF_DIR, 'config.json');
@@ -50,7 +51,15 @@ const fullAccess = conf.fullAccess !== false;
 const input = new InputDevice();
 const desktop = makeDesktop({ allowedDirs, fullAccess, input });
 
+// WhatsApp in his own Chrome through the "Friday for WhatsApp Web" extension (live chats: no screenshots, no mouse).
+const waConf = bridgeConfig(CONF_DIR);
+const waExtDir = ensureExtension({ srcDir: new URL('./wa-extension', import.meta.url).pathname, confDir: CONF_DIR, ...waConf });
+const wa = new WaBridge(waConf).start();
 const handlers = {
+  wa_status: async () => (wa.connected ? { connected: true, ...(await wa.command('status', {}, 8000)) } : { connected: false, extensionFolder: waExtDir }),
+  wa_read: (a) => wa.command('read', { chat: a.chat, limit: a.limit }),
+  wa_open: (a) => wa.command('open', { chat: a.chat }),
+  wa_send: (a) => wa.command('send', { chat: a.chat, text: String(a.text ?? '').slice(0, 4000) }),
   ...(browser ? {
     browser_open: (a) => browser.open(a), browser_snapshot: (a) => browser.snapshot(a), browser_click: (a) => browser.click(a), browser_type: (a) => browser.type(a),
     browser_press: (a) => browser.press(a), browser_upload: (a) => browser.upload(a), browser_scroll: (a) => browser.scroll(a), browser_back: () => browser.back(),

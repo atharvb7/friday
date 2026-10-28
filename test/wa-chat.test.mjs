@@ -36,6 +36,14 @@ function rig({ header = 'Gauri Vardhamane (Samyak)' } = {}) {
   return { store, chat, convo, world, ai, wa, notes, done: () => { wa.stop_timer(); store.close(); rmSync(dir, { recursive: true, force: true }); } };
 }
 
+test('wa helpers: a cut-off JSON read still yields every message (the newest one included)', async () => {
+  const { parseMessages } = await import('../src/wa-chat.mjs');
+  const cut = '{"messages": [{"from": "me", "text": "Hey Siddhi"}, {"from": "them", "text": "Heyyy fridayyy \\ud83d\\ude0a\\nthe delusion is kinda cute"}';
+  const m = parseMessages(cut);
+  assert.equal(m.length, 2); assert.equal(m[1].from, 'them'); assert.match(m[1].text, /delusion is kinda cute/);
+  assert.equal(parseMessages('{"messages":[{"from":"them","text":"hi"}]}').length, 1);
+});
+
 test('wa helpers: answer the burst after our last message once; contact match is by first name', () => {
   assert.deepEqual(pendingFromThem([{ from: 'them', text: 'a' }, { from: 'me', text: 'b' }, { from: 'them', text: 'c' }, { from: 'them', text: 'd' }]).texts, ['c', 'd']);
   assert.equal(pendingFromThem([{ from: 'them', text: 'a' }, { from: 'me', text: 'b' }]).sig, null);
@@ -81,6 +89,19 @@ test('wa chat: never types when WhatsApp is not the window in front; wrong chat 
   } finally { w.done(); }
 });
 
+test('wa chat: finds the WhatsApp tab by the window title (Ctrl+Tab), never types into another tab', async () => {
+  const r = rig();
+  try {
+    r.world.front = 'Friday - Google Chrome';
+    let tabs = 0; const dispatch = r.wa.nodes.dispatch;
+    r.wa.nodes.dispatch = async (m) => { if (m.action === 'key_press' && m.args.keys === 'ctrl+Tab' && ++tabs === 2) r.world.front = '(3) WhatsApp - Google Chrome'; return dispatch(m); };
+    const out = await r.wa.start({ contact: 'Gauri', minutes: 10 });
+    assert.ok(out.chatting_until, JSON.stringify(out)); assert.equal(tabs, 2);
+    const none = rig(); none.world.front = 'Friday - Google Chrome';
+    try { assert.match((await none.wa.start({ contact: 'Gauri' })).error, /no WhatsApp Web tab/); assert.deepEqual(none.world.typed, [], 'nothing typed anywhere'); } finally { none.done(); }
+  } finally { r.done(); }
+});
+
 test('wa chat: stop ends it; one session per person; time cap', async () => {
   const r = rig();
   try {
@@ -108,4 +129,29 @@ test('stop_everything: tasks, watches and live chats all stop in one call; count
     assert.equal(out.still_scheduled_reminders_and_jobs, 1);
     assert.equal(ctx.watches.list('active').length, 0); assert.equal(ctx.waChats.list().length, 0);
   } finally { ctx.stop(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('wa chat via the Chrome extension: no screenshots or mouse; answers her newest message by id, once', async () => {
+  const r = rig();
+  try {
+    const sent = []; let msgs = [{ id: 'true_1', from: 'me', text: 'Hey Siddhi, Friday here' }, { id: 'false_2', from: 'them', text: 'the delusion is kinda cute' }];
+    r.wa.nodes.list = () => [{ caps: ['wa_status', 'wa_read', 'wa_open', 'wa_send', 'screen_region'] }];
+    r.wa.nodes.dispatch = async ({ action, args }) => {
+      r.world.calls.push(action);
+      if (action === 'wa_status') return { connected: true, loggedIn: true, chat: 'Siddhi Jadhav UAI' };
+      if (action === 'wa_open') return { chat: 'Siddhi Jadhav UAI' };
+      if (action === 'wa_read') return { chat: 'Siddhi Jadhav UAI', messages: msgs };
+      if (action === 'wa_send') { sent.push(args.text); msgs = [...msgs, { id: `true_${msgs.length + 1}`, from: 'me', text: args.text }]; return { sent: true }; }
+      throw new Error(`unexpected ${action}`);
+    };
+    const out = await r.wa.start({ contact: 'Siddhi Jadhav', minutes: 10 });
+    assert.equal(out.chat, 'Siddhi Jadhav UAI');
+    await r.wa.tick(); await r.wa.tick();
+    assert.equal(sent.length, 1, 'answered once');
+    msgs = [...msgs, { id: 'false_9', from: 'them', text: 'lol okay' }];
+    await r.wa.tick();
+    assert.equal(sent.length, 2);
+    assert.ok(!r.world.calls.some((a) => ['screen_region', 'screen_capture', 'mouse_click', 'type_text'].includes(a)), r.world.calls.join(','));
+    assert.ok(!r.ai.calls.includes('vision'), 'no vision model needed');
+  } finally { r.done(); }
 });

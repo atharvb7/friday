@@ -78,8 +78,10 @@ export class ModelRouter {
     } catch { /* observability must never break a call */ }
   }
 
-  async run(role, opts = {}) {
-    const chain = (this.chains[role] ?? this.chains.chat ?? []).filter((e) => this.#providers.get(e.provider)?.configured);
+  async run(role, { prefer = null, ...opts } = {}) {
+    let chain = (this.chains[role] ?? this.chains.chat ?? []).filter((e) => this.#providers.get(e.provider)?.configured);
+    // prefer: providers to try first for this call (stable within each group), e.g. a job one model does best
+    if (Array.isArray(prefer) && prefer.length) chain = [...chain.filter((e) => prefer.includes(e.provider)), ...chain.filter((e) => !prefer.includes(e.provider))];
     if (!chain.length) throw new AllModelsFailed(role, [{ key: role, error: 'no_provider_configured' }]);
     const attempts = [];
     const rejectedBy = new Set(); // providers that refused this request as malformed: their other models would too
