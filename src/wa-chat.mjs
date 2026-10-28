@@ -225,12 +225,14 @@ export class WaChats {
 
   // He asks for one more message now ("text her again, tease her"): a fresh message from the chat so far, sent at once,
   // even though she has not written anything new. The running session's approval covers it.
-  async nudge(contact = null, hint = null) {
+  // exact: his own words, sent as they are (no rewriting).
+  async nudge(contact = null, hint = null, exact = null) {
     const s = this.list('active').find((x) => !contact || sameContact(x.contact, contact));
     if (!s) return { error: `no live WhatsApp chat${contact ? ` with ${contact}` : ''}: start one with dm_chat_start` };
     for (let i = 0; i < 40 && this.#busy.has(s.id); i++) await this.sleep(250);
     this.#busy.add(s.id);
     try {
+      if (exact && String(exact).trim()) { const text = String(exact).trim().slice(0, 1000); await this.#send(s, text, null); return { sent: text, to: s.contact, exact: true }; }
       const r = this.#ext.has(s.id) || await this.#extension() ? await this.#node('wa_read', { chat: s.contact, limit: 20 }) : null;
       const msgs = r?.messages ?? [];
       const owner = this.settings.get('user_name', null) ?? 'the owner';

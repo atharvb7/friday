@@ -194,5 +194,7 @@ test('wa chat nudge: one more message now, without waiting for her; English; use
     const out = await r.wa.nudge('siddhi', 'tease her');
     assert.match(out.sent, /comeback/); assert.equal(sent.length, 1);
     assert.match((await r.wa.nudge('nobody')).error, /no live WhatsApp chat/);
+    const exact = await r.wa.nudge('siddhi', null, 'okay okay you win this round 😤');
+    assert.equal(exact.sent, 'okay okay you win this round 😤'); assert.equal(sent.at(-1), 'okay okay you win this round 😤', 'his exact words, unchanged');
   } finally { r.done(); }
 });

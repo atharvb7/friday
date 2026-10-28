@@ -682,10 +682,10 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
     },
     {
       name: 'dm_chat_reply_now', risk: 'safe',
-      description: 'In an active chat (dm_chat_status): Instagram -> answer that person\'s latest message now. WhatsApp -> send ONE more message now even if they have not replied (e.g. "text her again", "tease her more"); put his wish in hint. Use whenever he says "reply to her", "send one more", "text her again". Never write messages for an active chat yourself.',
-      parameters: obj({ username: { type: 'string', description: 'Instagram username or WhatsApp contact name' }, hint: { type: 'string', description: 'what he wants this message to do, e.g. "tease her, playful"' } }, ['username']),
+      description: 'In an active chat (dm_chat_status): Instagram -> answer that person\'s latest message now. WhatsApp -> send ONE more message now even if they have not replied (e.g. "text her again", "tease her more"); put his wish in hint, or his EXACT words in text when he dictates them ("send her exactly: ..."). Use whenever he says "reply to her", "send one more", "text her again". Never write messages for an active chat yourself, and never start a second chat with the same person.',
+      parameters: obj({ username: { type: 'string', description: 'Instagram username or WhatsApp contact name' }, hint: { type: 'string', description: 'what he wants this message to do, e.g. "tease her, playful"' }, text: { type: 'string', description: 'WhatsApp only: his exact words to send unchanged' } }, ['username']),
       run: (a) => ((ctx.waChats?.list() ?? []).some((s) => (a.username ?? '').toLowerCase().split(' ')[0] && s.contact.toLowerCase().includes(String(a.username).toLowerCase().split(' ')[0]))
-        ? ctx.waChats.nudge(a.username, a.hint ?? null)
+        ? ctx.waChats.nudge(a.username, a.hint ?? null, a.text ?? null)
         : ctx.dmChats.replyNow(a.username)),
     },
     {
