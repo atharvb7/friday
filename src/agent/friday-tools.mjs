@@ -682,9 +682,11 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
     },
     {
       name: 'dm_chat_reply_now', risk: 'safe',
-      description: 'In an active DM chat (dm_chat_status), answer that person\'s LATEST message right now in Friday\'s friend-chat voice and send it through the verified sender. Use this whenever the user says "reply to him/her", "send the reply", "reply to the latest message". Never write DMs for an active chat yourself.',
-      parameters: obj({ username: { type: 'string' } }, ['username']),
-      run: (a) => ctx.dmChats.replyNow(a.username),
+      description: 'In an active chat (dm_chat_status): Instagram -> answer that person\'s latest message now. WhatsApp -> send ONE more message now even if they have not replied (e.g. "text her again", "tease her more"); put his wish in hint. Use whenever he says "reply to her", "send one more", "text her again". Never write messages for an active chat yourself.',
+      parameters: obj({ username: { type: 'string', description: 'Instagram username or WhatsApp contact name' }, hint: { type: 'string', description: 'what he wants this message to do, e.g. "tease her, playful"' } }, ['username']),
+      run: (a) => ((ctx.waChats?.list() ?? []).some((s) => (a.username ?? '').toLowerCase().split(' ')[0] && s.contact.toLowerCase().includes(String(a.username).toLowerCase().split(' ')[0]))
+        ? ctx.waChats.nudge(a.username, a.hint ?? null)
+        : ctx.dmChats.replyNow(a.username)),
     },
     {
       name: 'dm_chat_stop', risk: 'safe',

@@ -223,6 +223,29 @@ export class WaChats {
     return this.#answer(s, msgs, burst.map((m) => m.text), sig);
   }
 
+  // He asks for one more message now ("text her again, tease her"): a fresh message from the chat so far, sent at once,
+  // even though she has not written anything new. The running session's approval covers it.
+  async nudge(contact = null, hint = null) {
+    const s = this.list('active').find((x) => !contact || sameContact(x.contact, contact));
+    if (!s) return { error: `no live WhatsApp chat${contact ? ` with ${contact}` : ''}: start one with dm_chat_start` };
+    for (let i = 0; i < 40 && this.#busy.has(s.id); i++) await this.sleep(250);
+    this.#busy.add(s.id);
+    try {
+      const r = this.#ext.has(s.id) || await this.#extension() ? await this.#node('wa_read', { chat: s.contact, limit: 20 }) : null;
+      const msgs = r?.messages ?? [];
+      const owner = this.settings.get('user_name', null) ?? 'the owner';
+      const transcript = msgs.map((m) => `${m.from === 'them' ? s.contact : 'Friday'}: ${String(m.text).slice(0, 300)}`).join('\n');
+      const out = await this.ai.run('chat', { maxTokens: 300, temperature: 0.9, thinking: false, messages: [
+        { role: 'system', content: SYSTEM({ owner, friend: s.contact, goal: s.goal }) },
+        { role: 'user', content: `Chat so far (oldest first):\n${transcript || '(nothing readable)'}\n\n${owner} wants you to send ONE more message now, without waiting for them${hint ? `: ${String(hint).slice(0, 300)}` : ''}. Do not repeat anything you already said.` }] });
+      const j = jsonIn(out.content);
+      if (!j?.reply) return { error: 'no message generated' };
+      const text = feminize(String(j.reply).slice(0, 1000));
+      await this.#send(s, text, null);
+      return { sent: text, to: s.contact };
+    } finally { this.#busy.delete(s.id); }
+  }
+
   async #answer(s, msgs, texts, sig) {
     const owner = this.settings.get('user_name', null) ?? 'the owner';
     const transcript = msgs.map((m) => `${m.from === 'them' ? s.contact : 'Friday'}: ${String(m.text).slice(0, 300)}`).join('\n');

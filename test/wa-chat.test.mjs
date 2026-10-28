@@ -176,3 +176,23 @@ test('Friday speaks as a woman in Hinglish: masculine first-person forms are fix
     assert.deepEqual(r.world.typed, ['haan haan, main bata dungi use']);
   } finally { r.done(); }
 });
+
+test('wa chat nudge: one more message now, without waiting for her; English; uses the running session', async () => {
+  const r = rig();
+  try {
+    const sent = [];
+    r.wa.nodes.list = () => [{ caps: ['wa_status', 'wa_read', 'wa_open', 'wa_send'] }];
+    r.wa.nodes.dispatch = async ({ action, args }) => {
+      if (action === 'wa_status') return { connected: true, loggedIn: true };
+      if (action === 'wa_open') return { chat: 'Siddhi Jadhav UAI' };
+      if (action === 'wa_read') return { chat: 'Siddhi Jadhav UAI', messages: [{ id: 'a', from: 'me', text: 'hi' }] };
+      if (action === 'wa_send') { sent.push(args.text); return { sent: true }; }
+      return {};
+    };
+    r.wa.ai.run = async () => ({ content: '{"reply":"still thinking about my comeback? take your time, I\'ll wait 😌","end":false}' });
+    await r.wa.start({ contact: 'Siddhi Jadhav', minutes: 5 });
+    const out = await r.wa.nudge('siddhi', 'tease her');
+    assert.match(out.sent, /comeback/); assert.equal(sent.length, 1);
+    assert.match((await r.wa.nudge('nobody')).error, /no live WhatsApp chat/);
+  } finally { r.done(); }
+});
