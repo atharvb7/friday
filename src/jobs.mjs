@@ -8,6 +8,28 @@ import { loop } from './loops.mjs';
 
 const MAX_ACTIVE = 200;
 
+// Scheduled (unattended) runs end with one fixed block, so the result can be filed instead of pinged: only
+// "needs_you" reaches the phone; a run with nothing new is a quiet record in the chat.
+export const RESULT_CONTRACT = `
+
+---
+This run is scheduled and nobody is watching it. End your reply with exactly one fenced block:
+\`\`\`result
+{"summary": "one or two plain sentences: what you checked and what you found", "findings": ["each new, concrete fact worth keeping (empty if none)"], "needs_you": ["each single thing only the user can do or decide (empty if none)"], "nothing_new": true or false}
+\`\`\`
+Do not ask the user questions outside needs_you.`;
+
+const list = (v) => (Array.isArray(v) ? v.map((x) => String(x ?? '').trim()).filter(Boolean).slice(0, 20).map((x) => x.slice(0, 500)) : []);
+// The last ```result block in the text, or null when it is missing or not the expected shape.
+export function parseJobResult(text) {
+  const blocks = [...String(text ?? '').matchAll(/```result\s*\n([\s\S]*?)```/g)];
+  if (!blocks.length) return null;
+  let v; try { v = JSON.parse(blocks.at(-1)[1]); } catch { return null; }
+  if (!v || typeof v !== 'object' || typeof v.summary !== 'string' || !v.summary.trim()) return null;
+  const findings = list(v.findings), needs = list(v.needs_you);
+  return { summary: v.summary.trim().slice(0, 1000), findings, needs_you: needs, nothing_new: v.nothing_new === true && !findings.length && !needs.length };
+}
+
 export class Jobs {
   #timer = null;
   constructor({ store, notifications, chat, bus, settings, now = () => new Date() }) {
@@ -19,6 +41,24 @@ export class Jobs {
       conversation_id TEXT, created_at TEXT NOT NULL, last_fired_at TEXT, fire_count INTEGER NOT NULL DEFAULT 0, max_fires INTEGER
     )`);
     this.db.exec("CREATE INDEX IF NOT EXISTS jobs_due_idx ON jobs (status, due_at)");
+  }
+
+  // A finished scheduled run: true when it was handled here (the generic "Done:" message is then skipped).
+  reportResult(task) {
+    let meta = null; try { meta = task.meta ? JSON.parse(task.meta) : null; } catch { /* not ours */ }
+    if (!meta?.scheduled) return false;
+    const r = parseJobResult(task.result);
+    if (!r) return false; // no block: the usual Done message with the full text
+    const lines = [`**🗓️ ${task.title}**: ${r.summary}`];
+    if (r.findings.length) lines.push('', ...r.findings.map((f) => `- ${f}`));
+    if (r.needs_you.length) lines.push('', '**Needs you:**', ...r.needs_you.map((n) => `- ${n}`));
+    const text = lines.join('\n');
+    if (task.conversation_id && this.chat.getConversation(task.conversation_id)) this.chat.addMessage(task.conversation_id, 'assistant', text);
+    if (r.needs_you.length) this.notifications.create({ level: 'warning', title: `Needs you: ${task.title}`, body: r.needs_you.map((n) => `- ${n}`).join('\n').slice(0, 1500), taskId: task.id, conversationId: task.conversation_id });
+    else if (r.findings.length) this.notifications.create({ level: 'info', title: `${task.title}: ${r.summary}`.slice(0, 200), body: r.findings.map((f) => `- ${f}`).join('\n').slice(0, 1500), taskId: task.id, conversationId: task.conversation_id });
+    // nothing_new: recorded in the chat (and the task), no notification and no push.
+    this.bus?.publish('job.result', { id: meta.scheduled, taskId: task.id, needs: r.needs_you.length, findings: r.findings.length });
+    return true;
   }
 
   get timezone() { return this.settings.get('timezone', null) ?? Intl.DateTimeFormat().resolvedOptions().timeZone; }
@@ -106,8 +146,8 @@ export class Jobs {
       if (job.conversation_id && this.chat.getConversation(job.conversation_id)) this.chat.addMessage(job.conversation_id, 'assistant', `⏰ Reminder: ${job.title}${late}${job.body ? `\n${job.body}` : ''}`);
       this.bus?.publish('reminder.fired', { id: job.id, title: job.title });
     } else {
-      const t = this.store.createTask({ title: job.title, instruction: job.body, conversationId: job.conversation_id });
-      this.notifications.create({ level: 'info', title: `Scheduled task started: ${job.title}`, body: '', taskId: t.id });
+      // No "started" ping: the result is what matters (and only if it needs the user or found something).
+      const t = this.store.createTask({ title: job.title, instruction: `${job.body}${RESULT_CONTRACT}`, conversationId: job.conversation_id, meta: { scheduled: job.id } });
       this.bus?.publish('job.task_queued', { id: job.id, taskId: t.id });
     }
   }

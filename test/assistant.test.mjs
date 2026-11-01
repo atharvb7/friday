@@ -92,6 +92,38 @@ test('jobs: recurring task queues an agent task each time; missed fires collapse
   } finally { r.done(); }
 });
 
+test('jobs: a scheduled run asks for a result block; only needs_you pings, nothing new stays quiet, no block falls back', () => {
+  const r = rig();
+  try {
+    const convo = r.chat.createConversation('c');
+    const j = r.jobs.create({ kind: 'task', title: 'Inbox sweep', body: 'check my inbox for invoices', recurrence: { type: 'daily', time: '09:00' }, conversationId: convo.id });
+    r.set('2026-10-12T04:00:00Z'); r.jobs.tick();
+    const t = r.store.listTasks()[0];
+    assert.match(t.instruction, /check my inbox for invoices[\s\S]*```result/);
+    assert.equal(JSON.parse(t.meta).scheduled, j.id);
+    const before = r.notifications.list().length;
+    assert.equal(before, 0, 'no "started" ping');
+
+    const finish = (result) => r.jobs.reportResult({ ...t, result });
+    // Nothing new: a quiet line in the chat, no notification.
+    assert.equal(finish('Checked.\n```result\n{"summary":"No new invoices.","findings":[],"needs_you":[],"nothing_new":true}\n```'), true);
+    assert.equal(r.notifications.list().length, 0);
+    assert.match(r.chat.listMessages(convo.id).at(-1).content, /Inbox sweep\*\*: No new invoices\./);
+    // Needs you: one warning with the asks.
+    finish('```result\n{"summary":"One invoice is overdue.","findings":["Acme invoice #12, ₹4,000, due 30 Oct"],"needs_you":["Pay or dispute Acme #12"],"nothing_new":false}\n```');
+    assert.equal(r.notifications.list()[0].level, 'warning');
+    assert.match(r.notifications.list()[0].title, /Needs you: Inbox sweep/);
+    assert.match(r.chat.listMessages(convo.id).at(-1).content, /- Acme invoice #12[\s\S]*\*\*Needs you:\*\*\n- Pay or dispute Acme #12/);
+    // Findings only: an info note, not a warning.
+    finish('```result\n{"summary":"Two receipts filed.","findings":["Uber ₹320","Swiggy ₹540"],"needs_you":[]}\n```');
+    assert.equal(r.notifications.list()[0].level, 'info');
+    // Missing or broken block, or a task that is not scheduled: not handled here (the usual Done message runs).
+    assert.equal(finish('All good, nothing to report.'), false);
+    assert.equal(finish('```result\n{not json}\n```'), false);
+    assert.equal(r.jobs.reportResult({ ...t, meta: null, result: '```result\n{"summary":"x"}\n```' }), false);
+  } finally { r.done(); }
+});
+
 test('policy: tier matrix, critical needs time-boxed high, expiry reverts, revoke, unknown fails closed', () => {
   const dir = mkdtempSync(join(tmpdir(), 'friday-pol-'));
   const st = new Store(join(dir, 'db.sqlite'));
