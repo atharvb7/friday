@@ -31,9 +31,12 @@ test('board: one list of what waits on the owner, decisions first, critical on t
     approvals.request({ category: 'money', risk: 'critical', tool: 'pay', summary: 'Pay ₹4,000 invoice', payload: { b: 2 } });
     recs.add({ title: 'Pitch freight forwarders in Pune', because: '3 of 4 had manual quote forms', expect: '2 replies from 15' });
     commitments.add({ title: 'Submit lab manual', due: '2020-01-01' });
+    for (let i = 0; i < 7; i++) commitments.add({ title: `old thing ${i}`, due: `2019-0${i + 1}-01` });
     const b = buildBoard(ctx, { now: Date.now() });
-    assert.equal(b.count, 6);
-    assert.deepEqual(b.cards.map((c) => c.kind), ['approval', 'approval', 'rec', 'question', 'todo', 'loop']);
+    assert.equal(b.count, 11);
+    assert.deepEqual(b.cards.map((c) => c.kind), ['approval', 'approval', 'rec', 'question', 'todo', 'todo', 'todo', 'todo', 'todo', 'todo_more', 'loop']);
+    assert.equal(b.cards.find((c) => c.kind === 'todo').title, 'Submit lab manual', 'most recently due first');
+    assert.equal(b.cards.find((c) => c.kind === 'todo_more').title, '3 more overdue to-dos');
     assert.equal(b.cards[0].title, 'Pay ₹4,000 invoice', 'critical first');
     assert.ok(!b.cards.some((c) => c.title.includes('jobs')), 'healthy loops are not cards');
 

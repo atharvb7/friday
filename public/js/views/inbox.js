@@ -41,7 +41,7 @@ export function render({ app, api, toast, refresh }) {
         if (c.kind === 'rec') btns.push(h('button', { class: 'btn small good', onclick: () => post(`/v1/recs/${c.id}/decide`, { status: 'accepted' }, 'Accepted.') }, 'Accept'), h('button', { class: 'btn small', onclick: () => post(`/v1/recs/${c.id}/decide`, { status: 'declined' }, 'Declined.') }, 'Decline'));
         if (c.kind === 'rec_review') for (const o of c.actions) btns.push(h('button', { class: 'btn small', onclick: () => { const note = prompt(`What happened? (${o})`); if (note) post(`/v1/recs/${c.id}/score`, { outcome: o, note }, 'Scored.'); } }, o));
         if (c.kind === 'question') btns.push(h('button', { class: 'btn small', onclick: () => { tab = 'questions'; load(); } }, 'Answer'));
-        if (c.kind === 'todo') btns.push(h('button', { class: 'btn small good', onclick: () => post(`/v1/todos/${c.id}`, { status: 'done' }, 'Done ✓') }, 'Done'));
+        if (c.kind === 'todo') btns.push(h('button', { class: 'btn small good', onclick: () => post(`/v1/todos/${c.id}`, { status: 'done' }, 'Done ✓') }, 'Done'), h('button', { class: 'btn small', onclick: () => post(`/v1/todos/${c.id}`, { status: 'dropped' }, 'Dropped') }, 'Drop'));
         body.append(h('div', { class: 'card stack' },
           h('div', { class: 'row wrap' }, h('span', { class: `chip ${c.class === 'decide' ? 'warn' : c.class === 'check' ? '' : 'accent'}` }, label[c.class] ?? c.class), h('strong', { class: 'grow' }, c.title), c.urgent ? h('span', { class: 'chip bad' }, 'critical') : null),
           c.detail ? h('div', { class: 'muted' }, c.detail) : null, btns.length ? h('div', { class: 'row wrap' }, ...btns) : null));
