@@ -94,7 +94,7 @@ services:
   # and CLOUDFLARE_TUNNEL_TOKEN in .env. Public hostname in Cloudflare: https://app.fridayy.site -> http://friday:4318 (fridayy.site itself is the landing page, hosted on Vercel)
   tunnel:
     <<: *hardening
-    image: cloudflare/cloudflared:2025.9.1
+    image: cloudflare/cloudflared:2026.10.7
     profiles: ["public"]
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
