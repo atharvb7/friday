@@ -16,7 +16,7 @@ export function shouldPush(policy, n) {
 
 export function buildBoard(ctx, { now = Date.now() } = {}) {
   const cards = [];
-  const add = (c) => cards.push({ actions: [], ...c });
+  const add = (c) => cards.push({ actions: [], ...c, seq: cards.length });
   const day = 86_400_000;
   try {
     for (const a of ctx.approvals.list('pending')) add({ kind: 'approval', class: 'decide', id: a.id, title: a.summary, detail: `${a.category} · ${a.risk}${a.repeat ? ' · repeat of one that already ran' : ''}`, created_at: a.created_at, actions: ['approve', 'deny'], urgent: a.risk === 'critical' });
@@ -38,9 +38,13 @@ export function buildBoard(ctx, { now = Date.now() } = {}) {
     for (const l of ctx.loops?.list() ?? []) if (['down', 'stuck'].includes(l.status)) add({ kind: 'loop', class: 'check', id: l.name, title: `Background job ${l.status === 'stuck' ? 'is stuck' : 'keeps failing'}: ${l.name}`, detail: l.last_error ?? `since ${l.failing_since ?? l.last_run}`, created_at: l.failing_since ?? l.last_run ?? new Date(now).toISOString() });
   } catch { /* optional */ }
   try {
-    for (const c of ctx.commitments?.list({ status: 'open', limit: 50 }) ?? []) if (c.due_at && Date.parse(c.due_at) < now) add({ kind: 'todo', class: 'do', id: c.id, title: c.title, detail: `was due ${c.due_at.slice(0, 10)}`, created_at: c.due_at, actions: ['done'] });
+    // The most recently due few; the rest as one line, so a backlog does not bury the decisions.
+    const overdue = (ctx.commitments?.list({ status: 'open', limit: 100 }) ?? []).filter((c) => c.due_at && Date.parse(c.due_at) < now).sort((x, y) => y.due_at.localeCompare(x.due_at));
+    for (const c of overdue.slice(0, 5)) add({ kind: 'todo', class: 'do', id: c.id, title: c.title, detail: `was due ${c.due_at.slice(0, 10)}`, created_at: c.due_at, actions: ['done', 'drop'] });
+    if (overdue.length > 5) add({ kind: 'todo_more', class: 'do', id: 'overdue', title: `${overdue.length - 5} more overdue to-dos`, detail: 'ask Friday to go through them with you, or mark them done or dropped', created_at: overdue[5].due_at });
   } catch { /* optional */ }
   const rank = { decide: 0, answer: 1, do: 2, check: 3 };
-  cards.sort((a, b) => (b.urgent === true) - (a.urgent === true) || rank[a.class] - rank[b.class] || String(a.created_at).localeCompare(String(b.created_at)));
-  return { count: cards.length, cards };
+  // To-dos keep the order chosen above (latest due first, then the "more" line); others oldest first.
+  cards.sort((a, b) => (b.urgent === true) - (a.urgent === true) || rank[a.class] - rank[b.class] || (a.class === 'do' ? a.seq - b.seq : String(a.created_at).localeCompare(String(b.created_at))));
+  return { count: cards.length, cards: cards.map(({ seq, ...c }) => c) };
 }
