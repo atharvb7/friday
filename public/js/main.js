@@ -172,8 +172,8 @@ function go(name) {
 async function refresh() {
   if (app.member) { paint(); return; } // members only have their chat
   try {
-    const [s, n, a] = await Promise.all([api('/v1/status'), api('/v1/notifications?unread=1'), api('/v1/approvals')]);
-    app.status = s; app.unread = n.unread; app.pendingApprovals = a.approvals.length;
+    const [s, n, b] = await Promise.all([api('/v1/status'), api('/v1/notifications?unread=1'), api('/v1/board').catch(() => api('/v1/approvals').then((a) => ({ count: a.approvals.length })))]);
+    app.status = s; app.unread = n.unread; app.pendingApprovals = b.count; // everything on the "Your turn" board, approvals included
   } catch (e) { if (e instanceof ApiError && e.status === 401) return signOut('Signed out.'); }
   paint();
 }

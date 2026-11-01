@@ -31,6 +31,7 @@ import { ToolRouter, toolsLoadTool } from './agent/toolsets.mjs';
 import { Commitments, commitmentTools } from './commitments.mjs';
 import { Goals, goalTools } from './goals.mjs';
 import { Recs, recTools } from './recs.mjs';
+import { pushPolicy, shouldPush } from './board.mjs';
 import { WaChats } from './wa-chat.mjs';
 import { Brain } from './agent/brain.mjs';
 import { Notifications } from './notifications.mjs';
@@ -163,7 +164,7 @@ export function createContext({ appRoot, env = process.env }) {
 
   const ctx = {
     appRoot, env, dataDir, token,
-    bus, auth: new Auth(store, token), ai, settings, usage, indexer, skills, mcpPath,
+    bus, auth: new Auth(store, token), ai, settings, usage, loops, indexer, skills, mcpPath,
     store, memory, effects, governor, worker, dshAdapter, nemotron, nemotronResilient,
     tools: new ToolRegistry({ workspace: workspaceDir }),
     jev: new JevClient({}),
@@ -179,7 +180,8 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.notifications = new Notifications(store, bus);
   loops.attach({ db: store.db, notify: (n) => ctx.notifications.create(n) }); // background loop health (src/loops.mjs)
   ctx.push = new WebPush({ store, settings, subject: env.FRIDAY_PUSH_SUBJECT ?? 'mailto:friday@localhost' });
-  bus.subscribe((e) => { if (e.type === 'notification.created') void ctx.push.send({ title: e.data.title, body: e.data.body, tag: e.data.id }); });
+  // Phone pushes follow the owner's push policy (src/board.mjs): 'needs_you' keeps completions in the inbox only.
+  bus.subscribe((e) => { if (e.type === 'notification.created' && shouldPush(pushPolicy(settings), e.data)) void ctx.push.send({ title: e.data.title, body: e.data.body, tag: e.data.id }); });
   // Task finished -> tell the user where they asked (chat) and in the inbox.
   const prevOnEvent = store.onEvent;
   store.onEvent = (e) => {

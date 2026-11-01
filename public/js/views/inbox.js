@@ -1,7 +1,7 @@
 import { h, md, clear, timeAgo } from '../util.js';
 
 export function render({ app, api, toast, refresh }) {
-  let tab = 'approvals';
+  let tab = 'turn';
   const body = h('div', { class: 'list' });
   const tabs = h('div', { class: 'tabs' });
   const el = h('div', { class: 'page' }, h('div', { class: 'page-head' }, h('h2', {}, 'Inbox'), h('button', { class: 'btn small', onclick: markAll }, 'Mark all read')), tabs, body);
@@ -25,13 +25,28 @@ export function render({ app, api, toast, refresh }) {
   async function markAll() { await api('/v1/notifications/read-all', { method: 'POST' }); load(); refresh(); }
 
   async function load() {
-    const [a, n, qs] = await Promise.all([api('/v1/approvals'), api('/v1/notifications'), api('/v1/questions')]);
+    const [a, n, qs, board] = await Promise.all([api('/v1/approvals'), api('/v1/notifications'), api('/v1/questions'), api('/v1/board').catch(() => ({ count: 0, cards: [] }))]);
     clear(tabs);
-    for (const [k, label, count] of [['approvals', 'Approvals', a.approvals.length], ['questions', 'Questions', qs.questions.length], ['notifications', 'Notifications', n.unread]]) {
+    for (const [k, label, count] of [['turn', 'Your turn', board.count], ['approvals', 'Approvals', a.approvals.length], ['questions', 'Questions', qs.questions.length], ['notifications', 'Notifications', n.unread]]) {
       tabs.append(h('button', { class: `tab${tab === k ? ' active' : ''}`, onclick: () => { tab = k; load(); } }, label, count ? ` (${count})` : ''));
     }
     clear(body);
-    if (tab === 'approvals') {
+    if (tab === 'turn') {
+      if (!board.cards.length) body.append(h('div', { class: 'empty' }, h('div', { class: 'big' }, '🌤️'), 'Nothing needs you right now.'));
+      const post = async (path, b, done) => { try { await api(path, { method: 'POST', body: b }); toast(done); load(); refresh(); } catch (e) { toast(e.message); } };
+      const label = { decide: 'Decide', answer: 'Answer', do: 'To do', check: 'Check' };
+      for (const c of board.cards) {
+        const btns = [];
+        if (c.kind === 'approval') { const ap = a.approvals.find((x) => x.id === c.id); if (ap) btns.push(h('button', { class: 'btn small', onclick: () => { tab = 'approvals'; load(); } }, 'Review & decide')); }
+        if (c.kind === 'rec') btns.push(h('button', { class: 'btn small good', onclick: () => post(`/v1/recs/${c.id}/decide`, { status: 'accepted' }, 'Accepted.') }, 'Accept'), h('button', { class: 'btn small', onclick: () => post(`/v1/recs/${c.id}/decide`, { status: 'declined' }, 'Declined.') }, 'Decline'));
+        if (c.kind === 'rec_review') for (const o of c.actions) btns.push(h('button', { class: 'btn small', onclick: () => { const note = prompt(`What happened? (${o})`); if (note) post(`/v1/recs/${c.id}/score`, { outcome: o, note }, 'Scored.'); } }, o));
+        if (c.kind === 'question') btns.push(h('button', { class: 'btn small', onclick: () => { tab = 'questions'; load(); } }, 'Answer'));
+        if (c.kind === 'todo') btns.push(h('button', { class: 'btn small good', onclick: () => post(`/v1/todos/${c.id}`, { status: 'done' }, 'Done ✓') }, 'Done'));
+        body.append(h('div', { class: 'card stack' },
+          h('div', { class: 'row wrap' }, h('span', { class: `chip ${c.class === 'decide' ? 'warn' : c.class === 'check' ? '' : 'accent'}` }, label[c.class] ?? c.class), h('strong', { class: 'grow' }, c.title), c.urgent ? h('span', { class: 'chip bad' }, 'critical') : null),
+          c.detail ? h('div', { class: 'muted' }, c.detail) : null, btns.length ? h('div', { class: 'row wrap' }, ...btns) : null));
+      }
+    } else if (tab === 'approvals') {
       if (!a.approvals.length) body.append(h('div', { class: 'empty' }, h('div', { class: 'big' }, '✅'), 'Nothing waiting on you.'));
       for (const x of a.approvals) {
         const note = h('input', { type: 'text', maxlength: '500', placeholder: 'Note for Friday (optional, e.g. why you deny)', 'aria-label': 'Note for Friday' });

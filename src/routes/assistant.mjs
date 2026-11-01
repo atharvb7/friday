@@ -1,5 +1,6 @@
 // Reminders/jobs, autonomy, approvals, proactive settings, timezone.
 import { isValidTimezone } from '../time.mjs';
+import { buildBoard, pushPolicy, PUSH_POLICIES } from '../board.mjs';
 
 export function assistantRoutes(router, ctx) {
   const { jobs, policy, approvals, proactive, settings, bus } = ctx;
@@ -12,6 +13,16 @@ export function assistantRoutes(router, ctx) {
     const b = await body();
     try { return [200, { goal: ctx.goals.update(params.id, { title: b.title, digest: b.digest, status: b.status }) }]; } catch (e) { return bad(e, e.message === 'not_found' ? 404 : 400); }
   });
+
+  // "Your turn" board and the phone push policy (src/board.mjs).
+  router.get('/v1/board', () => [200, buildBoard(ctx)]);
+  router.post('/v1/todos/:id([a-f0-9-]{36})', async ({ params, body }) => {
+    const b = await body(); if (!['open', 'done', 'dropped'].includes(b.status)) return [400, { error: 'status: open | done | dropped' }];
+    if (!ctx.commitments.get(params.id)) return [404, { error: 'not_found' }];
+    ctx.commitments.setStatus(params.id, b.status); return [200, { todo: ctx.commitments.get(params.id) }];
+  });
+  router.get('/v1/settings/push-policy', () => [200, { policy: pushPolicy(settings), options: PUSH_POLICIES }]);
+  router.post('/v1/settings/push-policy', async ({ body }) => { const b = await body(); if (!PUSH_POLICIES.includes(b.policy)) return [400, { error: `policy: ${PUSH_POLICIES.join(' | ')}` }]; settings.set('push_policy', b.policy); return [200, { policy: b.policy }]; });
 
   // Recommendations ledger (src/recs.mjs): list + track record, his decision, the outcome.
   router.get('/v1/recs', ({ url }) => [200, { recs: ctx.recs.list({ status: url.searchParams.get('status'), limit: 50 }), due: ctx.recs.dueForReview({ max: 10 }), stats: ctx.recs.stats() }]);
