@@ -191,3 +191,21 @@ test('restricted mode (fullAccess=false) keeps only the old browser-era desktop 
   assert.ok(d.open_app && d.file_find && d.windows_list);
   assert.equal(d.shell_run, undefined); assert.equal(d.key_press, undefined); assert.equal(d.screen_capture, undefined);
 });
+
+test('desktop: never clicks or types into Friday\'s own app, or types Friday\'s address; other pages and subdomains are fine', async () => {
+  const friday = [{ app: 'google-chrome', index: 1, windows: [{ ref: '1.0', name: '(2) Friday - Google Chrome', active: true }] }];
+  for (const act of [(d) => d.mouse_click({ x: 10, y: 10 }), (d) => d.key_press({ keys: 'Return' }), (d) => d.type_text({ text: 'yes' }), (d) => d.ui_act({ ref: '1.0.4', action: 'click' })]) {
+    const { d, st, log } = rig(); st.windows = friday;
+    await assert.rejects(act(d), (e) => e.code === 'friday_own_ui');
+    assert.equal(log.length, 0, 'nothing reached the input device');
+    assert.equal(st.acts.length, 0);
+  }
+  const { d, st } = rig();
+  await assert.rejects(d.type_text({ text: 'https://fridayy.site/#inbox' }), (e) => e.code === 'friday_own_ui');
+  await assert.rejects(d.type_text({ text: 'go to app.fridayy.site' }), (e) => e.code === 'friday_own_ui');
+  await assert.rejects(d.open_target({ target: 'https://www.fridayy.site/' }), /friday_own_ui/);
+  assert.equal((await d.type_text({ text: 'see atharv.fridayy.site for my work' })).method, 'keys');
+  st.windows = [{ app: 'google-chrome', index: 1, windows: [{ ref: '1.0', name: 'Friday night plans - Google Docs - Google Chrome', active: true }] }];
+  await new Promise((r) => setTimeout(r, 2100)); // past the cached answer
+  await d.mouse_click({ x: 10, y: 10 });
+});

@@ -11,6 +11,7 @@ import { reelEdit, reelFolder } from './reel-edit.mjs';
 import { zipFolder } from './zip.mjs';
 import { BrowserController } from './browser.mjs';
 import { atspiAvailable, defaultAllowedDirs, idleMs, InputDevice, makeDesktop } from './desktop.mjs';
+import { setSelfHosts } from './selfguard.mjs';
 import { WaBridge, bridgeConfig, ensureExtension } from './wa-bridge.mjs';
 
 const CONF_DIR = process.env.FRIDAY_NODE_HOME ?? join(homedir(), '.friday-node');
@@ -49,6 +50,7 @@ const browser = chromePath ? new BrowserController({ chromium, profileDir: join(
 // Set "fullAccess": false in config.json to go back to browser + allowed folders only.
 const fullAccess = conf.fullAccess !== false;
 const input = new InputDevice();
+setSelfHosts([new URL(server).hostname, ...(Array.isArray(conf.selfHosts) ? conf.selfHosts : [])]); // node/selfguard.mjs
 const desktop = makeDesktop({ allowedDirs, fullAccess, input });
 
 // WhatsApp in his own Chrome through the "Friday for WhatsApp Web" extension (live chats: no screenshots, no mouse).
