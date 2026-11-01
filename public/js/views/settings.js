@@ -191,6 +191,13 @@ export function render({ app, api, toast, go }) {
     const chip = (s) => ({ ok: 'good', degraded: 'warn', down: 'bad', off: '' })[s] ?? '';
     section(`System health — ${health.overall}`, h('div', { class: 'list' }, health.checks.map((c) => h('div', { class: 'row' }, h('span', { class: `chip ${chip(c.status)}` }, c.status), h('strong', {}, c.name.replace(/_/g, ' ')), h('span', { class: 'muted grow' }, c.detail)))));
     section('Models (last 24h)', models.stats24h.length ? h('div', { class: 'list' }, models.stats24h.map((s) => h('div', { class: 'row wrap' }, h('span', { class: 'chip accent' }, s.role), h('span', { class: 'mono grow' }, s.model.split('/').pop()), h('span', { class: 'muted' }, `${s.ok_calls}/${s.calls} ok · ${s.avg_ms}ms · ${(s.prompt_tokens + s.completion_tokens).toLocaleString()} tok`)))) : h('p', { class: 'muted' }, 'No model calls yet.'));
+    if (owner) try { // Phone pushes: everything, or only what needs him (src/board.mjs)
+      const { policy } = await api('/v1/settings/push-policy');
+      const pick = async (p) => { try { await api('/v1/settings/push-policy', { method: 'POST', body: { policy: p } }); toast('Saved.'); build(); } catch (e) { toast(e.message); } };
+      section('Phone notifications',
+        h('div', { class: 'row wrap' }, ...[['all', 'Everything'], ['needs_you', 'Only what needs me']].map(([k, l]) => h('button', { class: `btn small${policy === k ? ' primary' : ''}`, onclick: () => pick(k) }, l))),
+        h('p', { class: 'faint small' }, policy === 'needs_you' ? 'Reminders, alerts, approvals and questions still reach your phone; "Done:" messages wait in the inbox and the chat.' : 'Every notification reaches your phone, including "Done:" messages.'));
+    } catch { /* older server */ }
     if (owner) try { // Goals: where each stands (Friday keeps the line current as you talk)
       const { goals } = await api('/v1/goals');
       const inp = h('input', { type: 'text', maxlength: '200', placeholder: 'New goal, e.g. 3 FDE clients by December', 'aria-label': 'New goal' });
