@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Friday Pet",
+  "version": "0.1.0",
+  "identifier": "ai.friday.pet",
+  "build": { "frontendDist": "http://127.0.0.1:4317/pet.html?compact=1", "devUrl": "http://127.0.0.1:4317/pet.html?compact=1" },
+  "app": {
+    "windows": [{ "title": "Friday", "width": 280, "height": 360, "transparent": true, "decorations": false, "alwaysOnTop": true, "resizable": false, "skipTaskbar": true, "x": 40, "y": 400 }],
+    "security": { "csp": null }
+  },
+  "bundle": { "active": false }
+}

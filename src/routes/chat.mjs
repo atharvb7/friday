@@ -1,0 +1,160 @@
+import { classifyLocal } from '../intent.mjs';
+import { answerLocal } from '../chat-reply.mjs';
+
+// Fallback mode (no live brain): only exact memory/file stores stay deterministic.
+const DETERMINISTIC_LOCAL = new Set(['memory', 'file_search', 'file_read']);
+const QUEUE_AS_TASK = new Set(['coding', 'research', 'browser', 'desktop', 'voice']);
+
+export function chatRoutes(router, ctx) {
+  const { chat, store, memory, tools, jev, audit, env, bus } = ctx;
+
+  const uid = (principal) => principal?.userId ?? null; // members see only their own chats; the owner only theirs
+  router.get('/v1/chats', ({ principal }) => [200, { conversations: chat.listConversations(uid(principal)) }]);
+
+  router.get('/v1/chat/:id([a-f0-9-]+)', ({ params, principal }) => {
+    if (!chat.owns(params.id, uid(principal))) return [404, { error: 'conversation_not_found' }];
+    try { return [200, { conversation: chat.getConversation(params.id), messages: chat.listMessages(params.id) }]; }
+    catch (error) { return [404, { error: error.message }]; }
+  });
+
+  router.delete('/v1/chat/:id([a-f0-9-]+)', ({ params, principal }) => {
+    if (!chat.owns(params.id, uid(principal))) return [404, { deleted: false }];
+    const ok = chat.deleteConversation(params.id);
+    if (ok) bus.publish('chat.deleted', { conversationId: params.id });
+    return [ok ? 200 : 404, { deleted: ok }];
+  });
+  router.add('PATCH', '/v1/chat/:id([a-f0-9-]+)', async ({ params, body, principal }) => {
+    if (!chat.owns(params.id, uid(principal))) return [404, { renamed: false }];
+    const b = await body();
+    try { const ok = chat.renameConversation(params.id, b.title); return [ok ? 200 : 404, { renamed: ok }]; } catch (e) { return [400, { error: e.message }]; }
+  });
+
+  // Shared turn logic. `hooks` carries streaming callbacks when the caller wants them.
+  async function turn(args) {
+    if (args.speaker === 'guest' || args.speaker === 'member') return turnInner(args);
+    ctx.companion.chatStart();
+    try { return await turnInner(args); } finally { ctx.companion.chatEnd(); }
+  }
+  // note: context that came WITH his words but is not his words (e.g. what a screenshot shows). It is stored with the
+  // message so the brain sees it, but guards, tool loading and auto-memory look only at what he actually said.
+  async function turnInner({ convo, text, hooks = {}, signal = null, speaker = 'owner', channel = 'chat', attachments = [], member = null, note = '' }) {
+    if (attachments.length) ctx.files?.claim(attachments, convo.id);
+    const asked = chat.addMessage(convo.id, 'user', note ? `${text}\n\n${note}` : text, { attachments });
+    let replyFiles = [];
+    const brain = ctx.chatBrain();
+    // JEV is off unless enabled; the local classifier is the deterministic default.
+    const route = env.FRIDAY_JEV_ENABLED === '1' ? await jev.routeInstruction(text) : classifyLocal(text);
+    let reply = '';
+    let model = null;
+    let toolsUsed = [];
+    try {
+      if ((speaker === 'guest' || speaker === 'member') && brain.name !== 'friday-brain') { // never fall back to the owner's local memory/files
+        reply = 'I’m offline right now — try me again in a bit.';
+      } else if (brain.name === 'friday-brain') {
+        const out = await brain.adapter.respond({ conversationId: convo.id, text, signal, speaker, channel, memberName: member?.name ?? null, userId: member?.userId ?? null, ...hooks });
+        reply = out.reply; model = out.model; toolsUsed = out.toolsUsed; replyFiles = out.attachments ?? [];
+      } else if (route.riskScore >= 3) {
+        reply = (await answerLocal({ ...route, needsApproval: true }, text, { memory, tools })).text;
+      } else if (DETERMINISTIC_LOCAL.has(route.intent)) {
+        reply = (await answerLocal(route, text, { memory, tools })).text;
+      } else if (!brain.adapter && QUEUE_AS_TASK.has(route.intent)) {
+        const task = store.createTask({ title: text.slice(0, 200), instruction: text });
+        reply = `Got it — I’ve queued that as task “${task.title}” and I’ll work through it as soon as my agent runtime is connected. Anything read-only (files, memory) I can still do right now — just ask.`;
+      } else if (brain.adapter) {
+        const out = await brain.adapter.run({ taskId: convo.id, instruction: text, messages: chat.historyForProvider(convo.id, 20) });
+        if (out.status === 'completed') { reply = out.output; model = out.model ?? null; }
+        else reply = `My brain didn’t answer (${out.error}). I can still do local things right now — memory, files, tasks — or try again in a bit.`;
+      } else {
+        reply = (await answerLocal(route, text, { memory, tools })).text;
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (speaker === 'owner' && brain.name === 'friday-brain' && DETERMINISTIC_LOCAL.has(route.intent) && route.riskScore < 3) {
+        reply = `(My cloud brain is unreachable, so this is the offline answer.)\n${(await answerLocal(route, text, { memory, tools })).text}`;
+      } else {
+        reply = `My brain providers aren’t answering right now (${String(error.message).slice(0, 160)}). Your message is saved. Memory, files and tasks still work — try again in a moment.`;
+      }
+    }
+    reply = (reply || (replyFiles.length ? '' : '…')).slice(0, 20000);
+    const saved = chat.addMessage(convo.id, 'assistant', reply, { attachments: replyFiles });
+    if (speaker === 'owner' && brain.name === 'friday-brain') void ctx.autoMemory.observe({ userText: text, assistantText: reply }).catch(() => {}); // the brain decides what is worth remembering
+    try { audit.append(convo.id, 'chat.reply', { intent: route.intent, brain: brain.name, source: route.source, tools: toolsUsed.map((t) => t.name) }); } catch {}
+    bus.publish('chat.reply', { conversationId: convo.id, brain: brain.name });
+    const files = (saved.attachments ?? []).map((id) => ctx.files?.public(ctx.files.get(id))).filter(Boolean);
+    return { conversation: chat.getConversation(convo.id), route, reply, brain: brain.name, model, toolsUsed, files, messageIds: [asked.id, saved.id] };
+  }
+
+  function openConversation(b, principal) {
+    const guest = principal?.scopes.includes('guest') && !principal.scopes.includes('chat');
+    if (guest) { // guests never see or touch the owner's conversations
+      if (typeof b.message !== 'string' || !b.message.trim() || b.message.length > 2000) return { error: [400, { error: 'invalid_message' }] };
+      const title = `guest:${principal.name ?? principal.id}`;
+      const existing = chat.listConversations().find((c) => c.title === title);
+      return { convo: existing ?? chat.createConversation(title), text: b.message.trim(), speaker: 'guest' };
+    }
+    // Files the user attached (uploaded first via POST /v1/files); only known file ids are accepted.
+    const me = uid(principal);
+    const attachments = Array.isArray(b.attachments) ? b.attachments.filter((id) => { const f = ctx.files?.get(id); return f && (!f.conversation_id || chat.owns(f.conversation_id, me)); }).slice(0, 10) : [];
+    const speaker = me ? 'member' : 'owner';
+    if (typeof b.message !== 'string' || b.message.length > 20000 || (!b.message.trim() && !attachments.length)) return { error: [400, { error: 'invalid_message' }] };
+    const text = b.message.trim() || (attachments.length ? '(sent you a file)' : '');
+    if (b.conversationId !== undefined && b.conversationId !== null) {
+      const convo = chat.owns(b.conversationId, me) ? chat.getConversation(b.conversationId) : null;
+      return convo ? { convo, text, attachments, speaker, member: principal, channel: b.channel === 'voice' ? 'voice' : 'chat' } : { error: [404, { error: 'conversation_not_found' }] };
+    }
+    return { convo: chat.createConversation(text.slice(0, 60), me), text, attachments, speaker, member: principal, channel: b.channel === 'voice' ? 'voice' : 'chat' };
+  }
+
+  // One-shot text turn for non-browser clients (voice devices): returns just the reply.
+  ctx.quickTurn = async (text, conversationId = null, channel = 'chat', note = '') => {
+    const convo = (conversationId && chat.getConversation(conversationId)) || chat.createConversation(text.slice(0, 60));
+    return turn({ convo, text, channel, note });
+  };
+
+  router.post('/v1/chat', async ({ body, principal }) => {
+    const b = await body();
+    const opened = openConversation(b, principal);
+    if (opened.error) return opened.error;
+    if (opened.speaker === 'member' && !ctx.users.takeMessage(principal.userId)) return [429, { error: 'daily_limit', message: 'You’ve reached today’s message limit. Come back tomorrow!' }];
+    if (b.stream !== true) return [200, await turn(opened)];
+
+    // Streaming: SSE frames {meta|delta|thinking|tool|done|error}.
+    return {
+      raw: async (res) => {
+        const ctrl = new AbortController();
+        res.on('close', () => { if (!res.writableEnded) ctrl.abort(new Error('client_closed')); });
+        res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff' });
+        const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        send('meta', { conversationId: opened.convo.id });
+        let thinking = false; // one frame per burst of reasoning, not one per token
+        try {
+          const out = await turn({
+            ...opened, signal: ctrl.signal,
+            hooks: { onDelta: (t) => { thinking = false; send('delta', { text: t }); }, onThinking: () => { if (!thinking) { thinking = true; send('thinking', {}); } }, onTool: (t) => { thinking = false; send('tool', t); } },
+          });
+          send('done', { reply: out.reply, brain: out.brain, model: out.model, toolsUsed: out.toolsUsed, conversationId: out.conversation.id, files: out.files, messageIds: out.messageIds });
+        } catch (error) { send('error', { error: ctrl.signal.aborted ? 'cancelled' : 'internal_error' }); }
+        res.end();
+      },
+    };
+  });
+
+  // Personality (style only) + the user's name.
+  router.get('/v1/personality', () => [200, { personality: ctx.brain.personality(), userName: ctx.settings.get('user_name', null), mood: ctx.mood.current({ moodiness: ctx.brain.personality().moodiness }) }]);
+  router.get('/v1/settings/automemory', () => [200, { enabled: ctx.autoMemory.enabled() }]);
+  router.post('/v1/settings/automemory', async ({ body }) => { const b = await body(); ctx.settings.set('auto_memory', b.enabled !== false); return [200, { enabled: ctx.autoMemory.enabled() }]; });
+  router.post('/v1/mood', async ({ body }) => { const b = await body(); try { return [200, { mood: ctx.mood.force(b.mood, Number(b.minutes) || 30) }]; } catch (e) { return [400, { error: e.message }]; } });
+  router.post('/v1/personality', async ({ body }) => {
+    const b = await body();
+    try {
+      const { normalizePersonality } = await import('../personality.mjs');
+      const next = normalizePersonality({ ...ctx.brain.personality(), ...(b.personality ?? {}) });
+      ctx.settings.set('personality', next);
+      if (typeof b.userName === 'string') ctx.settings.set('user_name', b.userName.trim().slice(0, 60) || null);
+      bus.publish('personality.changed', {});
+      return [200, { personality: next, userName: ctx.settings.get('user_name', null) }];
+    } catch (error) { return [400, { error: error.message }]; }
+  });
+
+  router.get('/v1/models', () => [200, { router: ctx.ai.status(), stats24h: ctx.ai.stats(), embeddings: { embedded: memory.countEmbedded(), model: ctx.indexer.model, lastError: ctx.indexer.lastError } }]);
+}

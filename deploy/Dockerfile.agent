@@ -1,0 +1,16 @@
+# Agent runner: DeepSeek Harness inside its own container. The container is the sandbox: it has no Friday data,
+# no host mounts, no docker socket, and reaches the internet only through the filtering egress proxy.
+FROM node:22-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates python3 python3-pip python3-venv build-essential jq tini \
+ && rm -rf /var/lib/apt/lists/*
+RUN npm install -g @deepseek-ai/dsh@0.2.0-rc.2 && npm cache clean --force
+RUN useradd -m -u 10001 agent && mkdir -p /agent/home /agent/work /agent/state && chown -R agent:agent /agent
+WORKDIR /srv/runner
+COPY src/dsh.mjs src/safefs.mjs src/sandbox.mjs src/research-memory.mjs ./src/
+COPY agent-runner ./agent-runner
+ENV DSH_BIN=/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js AGENT_HOME=/agent/home AGENT_WORK=/agent/work AGENT_STATE=/agent/state
+USER agent
+EXPOSE 4320
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD node -e "fetch('http://127.0.0.1:4320/health',{headers:{Authorization:'Bearer '+process.env.FRIDAY_AGENT_SECRET}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["tini","--"]
+CMD ["node","agent-runner/server.mjs"]

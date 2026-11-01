@@ -1,0 +1,25 @@
+<!-- public/voice-snippet.html — copy-paste VoiceBar snippet for public/index.html.
+  Paste the <div class="voice-bar"> block inside the task-compose section,
+  right after the #task-instruction textarea (before #create-task), then add
+  the <script type="module"> import line (once per page, e.g. next to /app.js).
+  No changes to app.js required. Ids must stay exact: voice.js expects them.
+-->
+<div class="voice-bar">
+  <button id="voice-mic" class="button quiet" type="button" aria-pressed="false"
+    title="Hold to talk (interim shows in Instructions; release sends final)">🎤 Speak</button>
+  <button id="voice-speaker" class="button quiet" type="button" aria-pressed="false"
+    title="Speech output on (click to mute)">🔊 Speak</button>
+  <span id="voice-status" class="card-note" role="status" aria-live="polite">Voice ready.</span>
+</div>
+<script type="module">
+  import { initVoiceBar, speak } from './voice.js';
+  initVoiceBar({
+    onText: (finalText) => {
+      // Final transcript is already appended to #task-instruction by voice.js.
+      // Optional: read it back, submit, or announce. Example:
+      // speak(`Heard: ${finalText}`);
+      void speak;
+      void finalText;
+    },
+  });
+</script>
