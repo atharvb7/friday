@@ -30,11 +30,13 @@ lives on a server you own and reaches you wherever you are** — the web, your p
 laptop, a desktop pet, a desk companion.
 
 ```text
-You  ▸ remind me to call the dentist tomorrow at 10, and find me three freight forwarders in Pune with bad websites
+You    ▸ remind me to call the dentist tomorrow at 10,
+         and find three freight forwarders in Pune with weak websites
 Friday ▸ Reminder set for 10:00 tomorrow.
-         Research is running in the background — I'll drop the shortlist here when it's done.
+         Research is running in the background; I'll post the list here.
          ⋯ 4 min later ⋯
-         Done: 3 companies, each with the page that shows the problem. Want me to draft outreach? (needs your OK)
+         Done: 3 companies, each with the page that shows the problem.
+         Want me to draft outreach? (needs your OK)
 ```
 
 What makes it different:
@@ -150,36 +152,37 @@ What makes it different:
 
 ```mermaid
 flowchart LR
-  subgraph clients["Where you talk to her"]
-    web["🌐 Web dashboard"]
-    pwa["📱 Phone PWA"]
-    ptt["🎙️ Push-to-talk"]
-    pet["🐾 Desk / pet"]
+  subgraph clients [Where you talk to her]
+    web[Web dashboard]
+    pwa[Phone PWA]
+    ptt[Push-to-talk]
+    pet[Desk companion / pet]
   end
 
-  subgraph server["Your server · Docker compose"]
+  subgraph server [Your server - Docker compose]
     direction TB
-    core["<b>friday</b> core<br/>API · brain · memory · scheduler · voice"]
-    db[("SQLite<br/>one data dir")]
-    agent["<b>agent</b><br/>sandboxed DSH runner<br/>no inbound, no data"]
-    proxy["<b>proxy</b><br/>egress filter"]
-    deployer["<b>deployer</b><br/>Friday's own apps"]
+    core[friday core<br/>API, brain, memory,<br/>scheduler, voice]
+    db[(SQLite<br/>one data dir)]
+    agent[agent<br/>sandboxed DSH runner<br/>no inbound, no data]
+    proxy[proxy<br/>egress filter]
+    deployer[deployer<br/>Friday's own apps]
     core --- db
-    core -- "jobs" --> agent
-    agent -- "only way out" --> proxy
-    core -. "optional" .-> deployer
+    core -->|jobs| agent
+    agent -->|only way out| proxy
+    core -.->|optional| deployer
   end
 
-  subgraph laptop["Your laptop"]
-    node["🖥️ <b>laptop node</b><br/>real Chrome · desktop · voice"]
+  subgraph laptop [Your laptop]
+    node[laptop node<br/>real Chrome, desktop, voice]
   end
 
-  models["☁️ Model providers<br/>NVIDIA · Gemini · any OpenAI-compatible"]
+  models[Model providers<br/>NVIDIA, Gemini,<br/>any OpenAI-compatible]
+  internet((Internet))
 
-  clients -- "HTTPS · tailnet" --> core
-  node -- "dials out (SSE + HTTP)" --> core
-  core -- "router · circuit breakers" --> models
-  proxy --> internet(("🌍 Internet"))
+  clients -->|HTTPS over tailnet| core
+  node -->|dials out: SSE + HTTP| core
+  core -->|router + circuit breakers| models
+  proxy --> internet
 ```
 
 **Design rules the code sticks to**
