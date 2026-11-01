@@ -15,6 +15,7 @@ import { partsInTz, isValidTimezone } from './time.mjs';
 import { jurisdictionOf, RULES } from './jurisdiction.mjs';
 import { MAX_TOUCHES } from './pipeline.mjs';
 import { loop } from './loops.mjs';
+import { isAway } from './away.mjs';
 
 // day_searches: most searches a day may use; the real allowance is also the month's remaining budget spread over the
 // remaining run days, so one busy day never spends the month. fde_pitch: the owner allows an FDE introduction to
@@ -684,6 +685,7 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
   // ---- schedule: once per chosen weekday at run_at (the user's time zone) ----
   async tick() {
     const c = this.config(); if (!c.enabled || this.#run) return null;
+    if (isAway(this.settings, this.now())) return null; // away days: no runs; the next run day after he is back runs as usual
     const tz = this.settings.get('timezone', null) ?? 'Asia/Kolkata';
     const p = partsInTz(new Date(this.now()), tz); const day = `${p.y}-${p.m}-${p.d}`;
     const [h, m] = c.run_at.split(':').map(Number);

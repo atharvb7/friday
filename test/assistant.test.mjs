@@ -13,6 +13,9 @@ import { Notifications } from '../src/notifications.mjs';
 import { Jobs } from '../src/jobs.mjs';
 import { Policy, DEFAULT_LEVELS } from '../src/policy.mjs';
 import { Approvals } from '../src/approvals.mjs';
+import { awayTools, isAway } from '../src/away.mjs';
+import { Commitments, commitmentTools } from '../src/commitments.mjs';
+import { Pipeline } from '../src/pipeline.mjs';
 import { Proactive } from '../src/proactive.mjs';
 import { Brain } from '../src/agent/brain.mjs';
 import { ContextBuilder } from '../src/agent/context-builder.mjs';
@@ -122,6 +125,40 @@ test('jobs: a scheduled run asks for a result block; only needs_you pings, nothi
     assert.equal(finish('All good, nothing to report.'), false);
     assert.equal(finish('```result\n{not json}\n```'), false);
     assert.equal(r.jobs.reportResult({ ...t, meta: null, result: '```result\n{"summary":"x"}\n```' }), false);
+  } finally { r.done(); }
+});
+
+test('away days: briefing, nudges and outreach sending are held until the window ends; reminders still fire; waiting-on gets one check-in', async () => {
+  const r = rig();
+  try {
+    r.set('2026-10-12T04:00:00Z'); // 09:30 IST, past the briefing time
+    const tools = Object.fromEntries(awayTools(r.settings, { now: () => r.now().getTime(), timezone: () => 'Asia/Kolkata', parseWhen }).map((t) => [t.name, t]));
+    assert.match(tools.away_set.run({ until: '2026-10-11' }).error, /future/);
+    assert.equal(tools.away_set.run({ until: '2026-10-14', note: 'Goa trip' }).away.until, '2026-10-14T18:29:00.000Z', 'a plain date = to the end of that day, local');
+    assert.equal(isAway(r.settings, r.now().getTime()), true);
+
+    const commitments = new Commitments({ store: r.store, settings: r.settings, now: r.now });
+    commitments.add({ title: 'Submit lab manual', due: '2026-10-12T11:00' });
+    const ct = Object.fromEntries(commitmentTools(commitments).map((t) => [t.name, t]));
+    ct.todo_add.run({ title: "Rohan's reply about the quote", due: '2026-10-12T12:00', waiting_on: 'Rohan' });
+    const ai = new ModelRouter({ chains: { chat: [] } });
+    const p = new Proactive({ store: r.store, notifications: r.notifications, jobs: r.jobs, ai, memory: r.memory, settings: r.settings, bus: r.bus, agentReady: () => true, dataDir: r.dir, now: r.now, commitments });
+    const reminder = r.jobs.create({ title: 'Call mom', when: '2026-10-12T09:45' });
+    r.set('2026-10-12T04:20:00Z'); r.jobs.tick(); await p.tick();
+    const titles = () => r.notifications.list().map((n) => n.title);
+    assert.ok(titles().some((t) => /Call mom/.test(t)), 'his own reminders still fire');
+    assert.ok(!titles().some((t) => /briefing|Due |get back to you/.test(t)), 'no briefing or to-do nudges while away');
+    const pipeline = new Pipeline({ store: r.store, settings: r.settings, now: () => r.now().getTime() });
+    assert.equal(pipeline.paused().reason, 'away');
+
+    tools.away_clear.run({});
+    assert.equal(pipeline.paused(), null);
+    r.set('2026-10-12T05:30:00Z'); // 11:00 IST: within 3h of both deadlines
+    await p.tick();
+    assert.ok(titles().some((t) => t === 'Due at Mon 16:30: Submit lab manual' || /^Due .*Submit lab manual/.test(t)));
+    assert.ok(titles().some((t) => t === "Did Rohan get back to you? Rohan's reply about the quote"), 'waiting-on is a check-in, not a deadline warning');
+    assert.match(commitments.summaryLines().join('\n'), /Rohan's reply about the quote \(waiting on Rohan, /);
+    void reminder;
   } finally { r.done(); }
 });
 

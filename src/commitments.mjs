@@ -21,6 +21,8 @@ export class Commitments {
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL, done_at TEXT, nudged_at TEXT
     )`);
     this.db.exec('CREATE INDEX IF NOT EXISTS commitments_open_idx ON commitments (status, due_at)');
+    // waiting_on: someone else owes the next step ("waiting for Rohan's reply by Friday"); checked once on its date.
+    if (!this.db.prepare('PRAGMA table_info(commitments)').all().some((c) => c.name === 'waiting_on')) this.db.exec('ALTER TABLE commitments ADD COLUMN waiting_on TEXT');
   }
 
   get timezone() { return this.settings.get('timezone', null) ?? Intl.DateTimeFormat().resolvedOptions().timeZone; }
@@ -34,7 +36,7 @@ export class Commitments {
   }
 
   // Adds a commitment unless an open one already says the same thing (then its date/priority are refreshed).
-  add({ title, due = null, priority = null, source = 'chat', conversationId = null, notes = null }) {
+  add({ title, due = null, priority = null, source = 'chat', conversationId = null, notes = null, waitingOn = null }) {
     const t = String(title ?? '').trim();
     if (!t || t.length > 200) throw new TypeError('title required (<=200 chars)');
     if (!['low', 'normal', 'high'].includes(priority)) priority = null; // unset: a refresh keeps the existing one
@@ -48,8 +50,8 @@ export class Commitments {
     }
     if (this.db.prepare("SELECT COUNT(*) n FROM commitments WHERE status='open'").get().n >= MAX_OPEN) throw new TypeError('too many open commitments');
     const id = randomUUID();
-    this.db.prepare('INSERT INTO commitments (id, title, due_at, all_day, priority, source, conversation_id, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-      .run(id, t, d.at, d.allDay, priority ?? 'normal', source, conversationId, notes ? String(notes).slice(0, 1000) : null, iso, iso);
+    this.db.prepare('INSERT INTO commitments (id, title, due_at, all_day, priority, source, conversation_id, notes, created_at, updated_at, waiting_on) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, t, d.at, d.allDay, priority ?? 'normal', source, conversationId, notes ? String(notes).slice(0, 1000) : null, iso, iso, String(waitingOn ?? '').trim().slice(0, 80) || null);
     this.bus?.publish('commitment.added', { id, title: t });
     return { ...this.get(id), created: true };
   }
@@ -102,7 +104,7 @@ export class Commitments {
     const open = this.list({ status: 'open' });
     const soon = open.filter((c) => c.due_at && Date.parse(c.due_at) <= now + hours * HOUR);
     const undated = open.filter((c) => !c.due_at).slice(0, 3);
-    return [...soon, ...undated].slice(0, max).map((c) => `- [${c.id.slice(0, 8)}] ${c.title} (${fmt(c)}${c.priority === 'high' ? ', high priority' : ''})`);
+    return [...soon, ...undated].slice(0, max).map((c) => `- [${c.id.slice(0, 8)}] ${c.title} (${c.waiting_on ? `waiting on ${c.waiting_on}, ` : ''}${fmt(c)}${c.priority === 'high' ? ', high priority' : ''})`);
   }
 
   // One nudge per commitment when its deadline is within `withinHours` (timed ones) or it is due today (all-day).
@@ -115,13 +117,13 @@ export class Commitments {
 
 // Model-facing tools (core group: small, and needed whenever he mentions work he has to do).
 export function commitmentTools(commitments) {
-  const view = (c) => ({ id: c.id.slice(0, 8), title: c.title, due: c.due_at, all_day: Boolean(c.all_day), priority: c.priority, status: c.status });
+  const view = (c) => ({ id: c.id.slice(0, 8), title: c.title, due: c.due_at, all_day: Boolean(c.all_day), priority: c.priority, status: c.status, ...(c.waiting_on ? { waiting_on: c.waiting_on } : {}) });
   return [
     {
       name: 'todo_add', risk: 'safe',
-      description: "Track something HE has to get done (assignment, submission, prototype, call, payment) so it shows in briefings until done. due: local date 2026-10-30 (end of that day) or datetime 2026-10-30T17:00; omit if no deadline. Add each item separately. Not for Friday's own background jobs (task_create) or timed pings (reminder_create).",
-      parameters: { type: 'object', properties: { title: { type: 'string' }, due: { type: 'string' }, priority: { type: 'string', enum: ['low', 'normal', 'high'] }, notes: { type: 'string' } }, required: ['title'], additionalProperties: false },
-      run: (a, { conversationId } = {}) => view(commitments.add({ title: a.title, due: a.due ?? null, priority: a.priority, notes: a.notes, conversationId, source: 'chat:model' })),
+      description: "Track something HE has to get done (assignment, submission, prototype, call, payment) so it shows in briefings until done. due: local date 2026-10-30 (end of that day) or datetime 2026-10-30T17:00; omit if no deadline. Add each item separately. waiting_on: when someone else owes the next step (\"waiting for Rohan's reply by Friday\": title 'Rohan's reply about the quote', waiting_on 'Rohan', due Friday) and he gets one check on that date. Not for Friday's own background jobs (task_create) or timed pings (reminder_create).",
+      parameters: { type: 'object', properties: { title: { type: 'string' }, due: { type: 'string' }, priority: { type: 'string', enum: ['low', 'normal', 'high'] }, notes: { type: 'string' }, waiting_on: { type: 'string' } }, required: ['title'], additionalProperties: false },
+      run: (a, { conversationId } = {}) => view(commitments.add({ title: a.title, due: a.due ?? null, priority: a.priority, notes: a.notes, waitingOn: a.waiting_on, conversationId, source: 'chat:model' })),
     },
     {
       name: 'todo_list', risk: 'safe',

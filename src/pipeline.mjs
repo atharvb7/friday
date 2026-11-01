@@ -13,6 +13,7 @@ import { renderEmail, DEFAULT_BRAND } from './email-template.mjs';
 import { partsInTz, zonedToUtc, isValidTimezone, formatLocal } from './time.mjs';
 import { jurisdictionOf, RULES } from './jurisdiction.mjs';
 import { loop } from './loops.mjs';
+import { awayWindow } from './away.mjs';
 
 export const STAGES = ['new', 'researched', 'contacted', 'replied', 'meeting', 'proposal', 'won', 'lost', 'nurture', 'dnc'];
 const OPEN = new Set(['new', 'researched', 'contacted', 'nurture']);
@@ -572,7 +573,9 @@ export class Pipeline {
   paused() {
     const p = this.settings.get('outreach_paused', null);
     if (p?.until && Date.parse(p.until) <= this.now()) { this.settings.set('outreach_paused', null); return null; } // timed pause is over
-    return p;
+    if (p) return p;
+    const away = awayWindow(this.settings, this.now()); // away days hold sending too, and resume by themselves
+    return away ? { reason: 'away', until: away.until, auto: true } : null;
   }
   pause(reason, { hours = null } = {}) {
     const cur = this.paused();
@@ -587,6 +590,7 @@ export class Pipeline {
 
   #nudgeDue() {
     const day = this.#iso().slice(0, 10);
+    if (awayWindow(this.settings, this.now())) return false; // away days: no follow-up nudges
     if (this.settings.get('pipeline_nudge_day', null) === day) return false;
     const due = this.find({ due: true, limit: 100 });
     if (!due.count) return false;

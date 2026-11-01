@@ -6,6 +6,7 @@ import { statfsSync } from 'node:fs';
 import { inQuietHours, partsInTz, systemTimezone } from './time.mjs';
 import { buildSystemPrompt, normalizePersonality } from './personality.mjs';
 import { loop } from './loops.mjs';
+import { isAway } from './away.mjs';
 
 export const DEFAULT_PROACTIVE = Object.freeze({
   enabled: true, maxPerDay: 6, quietHours: { start: '22:00', end: '08:00' },
@@ -81,7 +82,8 @@ export class Proactive {
       if (chat.length && chat.every((e) => !e.configured || e.circuitOpen)) {
         sent += this.#send('brain-down', 6 * HOUR, { level: 'error', title: 'My cloud brain is unreachable', body: "Chat falls back to offline mode until a model answers again." }) ? 1 : 0;
       }
-      try { // things that are blocked on the user: one gentle nudge each, after 2 hours
+      const away = isAway(this.settings, this.now().getTime()); // away days: no nudges or briefing (src/away.mjs)
+      if (!away) try { // things that are blocked on the user: one gentle nudge each, after 2 hours
         for (const a of this.db.prepare("SELECT id, summary, created_at FROM approvals WHERE status='pending'").all()) {
           if (now - Date.parse(a.created_at) > 2 * HOUR) sent += this.#send(`nudge-approval:${a.id}`, 365 * 24 * HOUR, { level: 'warning', title: 'Still waiting for your OK', body: `${String(a.summary).slice(0, 200)}\nApprove or deny it in the Inbox and I'll carry on.` }) ? 1 : 0;
         }
@@ -89,13 +91,16 @@ export class Proactive {
           if (now - Date.parse(q.created_at) > 2 * HOUR) sent += this.#send(`nudge-question:${q.id}`, 365 * 24 * HOUR, { level: 'warning', title: 'A task is paused on your answer', body: String(q.question).slice(0, 200) }) ? 1 : 0;
         }
       } catch { /* tables may not exist in minimal setups */ }
-      try { // a deadline coming up: one heads-up per to-do (timed: 3h before; all-day: the morning of)
+      if (!away) try { // a deadline coming up: one heads-up per to-do (timed: 3h before; all-day: the morning of)
         for (const c of this.commitments?.dueForNudge({ withinHours: 3 }) ?? []) {
           const when = new Date(c.due_at).toLocaleString('en-GB', { timeZone: tz, weekday: 'short', hour: '2-digit', minute: '2-digit' });
-          if (this.#send(`todo-due:${c.id}`, 365 * 24 * HOUR, { level: 'warning', title: `Due ${c.all_day ? 'today' : `at ${when}`}: ${c.title}`, body: 'Still open on your list. Tell me when it\'s done, or if the deadline moved.' })) { sent += 1; this.commitments.markNudged(c.id); }
+          const note = c.waiting_on // someone else owed this: one check-in, not a deadline warning
+            ? { level: 'info', title: `Did ${c.waiting_on} get back to you? ${c.title}`, body: 'You were waiting on this by today. Tell me if it came, or I can chase it for you.' }
+            : { level: 'warning', title: `Due ${c.all_day ? 'today' : `at ${when}`}: ${c.title}`, body: 'Still open on your list. Tell me when it\'s done, or if the deadline moved.' };
+          if (this.#send(`todo-due:${c.id}`, 365 * 24 * HOUR, note)) { sent += 1; this.commitments.markNudged(c.id); }
         }
       } catch { /* optional */ }
-      sent += (await this.maybeBriefing(cfg, tz)) ? 1 : 0;
+      if (!away) sent += (await this.maybeBriefing(cfg, tz)) ? 1 : 0;
     }
     return { sent, quiet };
   }

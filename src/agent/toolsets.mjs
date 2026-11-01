@@ -32,6 +32,8 @@ export const GROUPS = {
     match: /\b(code|coding|program\w*|script|repo\w*|github|git|bug|debug|deploy\w*|host\w*|server|app|apps|website|landing page|api|frontend|backend|build (me|a|an)|hermes|team|agents?|docker|logs?)\b/i },
   automation: { about: 'recurring/scheduled agent jobs, watches (keep an eye on something and react), standing rules', tools: ['schedule_task', 'watch_create', 'watch_list', 'watch_cancel', 'rule_create'],
     match: /\b(every (day|morning|evening|night|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hour)|daily|weekly|monthly|recurring|schedule\w*|watch\w*|keep an eye|monitor\w*|track\w*|alert me|notify me|let me know when|whenever|rules?|automat\w*)\b/i },
+  away: { about: 'away days: hold briefings, nudges, prospecting and outreach while he is away; resume when back', tools: ['away_set', 'away_clear'],
+    match: /\b(away|vacation|holiday|trip|travel\w*|out of (office|town)|day off|days off|on leave|exams?|back (on|by|from)|i'?m back|offline (for|until))\b/i },
   recs: { about: 'your suggestions ledger: file a suggestion you make with its evidence and expected result, record his decision, score it later, see your track record', tools: ['rec_add', 'rec_decide', 'rec_score', 'rec_list'],
     match: /\b(recommend\w*|suggest\w*|advi[cs]\w*|should i|what do you think|which (one|is better)|best (way|option|choice)|worth it|did (it|that|this) work|track record|your (advice|suggestions?|idea))\b/i },
   goals: { about: 'his longer-term goals: add one, record progress with a fresh "where it stands", review or close them', tools: ['goal_add', 'goal_note', 'goal_update', 'goal_list'],
