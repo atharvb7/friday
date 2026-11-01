@@ -144,6 +144,16 @@ const handler = async (req, res) => {
     const gate = memberGate(u); if (gate) return send(res, 403, { error: 'not_approved', message: gate });
     return startSession(b, memberPrincipal(u));
   }
+  // Landing-page waitlist: public, no auth. JSON only, so a cross-site form cannot post here without a CORS preflight
+  // (which this server never answers). The answer is the same whether or not the email was already on the list.
+  if (req.method === 'POST' && url.pathname === '/v1/waitlist') {
+    if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) return send(res, 415, { error: 'json_required' });
+    if (limited(`waitlist:${clientIp}`, 5)) return send(res, 429, { error: 'rate_limited', message: 'Too many tries. Give it a minute.' }, { 'Retry-After': '60' });
+    let b = {}; try { b = await bodyReader(req)({ max: 2048 }); } catch { return send(res, 400, { error: 'bad_request' }); }
+    if (String(b.website ?? '') !== '') return send(res, 200, { ok: true }); // honeypot field: bots fill it, people never see it
+    try { ctx.waitlist.join({ email: b.email, source: b.source }); return send(res, 200, { ok: true }); }
+    catch (e) { return e instanceof RangeError ? send(res, 503, { error: 'busy', message: 'The waitlist is busy right now. Try again later.' }, { 'Retry-After': '3600' }) : send(res, 400, { error: 'invalid_email', message: 'That email doesn\u2019t look quite right.' }); }
+  }
   // Ask for an account (email + password). The owner gets an approval card; nothing works until it is approved.
   if (isPublic && req.method === 'POST' && url.pathname === '/v1/auth/signup') {
     if (limited(`signup:${clientIp}`, 3)) return send(res, 429, { error: 'rate_limited', message: 'Too many sign-up attempts — try again later.' });
