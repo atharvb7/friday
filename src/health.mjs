@@ -40,9 +40,9 @@ export function healthReport(ctx) {
   add('devices', 'ok', `${ctx.auth.listDevices().filter((d) => !d.revoked_at).length} active`);
   add('event_bus', 'ok', `${ctx.bus.subscriberCount} subscribers`);
   {
-    const bad = loops.list().filter((l) => !['ok', 'waiting'].includes(l.status));
+    const bad = loops.list().filter((l) => !['ok', 'waiting', 'off'].includes(l.status));
     const worst = bad.some((l) => ['down', 'stuck'].includes(l.status)) ? 'down' : bad.length ? 'degraded' : 'ok';
-    add('background_loops', worst, bad.length ? bad.map((l) => `${l.name} ${l.status}${l.failing_since ? ` since ${l.failing_since}` : ''}${l.last_error ? `: ${l.last_error.slice(0, 80)}` : ''}`).join('; ') : `${loops.list().length} running normally`);
+    add('background_loops', worst, bad.length ? bad.map((l) => `${l.name} ${l.status}${l.failing_since ? ` since ${l.failing_since}` : ''}${l.last_error ? `: ${l.last_error.slice(0, 80)}` : ''}`).join('; ') : `${loops.list().filter((l) => l.status !== 'off').length} running normally`);
   }
   add('emergency_stop', ctx.state.emergencyStopped ? 'down' : 'ok', ctx.state.emergencyStopped ? 'LATCHED' : 'clear');
 

@@ -19,7 +19,7 @@ class LoopRegistry {
     for (const r of this.db.prepare('SELECT * FROM loop_state').all()) {
       const cur = this.#state.get(r.name);
       // A loop that already ran in this process keeps its live numbers; the saved row only fills the history.
-      if (!cur || !cur.runs) this.#state.set(r.name, { ...this.#blank(r.name, r.every_ms ?? cur?.everyMs), ...this.#fromRow(r), running: cur?.running ?? new Map() });
+      if (!cur || !cur.runs) this.#state.set(r.name, { ...this.#blank(r.name, r.every_ms ?? cur?.everyMs), ...this.#fromRow(r), armedAt: cur?.armedAt ?? null, running: cur?.running ?? new Map() });
     }
     return this;
   }
@@ -27,6 +27,7 @@ class LoopRegistry {
   // Wraps fn for setInterval. Errors are recorded (and never thrown back into the timer).
   loop(name, fn, { everyMs = null } = {}) {
     const s = this.#get(name); if (everyMs) s.everyMs = everyMs;
+    s.armedAt = this.now(); // its timer exists in this process (a saved row alone says nothing about now)
     let seq = 0;
     return () => {
       const id = ++seq; const started = this.now();
@@ -58,14 +59,17 @@ class LoopRegistry {
     this.#save(s);
   }
 
-  // Per loop: ok | failing | down (FAIL_ALERT+ in a row) | stale (no run for 3 intervals) | stuck (a run going 10 intervals).
+  // Per loop: ok | failing | down (FAIL_ALERT+ in a row) | stale (no run for 3 intervals since its timer started)
+  // | stuck (a run going 10 intervals) | off (no timer in this process, e.g. WhatsApp chat with no session).
   list() {
     const now = this.now();
     return [...this.#state.values()].map((s) => {
       const oldest = Math.min(...s.running.values());
       const stuck = s.everyMs && Number.isFinite(oldest) && now - oldest > 10 * Math.max(s.everyMs, 60_000);
-      const stale = s.everyMs && s.lastRun && now - Date.parse(s.lastRun) > 3 * s.everyMs + 60_000 && !s.running.size;
-      const status = stuck ? 'stuck' : s.streak >= FAIL_ALERT ? 'down' : s.streak > 0 ? 'failing' : stale ? 'stale' : s.runs ? 'ok' : 'waiting';
+      const since = Math.max(s.armedAt ?? 0, s.lastRun ? Date.parse(s.lastRun) : 0);
+      const stale = s.armedAt && s.everyMs && now - since > 3 * s.everyMs + 60_000 && !s.running.size;
+      const ranHere = s.armedAt && s.lastRun && Date.parse(s.lastRun) >= s.armedAt;
+      const status = stuck ? 'stuck' : s.streak >= FAIL_ALERT ? 'down' : s.streak > 0 ? 'failing' : !s.armedAt ? 'off' : stale ? 'stale' : ranHere ? 'ok' : 'waiting';
       return { name: s.name, status, every_ms: s.everyMs, last_run: s.lastRun, last_ok: s.lastOk, last_error: s.lastError, failing_since: s.failingSince,
         streak: s.streak, runs: s.runs, failures: s.failures, running: s.running.size, last_ms: s.lastMs ?? null };
     }).sort((a, b) => a.name.localeCompare(b.name));
@@ -73,7 +77,7 @@ class LoopRegistry {
 
   reset() { this.#state.clear(); this.db = null; this.notify = null; this.now = () => Date.now(); }
 
-  #blank(name, everyMs = null) { return { name, everyMs, lastRun: null, lastOk: null, lastError: null, failingSince: null, streak: 0, runs: 0, failures: 0, alerted: false, savedAt: 0, running: new Map() }; }
+  #blank(name, everyMs = null) { return { name, everyMs, armedAt: null, lastRun: null, lastOk: null, lastError: null, failingSince: null, streak: 0, runs: 0, failures: 0, alerted: false, savedAt: 0, running: new Map() }; }
   #fromRow(r) { return { lastRun: r.last_run, lastOk: r.last_ok, lastError: r.last_error, failingSince: r.failing_since, streak: r.streak, runs: r.runs, failures: r.failures, alerted: !!r.alerted }; }
   #get(name) { let s = this.#state.get(name); if (!s) { s = this.#blank(name); this.#state.set(name, s); } return s; }
 
