@@ -4,6 +4,7 @@
 // produced by snapshot(), so clicks are DOM-based, not guessed pixel coordinates.
 import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { hostIsPrivate, isPrivateAddress } from './netpolicy.mjs';
+import { isSelfHost, SELF_ERROR } from './selfguard.mjs';
 import net from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 
@@ -71,6 +72,7 @@ export function checkUrl(u) {
   let url; try { url = new URL(u); } catch { throw new Error('invalid_url'); }
   if (!['https:', 'http:'].includes(url.protocol)) throw new Error('only_http_urls');
   if (isPrivateHost(url.hostname)) throw new Error('private_address_blocked');
+  if (isSelfHost(url.hostname)) throw new Error(SELF_ERROR);
   return url.toString();
 }
 
@@ -145,7 +147,7 @@ export class BrowserController {
       if (!this.allowPrivate) await this.ctx.route('**/*', async (route) => {
         const u = new URL(route.request().url());
         if (['data:', 'blob:', 'about:'].includes(u.protocol)) return route.continue();
-        if (!['http:', 'https:'].includes(u.protocol) || await hostIsPrivate(u.hostname)) return route.abort('blockedbyclient');
+        if (!['http:', 'https:'].includes(u.protocol) || isSelfHost(u.hostname) || await hostIsPrivate(u.hostname)) return route.abort('blockedbyclient');
         return route.continue();
       });
     }

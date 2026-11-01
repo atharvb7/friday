@@ -11,6 +11,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkUrl, checkFile } from './browser.mjs';
+import { isSelfWindow, mentionsSelf, SELF_ERROR } from './selfguard.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOME = homedir();
@@ -266,6 +267,18 @@ export function makeDesktop({ allowedDirs = defaultAllowedDirs(), fullAccess = t
   const guardInput = async () => {
     if (await locked()) throw err('screen_locked', 'screen_locked: the laptop is locked; Friday cannot type or click until it is unlocked');
     if (await userActive()) throw err('user_active', 'user_active: the user is using the keyboard/mouse right now; retry in a few seconds');
+    await guardSelf();
+  };
+  // Never click/type into Friday's own app (where approvals are decided). If the window list is unavailable the
+  // other guards still apply; this one is defence in depth.
+  // The window list costs a helper process, so one answer is reused for 2 s (typing checks every 40 chars).
+  let selfSeen = { at: 0, self: false };
+  const guardSelf = async () => {
+    if (Date.now() - selfSeen.at > 2000) {
+      const act = await Promise.race([activeWindows().catch(() => []), sleep(3000).then(() => [])]);
+      selfSeen = { at: Date.now(), self: act.some((w) => isSelfWindow(w.name)) };
+    }
+    if (selfSeen.self) throw err('friday_own_ui', SELF_ERROR);
   };
   const toFrac = async (x, y) => {
     const g = await geometry();
@@ -282,8 +295,8 @@ export function makeDesktop({ allowedDirs = defaultAllowedDirs(), fullAccess = t
   const d = {
     async windows_list() { return windows(); },
     async ui_tree({ ref }) { return a11y('tree', { ref: String(ref) }); },
-    async ui_act({ ref, action }) { return a11y('act', { ref: String(ref), action }); },
-    async ui_set_text({ ref, text }) { return a11y('set_text', { ref: String(ref), text: String(text) }); },
+    async ui_act({ ref, action }) { await guardSelf(); return a11y('act', { ref: String(ref), action }); },
+    async ui_set_text({ ref, text }) { await guardSelf(); if (mentionsSelf(text)) throw err('friday_own_ui', SELF_ERROR); return a11y('set_text', { ref: String(ref), text: String(text) }); },
     async file_find({ query, dir }) {
       const q = String(query ?? '').toLowerCase().trim();
       if (q.length < 2 || q.length > 100) throw new Error('query must be 2-100 chars');
@@ -337,6 +350,7 @@ export function makeDesktop({ allowedDirs = defaultAllowedDirs(), fullAccess = t
     // ASCII is typed key by key (US layout); anything else (emoji, accents, Hindi) is pasted through the clipboard.
     async type_text({ text, method = 'auto', pasteKeys = 'ctrl+v' }) {
       const s = String(text ?? ''); if (!s || s.length > 20_000) throw new Error('text must be 1-20000 chars');
+      if (mentionsSelf(s)) throw err('friday_own_ui', SELF_ERROR); // e.g. typing Friday's address into the address bar
       await guardInput();
       if (method === 'paste' || (method === 'auto' && (!ASCII.test(s) || s.length > 400))) {
         let old = null; try { old = (await clip('clip_get', {}, 5000)).text; } catch { /* nothing to restore */ }

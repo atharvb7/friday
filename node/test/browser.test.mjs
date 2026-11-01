@@ -210,3 +210,13 @@ test('real Chrome: launched like a normal browser (sandbox on, no automation fla
     assert.equal(await page.evaluate(() => navigator.webdriver), false);
   } finally { await b.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('browser: Friday\'s own site (public names and the paired server) is refused; other subdomains are not', async () => {
+  const { setSelfHosts } = await import('../selfguard.mjs');
+  setSelfHosts(['friday.example.net']);
+  try {
+    for (const u of ['https://fridayy.site/', 'https://app.fridayy.site/#inbox', 'https://FRIDAY.example.net:4317/v1/approvals']) assert.throws(() => checkUrl(u), /friday_own_ui/, u);
+    assert.equal(checkUrl('https://atharv.fridayy.site/'), 'https://atharv.fridayy.site/');
+    assert.equal(checkUrl('https://example.com/'), 'https://example.com/');
+  } finally { setSelfHosts([]); }
+});
