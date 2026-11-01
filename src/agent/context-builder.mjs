@@ -4,7 +4,7 @@ const MEM_BUDGET = 2400;
 const TASK_BUDGET = 900;
 
 export class ContextBuilder {
-  constructor({ memory, store, indexer = null, researchMemory = null, questions = null, profile = null, dmChats = null, commitments = null, goals = null, recs = null }) { Object.assign(this, { memory, store, indexer, researchMemory, questions, profile, dmChats, commitments, goals, recs }); }
+  constructor({ memory, store, indexer = null, researchMemory = null, questions = null, profile = null, dmChats = null, commitments = null, goals = null, recs = null, away = null }) { Object.assign(this, { memory, store, indexer, researchMemory, questions, profile, dmChats, commitments, goals, recs, away }); }
 
   async build({ text, project = null }) {
     const queryVector = this.indexer ? await this.indexer.queryVector(text) : null;
@@ -44,6 +44,7 @@ export class ContextBuilder {
       const todos = this.commitments?.summaryLines({ hours: 72, max: 6 }) ?? [];
       if (todos.length) parts.push(`His open to-dos (todo_update when he finishes or changes one):\n${todos.join('\n')}`);
     } catch { /* optional */ }
+    try { const a = this.away?.(); if (a) parts.push(`He is AWAY until ${a.until}${a.note ? ` (${a.note})` : ''}: briefings, nudges, prospecting and outreach sending are held. If he says he is back, call away_clear.`); } catch { /* optional */ }
     try { // his goals, as one "where it stands" line each (goal_note with a new digest when something moves one)
       const gl = this.goals?.summaryLines() ?? [];
       if (gl.length) parts.push(`His goals and where each stands (goal_note when something he says moves one):\n${gl.join('\n')}`);
