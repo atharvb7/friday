@@ -51,7 +51,15 @@ export class ModelRouter {
     }
   }
 
+  // capCheck(entry) -> reason string to skip a model whose daily quota is used up (src/usage.mjs), or null.
+  capCheck = null;
+
   register(provider) { this.#providers.set(provider.name, provider); return this; }
+
+  // Calls made outside the router (e.g. the JEV client) land in the same log, so usage and spend see them.
+  recordExternal({ role = 'external', provider, model, ms = null, usage = null, ok = true, error = null }) {
+    this.#record(role, { provider, model }, ms, usage ? { prompt_tokens: usage.prompt_tokens ?? usage.input_tokens ?? null, completion_tokens: usage.completion_tokens ?? usage.output_tokens ?? null } : null, ok, error);
+  }
   get hasProvider() { return [...this.#providers.values()].some((p) => p.configured); }
 
   #key(e) { return `${e.provider}:${e.model}`; }
@@ -74,7 +82,7 @@ export class ModelRouter {
     if (!this.db) return;
     try {
       this.db.prepare('INSERT INTO model_calls (ts, role, provider, model, latency_ms, prompt_tokens, completion_tokens, ok, error) VALUES (?,?,?,?,?,?,?,?,?)')
-        .run(new Date().toISOString(), role, entry.provider, entry.model, ms, usage?.prompt_tokens ?? null, usage?.completion_tokens ?? null, ok ? 1 : 0, error ? String(error).slice(0, 300) : null);
+        .run(new Date(this.now()).toISOString(), role, entry.provider, entry.model, ms, usage?.prompt_tokens ?? null, usage?.completion_tokens ?? null, ok ? 1 : 0, error ? String(error).slice(0, 300) : null);
     } catch { /* observability must never break a call */ }
   }
 
@@ -94,6 +102,7 @@ export class ModelRouter {
         const key = this.#key(entry);
         if (rejectedBy.has(entry.provider)) continue;
         if (pass === 0 && this.#open(key)) { attempts.push({ key, error: 'circuit_open' }); continue; }
+        { let cap = null; try { cap = this.capCheck?.(entry) ?? null; } catch { /* a broken meter never blocks a call */ } if (cap) { attempts.push({ key, error: cap }); continue; } }
         const t0 = this.now();
         try {
           const out = await this.#providers.get(entry.provider).complete({ thinking: this.thinkingRoles.has(role), ...(ROLE_STALL_MS[role] ? { stallMs: ROLE_STALL_MS[role] } : {}), ...opts, model: entry.model });

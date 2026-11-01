@@ -25,6 +25,11 @@ export function systemRoutes(router, ctx) {
 
   router.get('/v1/health', () => [200, healthReport(ctx)]);
   router.get('/v1/loops', () => [200, { loops: loops.list() }]);
+  router.get('/v1/usage', () => [200, { usage: ctx.usage.summary() }]);
+  router.post('/v1/usage/limits', async ({ body }) => {
+    const b = await body();
+    try { return [200, { limits: ctx.usage.setLimit(b.key, b.rpd ?? null) }]; } catch (e) { return [400, { error: e.message }]; }
+  });
 
   router.post('/v1/emergency-stop', () => {
     state.emergencyStopped = true;
