@@ -31,6 +31,16 @@ ssh atharvb7@100.120.200.64 'cd ~/friday && docker compose restart friday'   # o
 Voice engine (done once, models live in `~/friday-data/voice`): `docker compose exec -T friday node bin/friday.mjs voice setup`.
 Keys live in `~/friday/.env` (mode 600); after editing run `docker compose up -d`.
 
+## Rolling back data after a bad deploy
+Each time new code starts on the existing database, Friday first copies it to `~/friday-data/snapshots/pre-deploy-<time>-<version>.db` (the newest 3 are kept; restarts of the same code never replace the copy). To go back to the data as it was right before a deploy:
+```bash
+cd ~/friday && docker compose stop friday
+cd ~/friday-data && mv friday.sqlite friday.sqlite.bad && rm -f friday.sqlite-wal friday.sqlite-shm
+cp snapshots/pre-deploy-<time>-<version>.db friday.sqlite && chmod 600 friday.sqlite
+cd ~/friday && git checkout <previous commit> && docker compose up -d --build   # or fix forward
+```
+Writes made after that deploy are lost (they stay in `friday.sqlite.bad`). For anything older, use the nightly backups.
+
 ## Laptop node
 `node/` on the laptop is paired to the server URL and runs as a user service (`systemctl --user status friday-node`). Log into WhatsApp etc. once in its Chrome profile.
 
