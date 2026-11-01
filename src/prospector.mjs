@@ -14,6 +14,7 @@ import { safeFetch } from './web.mjs';
 import { partsInTz, isValidTimezone } from './time.mjs';
 import { jurisdictionOf, RULES } from './jurisdiction.mjs';
 import { MAX_TOUCHES } from './pipeline.mjs';
+import { loop } from './loops.mjs';
 
 // day_searches: most searches a day may use; the real allowance is also the month's remaining budget spread over the
 // remaining run days, so one busy day never spends the month. fde_pitch: the owner allows an FDE introduction to
@@ -697,6 +698,6 @@ Output ONLY JSON: {"what_they_do": "...", "size_hint": "...", "customer_entry": 
     if (this.todayDone()) return null; // a manual run already reached today's target
     return this.runOnce();
   }
-  start(intervalMs = 5 * 60_000) { if (!this.#timer) { this.#timer = setInterval(() => void this.tick().catch(() => {}), intervalMs); this.#timer.unref?.(); } }
+  start(intervalMs = 5 * 60_000) { if (!this.#timer) { this.#timer = setInterval(loop('prospector', () => this.tick(), { everyMs: intervalMs }), intervalMs); this.#timer.unref?.(); } }
   stop() { clearInterval(this.#timer); this.#timer = null; }
 }

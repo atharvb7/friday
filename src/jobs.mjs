@@ -4,6 +4,7 @@
 // Missed fires (server was off) collapse into ONE late firing, never a flood.
 import { randomUUID } from 'node:crypto';
 import { nextOccurrence, parseWhen, validateRecurrence } from './time.mjs';
+import { loop } from './loops.mjs';
 
 const MAX_ACTIVE = 200;
 
@@ -74,7 +75,7 @@ export class Jobs {
 
   start(intervalMs = 10_000) {
     if (this.#timer) return;
-    this.#timer = setInterval(() => { try { this.tick(); } catch { /* never kill the process */ } }, intervalMs);
+    this.#timer = setInterval(loop('jobs', () => this.tick(), { everyMs: intervalMs }), intervalMs); // never throws into the timer
     this.#timer.unref();
     try { this.tick(); } catch {}
   }

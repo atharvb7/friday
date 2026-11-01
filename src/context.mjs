@@ -68,6 +68,7 @@ import { Users } from './users.mjs';
 import { Deployer } from './deployer.mjs';
 import { ReelPipeline } from './reel.mjs';
 import { Questions } from './questions.mjs';
+import { loop, loops } from './loops.mjs';
 
 function findDshBin() {
   const r = spawnSync('sh', ['-c', 'command -v dsh'], { encoding: 'utf8' });
@@ -171,6 +172,7 @@ export function createContext({ appRoot, env = process.env }) {
   // verified, else honest local fallback.
   ctx.chat.onMessage = ({ conversationId, role, id }) => bus.publish('chat.message', { conversationId, role, id });
   ctx.notifications = new Notifications(store, bus);
+  loops.attach({ db: store.db, notify: (n) => ctx.notifications.create(n) }); // background loop health (src/loops.mjs)
   ctx.push = new WebPush({ store, settings, subject: env.FRIDAY_PUSH_SUBJECT ?? 'mailto:friday@localhost' });
   bus.subscribe((e) => { if (e.type === 'notification.created') void ctx.push.send({ title: e.data.title, body: e.data.body, tag: e.data.id }); });
   // Task finished -> tell the user where they asked (chat) and in the inbox.
@@ -323,7 +325,7 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.prospector.start();
     ctx.dmChats.start_timer();
     if (ctx.waChats.list().length) ctx.waChats.start_timer(); // a session that was running before a restart
-    pruneTimer = setInterval(() => { try { prune(store.db); } catch { /* retention is best effort */ } }, 6 * 3600_000); pruneTimer.unref();
+    pruneTimer = setInterval(loop('retention_prune', () => prune(store.db), { everyMs: 6 * 3600_000 }), 6 * 3600_000); pruneTimer.unref();
     try { prune(store.db); } catch {}
     ctx.rules.start();
     ctx.proactive.start();

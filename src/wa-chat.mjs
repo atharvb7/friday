@@ -7,6 +7,7 @@
 // the open chat is that contact and he is not using the keyboard/mouse; otherwise it waits. Time and reply caps.
 import { randomUUID } from 'node:crypto';
 import { FEMININE_HINDI, feminize } from './personality.mjs';
+import { loop } from './loops.mjs';
 
 const MAX_MINUTES = 180, MAX_REPLIES = 80, POLL_MS = 2000;
 // Each check is a full-screen screenshot: fast while the chat is moving, every ~6 s once it has been quiet for a minute.
@@ -176,7 +177,7 @@ export class WaChats {
     return { contact: name, chatting_until: until, chat: geo.chat };
   }
 
-  start_timer(ms = POLL_MS) { if (!this.#timer) { this.#timer = setInterval(() => void this.tick().catch(() => {}), ms); this.#timer.unref?.(); } }
+  start_timer(ms = POLL_MS) { if (!this.#timer) { this.#timer = setInterval(loop('whatsapp_chat', () => this.tick(), { everyMs: ms }), ms); this.#timer.unref?.(); } }
   stop_timer() { clearInterval(this.#timer); this.#timer = null; }
 
   async tick() {

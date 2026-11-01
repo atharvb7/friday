@@ -7,6 +7,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { safeFetch } from './web.mjs';
 import { parseWhen } from './time.mjs';
+import { loop } from './loops.mjs';
 
 const MIN_WEB_EVERY = 5, MIN_LAPTOP_EVERY = 15, MAX_ACTIVE = 20;
 const FOLLOW_KINDS = new Set(['computer', 'hermes', 'team', 'agent', 'research']);
@@ -53,7 +54,7 @@ export class Watches {
     return rows.length === 1 && this.db.prepare("UPDATE watches SET status='cancelled' WHERE id=? AND status='active'").run(rows[0].id).changes > 0;
   }
 
-  start(intervalMs = 60_000) { if (!this.#timer) { this.#timer = setInterval(() => void this.tick().catch(() => {}), intervalMs); this.#timer.unref?.(); } }
+  start(intervalMs = 60_000) { if (!this.#timer) { this.#timer = setInterval(loop('watches', () => this.tick(), { everyMs: intervalMs }), intervalMs); this.#timer.unref?.(); } }
   stop() { clearInterval(this.#timer); this.#timer = null; }
 
   async tick() {

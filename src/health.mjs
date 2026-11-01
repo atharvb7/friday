@@ -1,6 +1,7 @@
 // Deterministic health report (no model involved). Each check is
 // { name, status: ok|degraded|down|off, detail }.
 import { statfsSync } from 'node:fs';
+import { loops } from './loops.mjs';
 
 const MB = 1048576;
 
@@ -38,6 +39,11 @@ export function healthReport(ctx) {
   add('remote_auth', ctx.auth.totpActive() ? 'ok' : 'degraded', ctx.auth.totpActive() ? 'TOTP active' : 'TOTP not enrolled (required before phone approvals)');
   add('devices', 'ok', `${ctx.auth.listDevices().filter((d) => !d.revoked_at).length} active`);
   add('event_bus', 'ok', `${ctx.bus.subscriberCount} subscribers`);
+  {
+    const bad = loops.list().filter((l) => !['ok', 'waiting'].includes(l.status));
+    const worst = bad.some((l) => ['down', 'stuck'].includes(l.status)) ? 'down' : bad.length ? 'degraded' : 'ok';
+    add('background_loops', worst, bad.length ? bad.map((l) => `${l.name} ${l.status}${l.failing_since ? ` since ${l.failing_since}` : ''}${l.last_error ? `: ${l.last_error.slice(0, 80)}` : ''}`).join('; ') : `${loops.list().length} running normally`);
+  }
   add('emergency_stop', ctx.state.emergencyStopped ? 'down' : 'ok', ctx.state.emergencyStopped ? 'LATCHED' : 'clear');
 
   const rank = { down: 3, degraded: 2, ok: 0, off: 0 };
