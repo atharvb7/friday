@@ -68,6 +68,7 @@ import { DmChats } from './dm-chat.mjs';
 import { GoogleAuth, Gmail } from './google.mjs';
 import { OwnerLogin } from './login.mjs';
 import { Users } from './users.mjs';
+import { Waitlist } from './waitlist.mjs';
 import { Deployer } from './deployer.mjs';
 import { ReelPipeline } from './reel.mjs';
 import { Questions } from './questions.mjs';
@@ -240,6 +241,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.policy = new Policy({ settings, bus });
   ctx.approvals = new Approvals({ store, notifications: ctx.notifications, chat: ctx.chat, bus, audit: ctx.audit });
   ctx.users = new Users({ store, approvals: ctx.approvals, bus });
+  ctx.waitlist = new Waitlist({ store, notifications: ctx.notifications });
   ctx.auth.memberActive = (id) => ctx.users.get(id)?.status === 'approved';
   ctx.commitments = new Commitments({ store, settings, bus });
   ctx.goals = new Goals({ store, bus });

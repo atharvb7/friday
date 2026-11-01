@@ -9,6 +9,9 @@ export function authRoutes(router, ctx) {
   router.get('/v1/sessions', () => [200, { sessions: auth.listSessions() }]);
   router.get('/v1/auth/login-settings', () => [200, ctx.login.status()]);
   router.get('/v1/users', () => [200, { users: ctx.users.list() }]);
+  // The landing-page waitlist (joining is public, see server.mjs). Owner-only, private address.
+  router.get('/v1/waitlist', () => [200, { count: ctx.waitlist.count(), entries: ctx.waitlist.list() }]);
+  router.delete('/v1/waitlist/:email([^/]+)', ({ params }) => { let e; try { e = decodeURIComponent(params.email); } catch { return [400, { error: 'bad email' }]; } const ok = ctx.waitlist.remove(e); return [ok ? 200 : 404, { ok }]; });
   router.post('/v1/users/:id([a-f0-9-]+)/status', async ({ params, body }) => {
     const b = await body();
     if (!['approved', 'disabled'].includes(b.status)) return [400, { error: 'status must be approved or disabled' }];

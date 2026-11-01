@@ -121,7 +121,7 @@ export function requiredScope(method, pathname) {
   if (pathname.startsWith('/v1/node/')) return 'node';
   if (pathname === '/v1/emergency-stop') return 'read';
   if (pathname === '/v1/auth/whoami') return 'read';
-  if (/^\/v1\/(devices|sessions|auth|backup|mcp|users)/.test(pathname) || pathname === '/v1/skills/install') return 'admin';
+  if (/^\/v1\/(devices|sessions|auth|backup|mcp|users|waitlist)/.test(pathname) || pathname === '/v1/skills/install') return 'admin';
   if (pathname === '/v1/emergency-clear') return 'approve';
   if (/^\/v1\/effects\/[^/]+\/approve$/.test(pathname) || /^\/v1\/approvals\/[^/]+\/decide$/.test(pathname) || (method !== 'GET' && pathname === '/v1/autonomy')) return 'approve';
   if (pathname === '/v1/companion/events') return 'read';
