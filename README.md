@@ -1,11 +1,11 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="Friday — a persistent personal AI on your own server" width="100%">
+<img src="docs/assets/banner.svg" alt="Friday — hand over the work, she does it" width="100%">
 
 <br>
 
-**Friday is a self-hosted, always-on AI assistant with real hands and real brakes.**<br>
-She remembers you, works in the background, drives your laptop's browser, and asks before anything irreversible.
+**Friday is an autonomous AI agent that does your computer work for you.**<br>
+Hand her the job — the research, the emails, the forms, the clicking through websites on your laptop — and get the result back.
 
 <br>
 
@@ -17,7 +17,7 @@ She remembers you, works in the background, drives your laptop's browser, and as
 ![Docker](https://img.shields.io/badge/deploy-docker%20compose-2496ED?logo=docker&logoColor=white)
 ![Self-hosted](https://img.shields.io/badge/self--hosted-6%20GB%20RAM%2C%20no%20GPU-232a3b)
 
-[**Why Friday**](#why-friday) · [**Features**](#what-she-can-do) · [**Architecture**](#architecture) · [**Safety**](#safety-model) · [**Quick start**](#quick-start) · [**Deploy**](#deploy-to-a-server) · [**Status**](#honest-status)
+[**Why Friday**](#why-friday) · [**Hand it over**](#hand-it-over) · [**Features**](#what-she-can-do) · [**Architecture**](#architecture) · [**Quick start**](#quick-start) · [**Deploy**](#deploy-to-a-server) · [**Status**](#honest-status)
 
 </div>
 
@@ -25,29 +25,51 @@ She remembers you, works in the background, drives your laptop's browser, and as
 
 ## Why Friday
 
-Most assistants are a chat box that forgets you when the tab closes. Friday is the opposite: **one assistant that
-lives on a server you own and reaches you wherever you are** — the web, your phone, a push-to-talk key on your
-laptop, a desktop pet, a desk companion.
+For decades, people have spent their days sitting in front of a computer doing the work themselves: opening
+tabs, copying things between apps, filling in forms, chasing emails, digging through search results.
+
+**Friday ends that.** You say what you want done — by chat, by voice, from your phone — and she does it:
+she plans it, uses the tools, opens your laptop's real browser and apps when the job needs them, works in the
+background for as long as it takes, and comes back with the result. Your computer works for you, not the other way round.
 
 ```text
-You    ▸ remind me to call the dentist tomorrow at 10,
-         and find three freight forwarders in Pune with weak websites
-Friday ▸ Reminder set for 10:00 tomorrow.
-         Research is running in the background; I'll post the list here.
-         ⋯ 4 min later ⋯
-         Done: 3 companies, each with the page that shows the problem.
-         Want me to draft outreach? (needs your OK)
-```
+You    ▸ find three freight forwarders in Pune with weak websites, write each of them
+         an intro email, and remind me tomorrow at 10 to check the replies
 
-What makes it different:
+Friday ▸ On it.
+         ⋯ researching 14 companies, auditing their websites ⋯
+         ⋯ drafting 3 personalised emails from your outreach inbox ⋯
+         Done. Three companies, each with the page that shows the problem,
+         and three drafts ready to send. Reminder set for 10:00 tomorrow.
+         Sending emails goes out in your name, so: send all three?
+```
 
 | | |
 |---|---|
-| 🧠 **Persistent** | One identity, one memory, one task system. Hybrid keyword + vector memory, goals, to-dos and research that survive restarts and follow you across devices. |
-| 🤲 **Real hands** | Sandboxed research/coding agents, a **laptop node** that drives your real, logged-in Chrome and desktop apps, Gmail, Instagram, documents, images, reels. |
-| 🛑 **Real brakes** | Per-category autonomy tiers, exact-payload approvals, TOTP for phone approvals, an emergency stop, and a hash-chained audit log. **Personality never grants privileges.** |
-| ⏰ **Always on** | Reminders, recurring jobs, watches, proactive nudges and a morning briefing — with quiet hours, away days and a daily cap so she never nags. |
-| 🪶 **Lean** | Zero-dependency Node 22 server (built-in SQLite, no `npm install`). Core idles at ~80 MiB and fits on a 6 GB, GPU-less box. |
+| 🤖 **Autonomous** | Give her a goal, not steps. She plans, splits big jobs into parallel subtasks, uses the right agent for each, retries around problems and reports back. |
+| 💻 **Uses your computer** | A laptop node lets her drive your real, logged-in Chrome and desktop apps — clicking, typing, uploading — exactly as you would, while you do something else. |
+| ⏰ **Works while you don't** | Runs 24/7 on your own server: background jobs, recurring work, watches, a morning briefing, and pipelines that keep running overnight. |
+| 🧠 **Remembers and learns** | One persistent memory of you, your goals and your work. Every job she finishes turns into a playbook, so the next one is faster. |
+| ✋ **Asks only when it matters** | Routine work just happens. Sending in your name, spending money or deleting things pauses for one tap — and you choose how much she may do alone. |
+| 🪶 **Lean and yours** | Self-hosted, zero-dependency Node 22 server. The core idles at ~80 MiB and fits on a 6 GB box with no GPU. |
+
+---
+
+## Hand it over
+
+Anything you would otherwise sit at a computer for:
+
+| You say | Friday does |
+|---|---|
+| *"Research the top 5 competitors and give me a report"* | Runs a research agent across the web, keeps sources with dates, flags contradictions, writes the report |
+| *"Fill in this registration form on that site"* | Opens it in your real Chrome on the laptop, fills it from your saved details, shows you the result |
+| *"Clean up my inbox and draft replies to anything urgent"* | Searches, labels and organises Gmail, writes drafts in your voice |
+| *"Find me clients and keep doing it every day"* | A 24/7 pipeline: finds companies, audits their websites, qualifies them, drafts outreach |
+| *"Turn these notes into a deck and a one-page PDF"* | Creates Word / Excel / PowerPoint / PDF files and edits them in versions |
+| *"Build a small app for this and put it online for me"* | A coding agent writes it in a sandbox and deploys it on your tailnet |
+| *"Keep an eye on this page and tell me when the price drops"* | Sets up a watch and pings you when it happens |
+| *"Reply to this Instagram DM thread for the next hour"* | Runs a time-boxed conversation on your behalf, showing you every message |
+| *"What does this error on my screen mean?"* | Push-to-talk from any app: she looks at your screen and answers out loud |
 
 ---
 
@@ -57,30 +79,7 @@ What makes it different:
 <tr>
 <td width="50%" valign="top">
 
-### 🧠 Brain
-- **Model router** with per-role chains (`chat`, `execute`, `reason`, `plan`, `vision`, `embed`), circuit breakers,
-  daily-quota awareness and a call log with latency + tokens
-- Nemotron 3.5 Super for everyday turns, Ultra / Gemini Flash for deep reasoning, any OpenAI-compatible fallback
-- **Tool loading**: each turn gets only the tool groups it needs (~12k → a fraction of the tokens)
-- Streaming tool-calling loop with step budgets and a "stop retrying the same call" guard
-- Personality sliders + mood — **style only**, never permissions
-
-</td>
-<td width="50%" valign="top">
-
-### 📚 Memory & knowledge
-- Hybrid memory: SQLite FTS + `nemotron-3-embed-1b` vectors, fused with RRF
-- **Auto-memory**: durable facts and preferences extracted after each exchange (editable, deletable)
-- Research memory: sources with dates, claims with confidence, **contradiction flags**
-- Goals with a rolling digest, commitments as first-class to-dos
-- **Suggestions ledger**: every recommendation is filed with evidence and scored later — worked / mixed / failed
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 🤖 Agents
+### 🤖 Autonomous agents
 - **DSH agents** for research and coding in a bubblewrap / container sandbox, behind a filtering egress proxy
 - **Team tasks**: a big goal split into parallel subtasks across runtimes, merged into one report
 - **Hermes Agent** as a delegated runtime, with its approvals bridged into Friday's
@@ -90,7 +89,7 @@ What makes it different:
 </td>
 <td valign="top">
 
-### 💻 Laptop node (computer use)
+### 💻 Computer use on your laptop
 - Dials **out** to the server — the server never reaches into your laptop
 - Drives your real Chrome with **DOM refs**, not guessed coordinates
 - Whole-desktop control via AT-SPI accessibility (works on Wayland): open apps, read and press controls
@@ -144,6 +143,29 @@ What makes it different:
 
 </td>
 </tr>
+<tr>
+<td valign="top">
+
+### 🧠 Brain
+- **Model router** with per-role chains (`chat`, `execute`, `reason`, `plan`, `vision`, `embed`), circuit breakers,
+  daily-quota awareness and a call log with latency + tokens
+- Nemotron 3.5 Super for everyday turns, Ultra / Gemini Flash for deep reasoning, any OpenAI-compatible fallback
+- **Tool loading**: each turn gets only the tool groups it needs (~12k → a fraction of the tokens)
+- Streaming tool-calling loop with step budgets and a "stop retrying the same call" guard
+- Personality sliders + mood — **style only**, never permissions
+
+</td>
+<td valign="top">
+
+### 📚 Memory & knowledge
+- Hybrid memory: SQLite FTS + `nemotron-3-embed-1b` vectors, fused with RRF
+- **Auto-memory**: durable facts and preferences extracted after each exchange (editable, deletable)
+- Research memory: sources with dates, claims with confidence, **contradiction flags**
+- Goals with a rolling digest, commitments as first-class to-dos
+- **Suggestions ledger**: every recommendation is filed with evidence and scored later — worked / mixed / failed
+
+</td>
+</tr>
 </table>
 
 ---
@@ -194,9 +216,14 @@ flowchart LR
 
 ---
 
-## Safety model
+## Autonomy you control
 
-Friday is built to be trusted with your accounts, so the brakes are in code, not in the prompt.
+Friday works on her own by default. The few things that really matter — speaking in your name, spending money,
+deleting, security — wait for a single tap, and you decide where that line sits for each kind of work.
+It's enforced in code, not in the prompt, so it holds even when a web page tries to talk her into something.
+
+<details>
+<summary><b>How it works under the hood</b></summary>
 
 | Layer | What it does |
 |---|---|
@@ -210,8 +237,7 @@ Friday is built to be trusted with your accounts, so the brakes are in code, not
 | **Resource governor** | A hard memory budget gates admission of new work, so the box never swaps itself to death. |
 | **Members are isolated** | Other people can request an account; once you approve, they get their own chats and **no** access to your laptop, mail, memory, tasks or settings. |
 
-<details>
-<summary><b>Life of an approved action</b></summary>
+**Life of an action that needs your OK:**
 
 ```mermaid
 stateDiagram-v2
