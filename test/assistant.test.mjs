@@ -111,12 +111,13 @@ test('jobs: a scheduled run asks for a result block; only needs_you pings, nothi
     assert.match(r.chat.listMessages(convo.id).at(-1).content, /Inbox sweep\*\*: No new invoices\./);
     // Needs you: one warning with the asks.
     finish('```result\n{"summary":"One invoice is overdue.","findings":["Acme invoice #12, ₹4,000, due 30 Oct"],"needs_you":["Pay or dispute Acme #12"],"nothing_new":false}\n```');
-    assert.equal(r.notifications.list()[0].level, 'warning');
-    assert.match(r.notifications.list()[0].title, /Needs you: Inbox sweep/);
+    const byTitle = (re) => r.notifications.list().find((n) => re.test(n.title)); // same fake timestamp: order is not defined
+    assert.equal(byTitle(/Needs you: Inbox sweep/).level, 'warning');
     assert.match(r.chat.listMessages(convo.id).at(-1).content, /- Acme invoice #12[\s\S]*\*\*Needs you:\*\*\n- Pay or dispute Acme #12/);
     // Findings only: an info note, not a warning.
     finish('```result\n{"summary":"Two receipts filed.","findings":["Uber ₹320","Swiggy ₹540"],"needs_you":[]}\n```');
-    assert.equal(r.notifications.list()[0].level, 'info');
+    assert.equal(byTitle(/Inbox sweep: Two receipts filed/).level, 'info');
+    assert.equal(r.notifications.list().length, 2);
     // Missing or broken block, or a task that is not scheduled: not handled here (the usual Done message runs).
     assert.equal(finish('All good, nothing to report.'), false);
     assert.equal(finish('```result\n{not json}\n```'), false);

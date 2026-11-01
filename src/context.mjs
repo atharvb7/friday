@@ -30,6 +30,7 @@ import { buildFridayTools } from './agent/friday-tools.mjs';
 import { ToolRouter, toolsLoadTool } from './agent/toolsets.mjs';
 import { Commitments, commitmentTools } from './commitments.mjs';
 import { Goals, goalTools } from './goals.mjs';
+import { Recs, recTools } from './recs.mjs';
 import { WaChats } from './wa-chat.mjs';
 import { Brain } from './agent/brain.mjs';
 import { Notifications } from './notifications.mjs';
@@ -238,6 +239,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.auth.memberActive = (id) => ctx.users.get(id)?.status === 'approved';
   ctx.commitments = new Commitments({ store, settings, bus });
   ctx.goals = new Goals({ store, bus });
+  ctx.recs = new Recs({ store, settings, bus });
   ctx.proactive = new Proactive({
     store, notifications: ctx.notifications, jobs: ctx.jobs, ai, memory, settings, bus, dataDir, commitments: ctx.commitments,
     agentReady: () => ctx.dshAdapter.status().ready,
@@ -292,6 +294,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.fridayTools.register(toolsLoadTool());
   for (const t of commitmentTools(ctx.commitments)) ctx.fridayTools.register(t);
   for (const t of goalTools(ctx.goals)) ctx.fridayTools.register(t);
+  for (const t of recTools(ctx.recs)) ctx.fridayTools.register(t);
   ctx.mood = new Mood({ settings, store });
   ctx.proactive.mood = ctx.mood; // after it exists (it was assigned while still undefined)
   ctx.habits = new Habits({ settings });
@@ -300,7 +303,7 @@ export function createContext({ appRoot, env = process.env }) {
     mood: ctx.mood, habits: ctx.habits,
     ai, fridayTools: ctx.fridayTools, settings, chat: ctx.chat, bus, audit: ctx.audit, skills, policy: ctx.policy, approvals: ctx.approvals,
     toolRouter: new ToolRouter({ enabled: env.FRIDAY_TOOL_ROUTING !== '0' }),
-    contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory, questions: ctx.questions, profile: ctx.profile, dmChats: ctx.dmChats, commitments: ctx.commitments, goals: ctx.goals }),
+    contextBuilder: new ContextBuilder({ memory, store, indexer, researchMemory: ctx.researchMemory, questions: ctx.questions, profile: ctx.profile, dmChats: ctx.dmChats, commitments: ctx.commitments, goals: ctx.goals, recs: ctx.recs }),
   });
   ctx.chatBrain = () => {
     if (ai.hasProvider && !ctx.state.emergencyStopped) return { name: 'friday-brain', adapter: ctx.brain };

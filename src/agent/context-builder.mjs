@@ -4,7 +4,7 @@ const MEM_BUDGET = 2400;
 const TASK_BUDGET = 900;
 
 export class ContextBuilder {
-  constructor({ memory, store, indexer = null, researchMemory = null, questions = null, profile = null, dmChats = null, commitments = null, goals = null }) { Object.assign(this, { memory, store, indexer, researchMemory, questions, profile, dmChats, commitments, goals }); }
+  constructor({ memory, store, indexer = null, researchMemory = null, questions = null, profile = null, dmChats = null, commitments = null, goals = null, recs = null }) { Object.assign(this, { memory, store, indexer, researchMemory, questions, profile, dmChats, commitments, goals, recs }); }
 
   async build({ text, project = null }) {
     const queryVector = this.indexer ? await this.indexer.queryVector(text) : null;
@@ -47,6 +47,10 @@ export class ContextBuilder {
     try { // his goals, as one "where it stands" line each (goal_note with a new digest when something moves one)
       const gl = this.goals?.summaryLines() ?? [];
       if (gl.length) parts.push(`His goals and where each stands (goal_note when something he says moves one):\n${gl.join('\n')}`);
+    } catch { /* optional */ }
+    try { // your own past suggestions whose review date has come: score them (rec_score) when the result is known
+      const rl = this.recs?.summaryLines() ?? [];
+      if (rl.length) parts.push(`Your suggestions due for review (check what happened; rec_score worked/mixed/failed, or ask him in passing when it fits):\n${rl.join('\n')}`);
     } catch { /* optional */ }
     try {
       const qs = this.questions?.pending() ?? [];

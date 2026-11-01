@@ -203,6 +203,21 @@ export function render({ app, api, toast, go }) {
         g.digest_at ? h('span', { class: 'faint small' }, `updated ${timeAgo(g.digest_at)}`) : null))) : h('p', { class: 'muted' }, 'No goals yet. Add one, or tell Friday what you are working toward.'),
         h('div', { class: 'row' }, inp, h('button', { class: 'btn primary', onclick: add }, 'Add')));
     } catch { /* older server */ }
+    if (owner) try { // Friday's suggestions: decide open ones, see whether past advice worked
+      const { recs, stats } = await api('/v1/recs');
+      const open = recs.filter((r) => r.status === 'open');
+      const decide = async (r, status) => { try { await api(`/v1/recs/${r.id}/decide`, { method: 'POST', body: { status } }); build(); } catch (e) { toast(e.message); } };
+      const pct = (x) => (x == null ? '—' : `${Math.round(x * 100)}%`);
+      const recRow = (r) => h('div', { class: 'stack bubble' },
+        h('div', { class: 'row wrap' }, h('strong', { class: 'grow' }, r.title), h('span', { class: 'chip' }, r.category), r.cost ? h('span', { class: 'chip warn' }, r.cost) : null,
+          r.outcome ? h('span', { class: `chip ${r.outcome === 'worked' ? 'good' : r.outcome === 'failed' ? 'bad' : 'warn'}` }, r.outcome) : h('span', { class: 'chip' }, r.status)),
+        h('div', { class: 'muted' }, `Because: ${r.because}`), h('div', { class: 'faint small' }, `Expected: ${r.expect} · check on ${new Date(r.review_on).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`),
+        r.outcome_note ? h('div', {}, `What happened: ${r.outcome_note}`) : null,
+        r.status === 'open' ? h('div', { class: 'row' }, h('button', { class: 'btn small good', onclick: () => decide(r, 'accepted') }, 'Accept'), h('button', { class: 'btn small', onclick: () => decide(r, 'declined') }, 'Decline')) : null);
+      section(`Friday's suggestions — taken ${pct(stats.acceptance)}, worked ${pct(stats.hit_rate)} (${stats.scored} scored, 90 days)`,
+        open.length ? h('div', { class: 'list' }, open.map(recRow)) : h('p', { class: 'muted' }, 'No open suggestions.'),
+        recs.some((r) => r.status !== 'open') ? h('details', {}, h('summary', { class: 'faint small' }, 'History'), h('div', { class: 'list' }, recs.filter((r) => r.status !== 'open').slice(0, 20).map(recRow))) : null);
+    } catch { /* older server */ }
     try { // Spend and daily limits in one place (src/usage.mjs)
       const { usage: u } = await api('/v1/usage');
       const money = (n) => (n == null ? 'unpriced' : n === 0 ? 'free' : `$${n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`);
