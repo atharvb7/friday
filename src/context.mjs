@@ -241,7 +241,8 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.policy = new Policy({ settings, bus });
   ctx.approvals = new Approvals({ store, notifications: ctx.notifications, chat: ctx.chat, bus, audit: ctx.audit });
   ctx.users = new Users({ store, approvals: ctx.approvals, bus });
-  ctx.waitlist = new Waitlist({ store, notifications: ctx.notifications });
+  ctx.waitlist = new Waitlist({ store, notifications: ctx.notifications, settings });
+  setInterval(() => { ctx.waitlist.syncSheet().catch(() => {}); }, 10 * 60_000).unref(); // retry rows that did not reach the Google Sheet
   ctx.auth.memberActive = (id) => ctx.users.get(id)?.status === 'approved';
   ctx.commitments = new Commitments({ store, settings, bus });
   ctx.goals = new Goals({ store, bus });

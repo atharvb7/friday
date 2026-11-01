@@ -1,3 +1,4 @@
+import { WAITLIST_SHEET_SCRIPT } from '../waitlist.mjs';
 // Device management + TOTP enrolment. Owner-only (scope 'admin' is never grantable to devices).
 export function authRoutes(router, ctx) {
   const { auth, audit } = ctx;
@@ -11,6 +12,12 @@ export function authRoutes(router, ctx) {
   router.get('/v1/users', () => [200, { users: ctx.users.list() }]);
   // The landing-page waitlist (joining is public, see server.mjs). Owner-only, private address.
   router.get('/v1/waitlist', () => [200, { count: ctx.waitlist.count(), entries: ctx.waitlist.list() }]);
+  // Google Sheet mirror (literal routes first: 'sheet' would otherwise match the :email route).
+  router.get('/v1/waitlist/sheet', () => [200, ctx.waitlist.sheetStatus()]);
+  router.get('/v1/waitlist/sheet/script', () => [200, { script: WAITLIST_SHEET_SCRIPT }]);
+  router.post('/v1/waitlist/sheet', async ({ body }) => { const b = await body(); try { return [200, ctx.waitlist.setSheet(b)]; } catch (e) { return [400, { error: e.message }]; } });
+  router.delete('/v1/waitlist/sheet', () => [200, ctx.waitlist.clearSheet()]);
+  router.post('/v1/waitlist/sheet/sync', async () => { const added = await ctx.waitlist.syncSheet(); return [200, { added, ...ctx.waitlist.sheetStatus() }]; });
   router.delete('/v1/waitlist/:email([^/]+)', ({ params }) => { let e; try { e = decodeURIComponent(params.email); } catch { return [400, { error: 'bad email' }]; } const ok = ctx.waitlist.remove(e); return [ok ? 200 : 404, { ok }]; });
   router.post('/v1/users/:id([a-f0-9-]+)/status', async ({ params, body }) => {
     const b = await body();

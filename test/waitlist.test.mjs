@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.mjs';
-import { Waitlist, NOTIFY_PER_DAY } from '../src/waitlist.mjs';
+import { Waitlist, NOTIFY_PER_DAY, WAITLIST_SHEET_SCRIPT } from '../src/waitlist.mjs';
+import { Settings } from '../src/settings.mjs';
 
 test('waitlist: joins once, normalises, rejects bad emails, caps owner notifications', () => {
   const dir = mkdtempSync(join(tmpdir(), 'friday-wait-'));
@@ -28,6 +29,46 @@ test('waitlist: joins once, normalises, rejects bad emails, caps owner notificat
     assert.equal(notes.length, NOTIFY_PER_DAY, 'a burst cannot flood the inbox');
     assert.equal(w.remove('MAYA@example.com'), true);
     assert.equal(w.remove('maya@example.com'), false);
+  } finally { store.close?.(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('waitlist sheet: backfills, posts new signups, retries failures, never double-posts', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'friday-wait-sheet-'));
+  const store = new Store(join(dir, 'db.sqlite'));
+  try {
+    const sheet = []; let fail = false; const posts = [];
+    const fetchImpl = async (url, o) => {
+      posts.push(url); const b = JSON.parse(o.body);
+      if (fail) return new Response('<html>oops</html>', { status: 500 });
+      if (b.secret !== 's'.repeat(32)) return Response.json({ ok: false, error: 'forbidden' });
+      for (const r of b.rows) if (!sheet.some((x) => x.email === r.email)) sheet.push(r);
+      return Response.json({ ok: true, added: b.rows.length });
+    };
+    const w = new Waitlist({ store, settings: new Settings(store), fetchImpl });
+    w.join({ email: 'early@example.com', source: 'hero' });
+    await w.syncSheet();
+    assert.equal(posts.length, 0, 'no sheet configured: nothing is sent');
+    assert.throws(() => w.setSheet({ url: 'https://evil.example/exec', secret: 's'.repeat(32) }), TypeError);
+    assert.throws(() => w.setSheet({ url: 'https://script.google.com/macros/s/AKfycbxxxxxxxxxxxxxxxxxxxxxxxx/exec', secret: 'short' }), TypeError);
+    const URL_ = 'https://script.google.com/macros/s/AKfycbxxxxxxxxxxxxxxxxxxxxxxxx/exec';
+    assert.equal(w.setSheet({ url: URL_, secret: 's'.repeat(32) }).pending, 1);
+    assert.equal(await w.syncSheet(), 1, 'backfill of signups from before the sheet existed');
+    assert.deepEqual(sheet.map((r) => r.email), ['early@example.com']);
+    fail = true;
+    w.join({ email: 'second@example.com', source: 'final' });
+    await w.syncing;
+    assert.equal(w.sheetStatus().pending, 1, 'a failed post stays pending');
+    assert.equal(w.sheetStatus().last.ok, false);
+    fail = false;
+    assert.equal(await w.syncSheet(), 1, 'retried later');
+    assert.deepEqual(sheet.map((r) => `${r.email} ${r.source}`), ['early@example.com hero', 'second@example.com final']);
+    assert.equal(await w.syncSheet(), 0, 'nothing left: no double posts');
+    assert.equal(w.sheetStatus().pending, 0);
+    w.setSheet({ url: URL_, secret: 'x'.repeat(32) });
+    w.join({ email: 'third@example.com' }); await w.syncing;
+    assert.match(w.sheetStatus().last.error, /forbidden/, 'a wrong secret is reported, not hidden');
+    assert.match(WAITLIST_SHEET_SCRIPT, /doPost/);
+    assert.equal(w.clearSheet().configured, false);
   } finally { store.close?.(); rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -54,6 +95,10 @@ test('waitlist over HTTP: public join without auth, JSON only, honeypot, same an
     assert.equal(list.count, 1, 'the honeypot entry was not stored');
     assert.equal(list.entries[0].email, 'maya@example.com');
     assert.equal((await fetch(`http://127.0.0.1:${PUB}/v1/waitlist`)).status, 401, 'the list is not public');
+    assert.equal((await fetch(`http://127.0.0.1:${PUB}/v1/waitlist/sheet`)).status, 401, 'sheet settings are not public');
+    assert.equal((await (await priv('/v1/waitlist/sheet')).json()).configured, false);
+    assert.match((await (await priv('/v1/waitlist/sheet/script')).json()).script, /SpreadsheetApp/);
+    assert.equal((await priv('/v1/waitlist/sheet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: 'https://x.com', secret: 'y' }) })).status, 400);
     assert.equal((await priv('/v1/waitlist/maya%40example.com', { method: 'DELETE' })).status, 200);
     assert.equal((await (await priv('/v1/waitlist')).json()).count, 0);
     // CORS: the landing (its own site) may ask; other sites may not.
