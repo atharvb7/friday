@@ -66,3 +66,22 @@ test('loops: a sync throw is recorded, never thrown into the timer; stale and st
     assert.equal(loops.list().find((x) => x.name === 'prospector').status, 'ok');
   } finally { r.done(); }
 });
+
+test('loops: after a restart an old saved run is not "stale" until the loop had its chance; loops with no timer are "off"', async () => {
+  const r = rig();
+  try {
+    const run = loops.loop('dm_chat', async () => {}, { everyMs: 45_000 });
+    await run();
+    // Restart 10 minutes later: the saved row is old, and the new timer has not fired yet.
+    let t = Date.parse('2026-11-01T10:10:00Z');
+    loops.reset(); loops.attach({ db: r.store.db, now: () => t });
+    assert.equal(loops.list().find((x) => x.name === 'dm_chat').status, 'off', 'no timer in this process yet');
+    const again = loops.loop('dm_chat', async () => {}, { everyMs: 45_000 });
+    t += 30_000;
+    assert.equal(loops.list().find((x) => x.name === 'dm_chat').status, 'waiting');
+    t += 4 * 60_000;
+    assert.equal(loops.list().find((x) => x.name === 'dm_chat').status, 'stale', 'armed 4.5 min ago and never ran');
+    await again();
+    assert.equal(loops.list().find((x) => x.name === 'dm_chat').status, 'ok');
+  } finally { r.done(); }
+});
