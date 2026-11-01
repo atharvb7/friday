@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { renderEmail, DEFAULT_BRAND } from './email-template.mjs';
 import { partsInTz, zonedToUtc, isValidTimezone, formatLocal } from './time.mjs';
 import { jurisdictionOf, RULES } from './jurisdiction.mjs';
+import { loop } from './loops.mjs';
 
 export const STAGES = ['new', 'researched', 'contacted', 'replied', 'meeting', 'proposal', 'won', 'lost', 'nurture', 'dnc'];
 const OPEN = new Set(['new', 'researched', 'contacted', 'nurture']);
@@ -476,8 +477,8 @@ export class Pipeline {
   start(intervalMs = 10 * 60_000) {
     // A row left 'sending' by a crash or restart may or may not have reached Gmail: never resend it blindly.
     this.db.prepare("UPDATE outbox SET status='failed', error='interrupted while sending: check the Sent folder before sending it again' WHERE status='sending'").run();
-    if (!this.#timer) { this.#timer = setInterval(() => void this.tick().catch(() => {}), intervalMs); this.#timer.unref?.(); }
-    if (!this.#outboxTimer) { this.#outboxTimer = setInterval(() => void this.flushOutbox().catch(() => {}), 60_000); this.#outboxTimer.unref?.(); }
+    if (!this.#timer) { this.#timer = setInterval(loop('pipeline', () => this.tick(), { everyMs: intervalMs }), intervalMs); this.#timer.unref?.(); }
+    if (!this.#outboxTimer) { this.#outboxTimer = setInterval(loop('outbox', () => this.flushOutbox(), { everyMs: 60_000 }), 60_000); this.#outboxTimer.unref?.(); }
   }
   stop() { clearInterval(this.#timer); clearInterval(this.#outboxTimer); this.#timer = null; this.#outboxTimer = null; }
 

@@ -1,6 +1,34 @@
 import { DatabaseSync } from 'node:sqlite';
-import { randomUUID } from 'node:crypto';
-import { chmodSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Pre-deploy snapshot: new code changes an existing database as it starts (constructors run ALTER TABLE and
+// backfills), so before that the database is copied once per code version. A crash loop on the same code never
+// overwrites the copy (the fingerprint is written only after a good copy); the newest SNAPSHOT_KEEP are kept.
+export const SNAPSHOT_KEEP = 3;
+const SRC_DIR = dirname(fileURLToPath(import.meta.url));
+let codeFingerprint = null;
+export function codeVersion() {
+  if (codeFingerprint) return codeFingerprint;
+  const h = createHash('sha256');
+  for (const f of readdirSync(SRC_DIR, { recursive: true }).filter((f) => String(f).endsWith('.mjs')).sort()) { h.update(String(f)); h.update(readFileSync(join(SRC_DIR, f))); }
+  return (codeFingerprint = h.digest('hex').slice(0, 16));
+}
+function preDeploySnapshot(db, filename) {
+  const dir = join(dirname(filename), 'snapshots'); const mark = join(dir, 'code-version');
+  const version = codeVersion();
+  try { if (readFileSync(mark, 'utf8').trim() === version) return null; } catch { /* first snapshot */ }
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = join(dir, `pre-deploy-${new Date().toISOString().replace(/[:.]/g, '-')}-${version}.db`); const tmp = `${file}.tmp`;
+  rmSync(tmp, { force: true });
+  db.exec(`VACUUM INTO '${tmp.replaceAll("'", "''")}'`); // a consistent copy, WAL included
+  chmodSync(tmp, 0o600); renameSync(tmp, file); // never a half-written snapshot under the real name
+  writeFileSync(mark, `${version}\n`, { mode: 0o600 });
+  for (const f of readdirSync(dir).filter((f) => /^pre-deploy-.*\.db$/.test(f)).sort().reverse().slice(SNAPSHOT_KEEP)) rmSync(join(dir, f), { force: true });
+  return file;
+}
 
 const ALLOWED = {
   queued: ['planning', 'running', 'cancelled'],
@@ -16,8 +44,14 @@ export class Store {
   onEvent = null;
 
   constructor(filename) {
+    const existed = filename !== ':memory:' && existsSync(filename);
     this.db = new DatabaseSync(filename);
     chmodSync(filename, 0o600);
+    this.snapshot = null;
+    if (existed) {
+      try { this.snapshot = preDeploySnapshot(this.db, filename); }
+      catch (error) { console.warn(`pre-deploy snapshot failed (continuing): ${error.message}`); }
+    }
     this.db.exec(`
       PRAGMA journal_mode=WAL;
       PRAGMA busy_timeout=5000;

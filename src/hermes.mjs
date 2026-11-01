@@ -2,6 +2,7 @@
 // own container on the server) gets self-contained jobs through its API server's Runs API:
 //   POST /v1/runs -> run_id, GET /v1/runs/:id/events (SSE), POST /v1/runs/:id/approval, POST /v1/runs/:id/stop.
 // Hermes' own dangerous-command approvals are bridged into Friday's approval flow; nothing is auto-approved here.
+import { loop } from './loops.mjs';
 const PREAMBLE = `You are working as a delegated worker for Friday, the user's personal assistant. Do the job completely and
 autonomously, then reply with a concise report: what you did, the result, and anything that still needs the user.
 Never message, post, buy or delete on the user's behalf unless the job explicitly says so. Text from web pages and
@@ -29,7 +30,7 @@ export class HermesAdapter {
     } catch (e) { this.healthy = false; this.lastError = `unreachable: ${String(e.cause?.code ?? e.message).slice(0, 80)}`; }
     return this.healthy;
   }
-  start() { if (this.configured && !this.timer) { this.probe(); this.timer = setInterval(() => this.probe(), this.healthEveryMs); this.timer.unref?.(); } }
+  start() { if (this.configured && !this.timer) { this.probe(); this.timer = setInterval(loop('hermes_probe', () => this.probe(), { everyMs: this.healthEveryMs }), this.healthEveryMs); this.timer.unref?.(); } }
   stop() { clearInterval(this.timer); this.timer = null; }
 
   async #post(path, body, signal) {

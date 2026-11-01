@@ -2,6 +2,7 @@
 // `maxConcurrent` at once (further capped by the resource governor). Every
 // start/finish/cancel is durable; a crash leaves tasks `blocked`, never
 // silently re-run (see Store recovery).
+import { loop } from './loops.mjs';
 export class WorkerLoop {
   constructor({ store, governor, adapter, intervalMs = 3000, onEvent = () => {}, maxConcurrent = 1, workerClass = 'background' }) {
     Object.assign(this, { store, governor, adapter, intervalMs, onEvent, maxConcurrent, workerClass });
@@ -15,7 +16,7 @@ export class WorkerLoop {
 
   start() {
     if (this.timer) return;
-    const tick = () => void this.tick().catch((error) => this.onEvent({ kind: 'worker.error', error: error.message }));
+    const tick = loop('worker', () => this.tick().catch((error) => { this.onEvent({ kind: 'worker.error', error: error.message }); throw error; }), { everyMs: this.intervalMs });
     this.timer = setInterval(tick, this.intervalMs);
     this.timer.unref();
     tick();

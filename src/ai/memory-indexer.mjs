@@ -1,6 +1,7 @@
 // Keeps memory embeddings current without ever blocking a write. Embeds new/edited
 // rows in small batches; backfills old rows; degrades silently to keyword-only
 // search if the embedding provider is down.
+import { loop } from '../loops.mjs';
 export class MemoryIndexer {
   #timer = null;
   #busy = false;
@@ -12,7 +13,7 @@ export class MemoryIndexer {
 
   start() {
     if (this.#timer) return;
-    this.#timer = setInterval(() => void this.runOnce(), this.intervalMs);
+    this.#timer = setInterval(loop('memory_indexer', () => this.runOnce(), { everyMs: this.intervalMs }), this.intervalMs);
     this.#timer.unref();
     void this.runOnce();
   }

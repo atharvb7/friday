@@ -1,6 +1,7 @@
 // Adapter that sends agent tasks to the isolated agent-runner container instead of spawning DSH locally.
 // Same contract as DshAdapter (status/run); cancel = abort the request, which makes the runner kill the agent.
 import { Buffer } from 'node:buffer';
+import { loop } from './loops.mjs';
 
 const abortError = (m = 'dsh_cancelled') => Object.assign(new Error(m), { name: 'AbortError' });
 
@@ -11,7 +12,7 @@ export class RemoteDshAdapter {
     Object.assign(this, { url: String(url).replace(/\/+$/, ''), secret, prepare, fetchImpl, pollMs, model });
   }
 
-  start() { void this.#poll(); this.#timer = setInterval(() => void this.#poll(), this.pollMs); this.#timer.unref?.(); }
+  start() { void this.#poll(); this.#timer = setInterval(loop('dsh_remote_poll', () => this.#poll(), { everyMs: this.pollMs }), this.pollMs); this.#timer.unref?.(); }
   stop() { clearInterval(this.#timer); }
   async #poll() {
     try {

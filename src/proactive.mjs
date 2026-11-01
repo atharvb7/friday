@@ -5,6 +5,7 @@
 import { statfsSync } from 'node:fs';
 import { inQuietHours, partsInTz, systemTimezone } from './time.mjs';
 import { buildSystemPrompt, normalizePersonality } from './personality.mjs';
+import { loop } from './loops.mjs';
 
 export const DEFAULT_PROACTIVE = Object.freeze({
   enabled: true, maxPerDay: 6, quietHours: { start: '22:00', end: '08:00' },
@@ -37,7 +38,7 @@ export class Proactive {
 
   start(intervalMs = 60_000) {
     if (this.#timer) return;
-    this.#timer = setInterval(() => void this.tick().catch(() => {}), intervalMs);
+    this.#timer = setInterval(loop('proactive', () => this.tick(), { everyMs: intervalMs }), intervalMs);
     this.#timer.unref();
   }
   stop() { clearInterval(this.#timer); this.#timer = null; }

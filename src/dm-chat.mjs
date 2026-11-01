@@ -4,6 +4,7 @@
 // which verifies it is the 1:1 chat with exactly that person. The owner sees every exchange in his chat.
 import { randomUUID } from 'node:crypto';
 import { FEMININE_HINDI, feminize } from './personality.mjs';
+import { loop } from './loops.mjs';
 
 const MAX_MINUTES = 180, MAX_REPLIES = 40, MAX_PEOPLE = 5;
 
@@ -77,7 +78,7 @@ export class DmChats {
     return r.data?.data ?? []; // newest first
   }
 
-  start_timer(intervalMs = 45_000) { if (!this.#timer) { this.#timer = setInterval(() => void this.tick().catch(() => {}), intervalMs); this.#timer.unref?.(); } }
+  start_timer(intervalMs = 45_000) { if (!this.#timer) { this.#timer = setInterval(loop('dm_chat', () => this.tick(), { everyMs: intervalMs }), intervalMs); this.#timer.unref?.(); } }
   stop_timer() { clearInterval(this.#timer); this.#timer = null; }
 
   async tick() {

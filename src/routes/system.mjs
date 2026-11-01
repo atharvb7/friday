@@ -1,4 +1,5 @@
 import { healthReport } from '../health.mjs';
+import { loops } from '../loops.mjs';
 
 export function systemRoutes(router, ctx) {
   const { governor, store, worker, dshAdapter, nemotron, state, jev, audit } = ctx;
@@ -23,6 +24,7 @@ export function systemRoutes(router, ctx) {
   });
 
   router.get('/v1/health', () => [200, healthReport(ctx)]);
+  router.get('/v1/loops', () => [200, { loops: loops.list() }]);
 
   router.post('/v1/emergency-stop', () => {
     state.emergencyStopped = true;
