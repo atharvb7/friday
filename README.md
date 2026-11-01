@@ -16,6 +16,7 @@ Hand her the job — the research, the emails, the forms, the clicking through w
 ![Brain bench](https://img.shields.io/badge/brain%20bench-38%2F39-22d3ee)
 ![Docker](https://img.shields.io/badge/deploy-docker%20compose-2496ED?logo=docker&logoColor=white)
 ![Self-hosted](https://img.shields.io/badge/self--hosted-6%20GB%20RAM%2C%20no%20GPU-232a3b)
+[![License: MIT](https://img.shields.io/badge/license-MIT-f5c542)](LICENSE)
 
 [**Why Friday**](#why-friday) · [**Hand it over**](#hand-it-over) · [**Features**](#what-she-can-do) · [**Architecture**](#architecture) · [**Quick start**](#quick-start) · [**Deploy**](#deploy-to-a-server) · [**Status**](#honest-status)
 
@@ -415,6 +416,6 @@ The full, dated list is [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 Built by [**Atharv Bhosale**](https://github.com/atharvb7) — a forward-deployed AI engineer who designs and ships production agentic systems.
 
-<sub>No license has been chosen yet, so all rights are reserved by default. Issues and ideas are welcome.</sub>
+<sub>Released under the [MIT License](LICENSE). Third-party skills in `skills/` keep their own licenses ([details](skills/THIRD_PARTY.md)). Issues, ideas and pull requests are welcome.</sub>
 
 </div>
