@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 420" width="1280" height="420" role="img" aria-label="Friday — hand over the work, she does it">
+  <defs>
+    <linearGradient id="orb" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c6cff"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#7c6cff" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#22d3ee" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#0a0c12" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c9c3ff"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#232a3b" stroke-width="1" opacity="0.55"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0a0c12" stop-opacity="0"/>
+      <stop offset="0.35" stop-color="#0a0c12" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#0a0c12" stop-opacity="1"/>
+    </linearGradient>
+    <style>
+      .t { font-family: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+      .m { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace; }
+      @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+      @keyframes pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes spinr { to { transform: rotate(-360deg); } }
+      .orb { transform-origin: 300px 210px; animation: breathe 5s ease-in-out infinite; }
+      .glow { transform-origin: 300px 210px; animation: pulse 5s ease-in-out infinite; }
+      .r1 { transform-origin: 300px 210px; animation: spin 26s linear infinite; }
+      .r2 { transform-origin: 300px 210px; animation: spinr 40s linear infinite; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="420" rx="24" fill="#0a0c12"/>
+  <rect width="1280" height="420" rx="24" fill="url(#grid)"/>
+  <rect width="1280" height="420" rx="24" fill="url(#fade)"/>
+
+  <!-- orb -->
+  <circle class="glow" cx="300" cy="210" r="200" fill="url(#glow)"/>
+  <g class="r2">
+    <circle cx="300" cy="210" r="168" fill="none" stroke="#22d3ee" stroke-opacity="0.18" stroke-width="1" stroke-dasharray="2 10"/>
+    <circle cx="468" cy="210" r="4" fill="#22d3ee"/>
+    <circle cx="132" cy="210" r="3" fill="#22d3ee" opacity=".6"/>
+  </g>
+  <g class="r1">
+    <ellipse cx="300" cy="210" rx="140" ry="140" fill="none" stroke="#7c6cff" stroke-opacity="0.35" stroke-width="1.2" stroke-dasharray="60 18 4 18"/>
+    <circle cx="300" cy="70" r="5" fill="#a99fff"/>
+    <circle cx="300" cy="350" r="3" fill="#a99fff" opacity=".7"/>
+  </g>
+  <g class="orb">
+    <circle cx="300" cy="210" r="104" fill="url(#orb)"/>
+    <circle cx="266" cy="176" r="33" fill="#fff" opacity=".35"/>
+  </g>
+
+  <!-- text -->
+  <text x="560" y="178" class="t" font-size="104" font-weight="800" letter-spacing="-4" fill="url(#title)">Friday</text>
+  <text x="564" y="240" class="t" font-size="26" font-weight="500" fill="#e8ecf6">Hand over the work. She does it.</text>
+  <text x="564" y="276" class="t" font-size="20" fill="#8b95ad">An autonomous agent that uses your computer for you.</text>
+
+  <g class="m" font-size="15">
+    <rect x="564" y="312" width="96" height="32" rx="16" fill="#131722" stroke="#232a3b"/>
+    <text x="612" y="333" text-anchor="middle" fill="#a99fff">web</text>
+    <rect x="670" y="312" width="96" height="32" rx="16" fill="#131722" stroke="#232a3b"/>
+    <text x="718" y="333" text-anchor="middle" fill="#a99fff">phone</text>
+    <rect x="776" y="312" width="96" height="32" rx="16" fill="#131722" stroke="#232a3b"/>
+    <text x="824" y="333" text-anchor="middle" fill="#22d3ee">laptop</text>
+    <rect x="882" y="312" width="96" height="32" rx="16" fill="#131722" stroke="#232a3b"/>
+    <text x="930" y="333" text-anchor="middle" fill="#22d3ee">voice</text>
+    <rect x="988" y="312" width="96" height="32" rx="16" fill="#131722" stroke="#232a3b"/>
+    <text x="1036" y="333" text-anchor="middle" fill="#3ddc97">desk</text>
+  </g>
+  <circle cx="1196" cy="56" r="5" fill="#3ddc97"><animate attributeName="opacity" values="1;.3;1" dur="2.4s" repeatCount="indefinite"/></circle>
+  <text x="1182" y="61" text-anchor="end" class="m" font-size="14" fill="#5d6780">working</text>
+</svg>
