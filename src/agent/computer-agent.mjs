@@ -259,9 +259,14 @@ export class ComputerAgent {
     if (d.decision === 'ask') {
       const summary = name === 'shell_run' ? `Run on your laptop: ${String(nodeArgs.command).slice(0, 400)} — ${classifyShell(nodeArgs.command).why}`
         : `${name} ${JSON.stringify(nodeArgs).slice(0, 160)}${label ? ` on “${label.trim().slice(0, 60)}”` : ''}${intent ? ` [intent: ${intent}]` : ''}`;
-      const a = this.approvals.request({ category: d.cat, risk: d.risk, tool: 'computer_action', summary, payload: { action: name, args: nodeArgs, taskId } });
+      let a;
+      try { a = this.approvals.request({ category: d.cat, risk: d.risk, tool: 'computer_action', summary, payload: { action: name, args: nodeArgs, taskId } }); }
+      catch (e) { return { error: e instanceof TypeError ? e.message : 'approval_request_failed' }; }
       onTrace?.('approval_wait', { approval: a.id.slice(0, 8), summary });
-      if (!(await this.#waitApproval(a.id, signal))) return { error: 'not_approved' };
+      if (!(await this.#waitApproval(a.id, signal))) {
+        const note = this.approvals.get(a.id)?.note;
+        return { error: 'not_approved', ...(note ? { owner_note: note } : {}) };
+      }
       if (d.cat === 'messaging' && state.sendOnce) state.sendApproved = true; // one approval covers this task's sends (e.g. site + WhatsApp confirm)
     }
     const timeoutMs = name === 'shell_run' ? Math.min(Number(nodeArgs.timeoutMs) || 60_000, 600_000) + 15_000 : ['window_focus', 'window_close', 'type_text', 'open_app'].includes(name) ? 45_000 : undefined;

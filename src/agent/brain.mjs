@@ -164,7 +164,9 @@ export class Brain {
       if (tool.validate) { try { const v = await tool.validate(call.args); if (v?.error) return v; } catch (e) { return { error: e instanceof TypeError ? e.message : 'validation_failed' }; } }
       if (decision === 'ask') {
         if (!this.approvals) return { error: 'requires_approval', note: 'This action needs approval and no approval flow is available; it was NOT performed.' };
-        const a = this.approvals.request({ category, risk: riskClass, tool: tool.name, summary: tool.summarize ? tool.summarize(call.args) : `${tool.name}`, payload: call.args, conversationId });
+        let a;
+        try { a = this.approvals.request({ category, risk: riskClass, tool: tool.name, summary: tool.summarize ? tool.summarize(call.args) : `${tool.name}`, payload: call.args, conversationId }); }
+        catch (e) { return { error: e instanceof TypeError ? e.message : 'approval_request_failed' }; }
         return { requires_approval: true, approval_id: a.id.slice(0, 8), note: 'Staged and waiting for the user to approve in their inbox. It was NOT performed yet. Tell the user.' };
       }
     }
