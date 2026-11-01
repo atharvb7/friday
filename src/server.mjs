@@ -46,6 +46,9 @@ const serveStatic = makeStaticServer(resolve(appRoot, 'public'));
 // Buckets: authenticated traffic is keyed by principal (behind `tailscale serve`
 // every request arrives from 127.0.0.1, so IP is useless); failed auth is keyed
 // by IP with a much lower ceiling to blunt token guessing.
+// Sites allowed to post to the public waitlist (the landing page is hosted separately, on Vercel).
+const WAITLIST_ORIGINS = new Set(String(process.env.FRIDAY_WAITLIST_ORIGINS ?? 'https://fridayy.site,https://www.fridayy.site,https://fridayy-landing-page.vercel.app')
+  .split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean));
 const RATE_WINDOW_MS = 60_000;
 const buckets = new Map();
 function limited(key, max) {
@@ -144,15 +147,26 @@ const handler = async (req, res) => {
     const gate = memberGate(u); if (gate) return send(res, 403, { error: 'not_approved', message: gate });
     return startSession(b, memberPrincipal(u));
   }
-  // Landing-page waitlist: public, no auth. JSON only, so a cross-site form cannot post here without a CORS preflight
-  // (which this server never answers). The answer is the same whether or not the email was already on the list.
-  if (req.method === 'POST' && url.pathname === '/v1/waitlist') {
-    if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) return send(res, 415, { error: 'json_required' });
-    if (limited(`waitlist:${clientIp}`, 5)) return send(res, 429, { error: 'rate_limited', message: 'Too many tries. Give it a minute.' }, { 'Retry-After': '60' });
-    let b = {}; try { b = await bodyReader(req)({ max: 2048 }); } catch { return send(res, 400, { error: 'bad_request' }); }
-    if (String(b.website ?? '') !== '') return send(res, 200, { ok: true }); // honeypot field: bots fill it, people never see it
-    try { ctx.waitlist.join({ email: b.email, source: b.source }); return send(res, 200, { ok: true }); }
-    catch (e) { return e instanceof RangeError ? send(res, 503, { error: 'busy', message: 'The waitlist is busy right now. Try again later.' }, { 'Retry-After': '3600' }) : send(res, 400, { error: 'invalid_email', message: 'That email doesn\u2019t look quite right.' }); }
+  // Landing-page waitlist: public, no auth. The landing lives on its own site (Vercel), so browsers ask first (CORS
+  // preflight; JSON-only means no cross-site form can skip it) and only the landing's domains get a yes
+  // (FRIDAY_WAITLIST_ORIGINS overrides the list, comma-separated). The answer is the same whether or not the email
+  // was already on the list.
+  if (url.pathname === '/v1/waitlist' && (req.method === 'OPTIONS' || req.method === 'POST')) {
+    const origin = String(req.headers.origin ?? '');
+    const cors = origin && WAITLIST_ORIGINS.has(origin) ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : null;
+    if (req.method === 'OPTIONS') {
+      if (!cors) { res.writeHead(403, { 'Cache-Control': 'no-store' }); return res.end(); }
+      res.writeHead(204, { ...cors, 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '600', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+    if (origin && !cors && origin !== `https://${req.headers.host}`) return send(res, 403, { error: 'origin_not_allowed' });
+    const sendW = (status, payload, extra = {}) => send(res, status, payload, { ...(cors ?? {}), ...extra });
+    if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) return sendW(415, { error: 'json_required' });
+    if (limited(`waitlist:${clientIp}`, 5)) return sendW(429, { error: 'rate_limited', message: 'Too many tries. Give it a minute.' }, { 'Retry-After': '60' });
+    let b = {}; try { b = await bodyReader(req)({ max: 2048 }); } catch { return sendW(400, { error: 'bad_request' }); }
+    if (String(b.website ?? '') !== '') return sendW(200, { ok: true }); // honeypot field: bots fill it, people never see it
+    try { ctx.waitlist.join({ email: b.email, source: b.source }); return sendW(200, { ok: true }); }
+    catch (e) { return e instanceof RangeError ? sendW(503, { error: 'busy', message: 'The waitlist is busy right now. Try again later.' }, { 'Retry-After': '3600' }) : sendW(400, { error: 'invalid_email', message: 'That email doesn\u2019t look quite right.' }); }
   }
   // Ask for an account (email + password). The owner gets an approval card; nothing works until it is approved.
   if (isPublic && req.method === 'POST' && url.pathname === '/v1/auth/signup') {

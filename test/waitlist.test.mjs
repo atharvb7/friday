@@ -56,6 +56,20 @@ test('waitlist over HTTP: public join without auth, JSON only, honeypot, same an
     assert.equal((await fetch(`http://127.0.0.1:${PUB}/v1/waitlist`)).status, 401, 'the list is not public');
     assert.equal((await priv('/v1/waitlist/maya%40example.com', { method: 'DELETE' })).status, 200);
     assert.equal((await (await priv('/v1/waitlist')).json()).count, 0);
+    // CORS: the landing (its own site) may ask; other sites may not.
+    const pre = (origin) => fetch(`http://127.0.0.1:${PUB}/v1/waitlist`, { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } });
+    const okPre = await pre('https://fridayy.site');
+    assert.equal(okPre.status, 204);
+    assert.equal(okPre.headers.get('access-control-allow-origin'), 'https://fridayy.site');
+    assert.match(okPre.headers.get('access-control-allow-headers') ?? '', /Content-Type/i);
+    const badPre = await pre('https://evil.example');
+    assert.equal(badPre.status, 403);
+    assert.equal(badPre.headers.get('access-control-allow-origin'), null);
+    const fromLanding = await fetch(`http://127.0.0.1:${PUB}/v1/waitlist`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://fridayy-landing-page.vercel.app', 'CF-Connecting-IP': '8.8.8.1' }, body: JSON.stringify({ email: 'cors@example.com', source: 'hero' }) });
+    assert.equal(fromLanding.status, 200);
+    assert.equal(fromLanding.headers.get('access-control-allow-origin'), 'https://fridayy-landing-page.vercel.app');
+    assert.equal((await fetch(`http://127.0.0.1:${PUB}/v1/waitlist`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example', 'CF-Connecting-IP': '8.8.8.2' }, body: JSON.stringify({ email: 'evil@example.com' }) })).status, 403);
+    assert.equal((await (await priv('/v1/waitlist')).json()).entries.some((e) => e.email === 'evil@example.com'), false);
     let last = 0;
     for (let i = 0; i < 6; i++) last = (await join_({ email: `r${i}@example.com` }, '6.6.6.6')).status;
     assert.equal(last, 429, 'per-IP rate limit');
