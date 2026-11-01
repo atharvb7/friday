@@ -144,7 +144,7 @@ export function render({ app, api, toast, go }) {
         const pw = h('input', { type: 'password', placeholder: ls.password ? 'New password (leave empty to keep)' : 'At least 10 characters', autocomplete: 'new-password' });
         const ge = h('input', { type: 'email', value: ls.googleEmail ?? '', placeholder: 'Google account allowed to sign in' });
         const skip = h('input', { type: 'checkbox', checked: ls.googleSkipTotp });
-        section('Sign-in methods (fridayy.site)',
+        section('Sign-in methods (app.fridayy.site)',
           h('p', { class: 'muted' }, 'How you sign in on your public address. Email + password always also asks for your authenticator code.'),
           h('label', {}, 'Email'), em, h('label', {}, 'Password'), pw,
           h('div', { class: 'row wrap' }, h('button', { class: 'btn primary', onclick: async () => {

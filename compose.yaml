@@ -91,7 +91,7 @@ services:
     pids_limit: 128
 
   # Public domain via Cloudflare Tunnel (outbound only; no open ports). Starts only with COMPOSE_PROFILES=public
-  # and CLOUDFLARE_TUNNEL_TOKEN in .env. Public hostname in Cloudflare: https://fridayy.site -> http://friday:4318
+  # and CLOUDFLARE_TUNNEL_TOKEN in .env. Public hostname in Cloudflare: https://app.fridayy.site -> http://friday:4318 (fridayy.site itself is the landing page, hosted on Vercel)
   tunnel:
     <<: *hardening
     image: cloudflare/cloudflared:2025.9.1
