@@ -13,6 +13,11 @@ export function assistantRoutes(router, ctx) {
     try { return [200, { goal: ctx.goals.update(params.id, { title: b.title, digest: b.digest, status: b.status }) }]; } catch (e) { return bad(e, e.message === 'not_found' ? 404 : 400); }
   });
 
+  // Recommendations ledger (src/recs.mjs): list + track record, his decision, the outcome.
+  router.get('/v1/recs', ({ url }) => [200, { recs: ctx.recs.list({ status: url.searchParams.get('status'), limit: 50 }), due: ctx.recs.dueForReview({ max: 10 }), stats: ctx.recs.stats() }]);
+  router.post('/v1/recs/:id([a-f0-9-]{36})/decide', async ({ params, body }) => { const b = await body(); try { return [200, { rec: ctx.recs.decide(params.id, { status: b.status, note: b.note }) }]; } catch (e) { return bad(e, e.message === 'not_found' ? 404 : 409); } });
+  router.post('/v1/recs/:id([a-f0-9-]{36})/score', async ({ params, body }) => { const b = await body(); try { return [200, { rec: ctx.recs.score(params.id, { outcome: b.outcome, note: b.note }) }]; } catch (e) { return bad(e, e.message === 'not_found' ? 404 : 400); } });
+
   router.get('/v1/jobs', ({ url }) => [200, { jobs: jobs.list({ status: url.searchParams.get('status') ?? 'active' }) }]);
   router.post('/v1/jobs', async ({ body }) => {
     const b = await body();
