@@ -5,6 +5,14 @@ export function assistantRoutes(router, ctx) {
   const { jobs, policy, approvals, proactive, settings, bus } = ctx;
   const bad = (e, code = 400) => [code, { error: e.message }];
 
+  // Goals (src/goals.mjs): list with recent notes, add, update status/title/digest.
+  router.get('/v1/goals', ({ url }) => [200, { goals: ctx.goals.list({ status: url.searchParams.get('status') ?? 'active' }).map((g) => ({ ...g, notes: ctx.goals.notes(g.id, 5) })) }]);
+  router.post('/v1/goals', async ({ body }) => { const b = await body(); try { return [201, { goal: ctx.goals.add({ title: b.title, why: b.why, digest: b.digest }) }]; } catch (e) { return bad(e); } });
+  router.post('/v1/goals/:id([a-f0-9-]{36})', async ({ params, body }) => {
+    const b = await body();
+    try { return [200, { goal: ctx.goals.update(params.id, { title: b.title, digest: b.digest, status: b.status }) }]; } catch (e) { return bad(e, e.message === 'not_found' ? 404 : 400); }
+  });
+
   router.get('/v1/jobs', ({ url }) => [200, { jobs: jobs.list({ status: url.searchParams.get('status') ?? 'active' }) }]);
   router.post('/v1/jobs', async ({ body }) => {
     const b = await body();

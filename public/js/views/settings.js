@@ -191,6 +191,18 @@ export function render({ app, api, toast, go }) {
     const chip = (s) => ({ ok: 'good', degraded: 'warn', down: 'bad', off: '' })[s] ?? '';
     section(`System health — ${health.overall}`, h('div', { class: 'list' }, health.checks.map((c) => h('div', { class: 'row' }, h('span', { class: `chip ${chip(c.status)}` }, c.status), h('strong', {}, c.name.replace(/_/g, ' ')), h('span', { class: 'muted grow' }, c.detail)))));
     section('Models (last 24h)', models.stats24h.length ? h('div', { class: 'list' }, models.stats24h.map((s) => h('div', { class: 'row wrap' }, h('span', { class: 'chip accent' }, s.role), h('span', { class: 'mono grow' }, s.model.split('/').pop()), h('span', { class: 'muted' }, `${s.ok_calls}/${s.calls} ok · ${s.avg_ms}ms · ${(s.prompt_tokens + s.completion_tokens).toLocaleString()} tok`)))) : h('p', { class: 'muted' }, 'No model calls yet.'));
+    if (owner) try { // Goals: where each stands (Friday keeps the line current as you talk)
+      const { goals } = await api('/v1/goals');
+      const inp = h('input', { type: 'text', maxlength: '200', placeholder: 'New goal, e.g. 3 FDE clients by December', 'aria-label': 'New goal' });
+      const set = async (g, status) => { try { await api(`/v1/goals/${g.id}`, { method: 'POST', body: { status } }); toast(status === 'done' ? 'Goal done 🎉' : 'Goal dropped'); build(); } catch (e) { toast(e.message); } };
+      const add = async () => { if (!inp.value.trim()) return; try { await api('/v1/goals', { method: 'POST', body: { title: inp.value } }); build(); } catch (e) { toast(e.message); } };
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
+      section('Goals', goals.length ? h('div', { class: 'list' }, goals.map((g) => h('div', { class: 'stack bubble' },
+        h('div', { class: 'row wrap' }, h('strong', { class: 'grow' }, g.title), h('button', { class: 'btn small good', onclick: () => set(g, 'done') }, 'Done'), h('button', { class: 'btn small', onclick: () => set(g, 'dropped') }, 'Drop')),
+        h('div', { class: g.digest ? '' : 'muted' }, g.digest ?? 'No status yet. Tell Friday how it is going.'),
+        g.digest_at ? h('span', { class: 'faint small' }, `updated ${timeAgo(g.digest_at)}`) : null))) : h('p', { class: 'muted' }, 'No goals yet. Add one, or tell Friday what you are working toward.'),
+        h('div', { class: 'row' }, inp, h('button', { class: 'btn primary', onclick: add }, 'Add')));
+    } catch { /* older server */ }
     try { // Spend and daily limits in one place (src/usage.mjs)
       const { usage: u } = await api('/v1/usage');
       const money = (n) => (n == null ? 'unpriced' : n === 0 ? 'free' : `$${n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`);
