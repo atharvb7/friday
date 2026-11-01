@@ -24,7 +24,7 @@ const MAPS = { local_results: [
   { title: 'Only Facebook', website: 'https://facebook.com/onlyfb', data_id: 'd4' },
 ] };
 
-function world() {
+function world({ now } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'friday-prospect-'));
   const store = new Store(join(dir, 'db.sqlite'));
   const settings = new Settings(store);
@@ -64,12 +64,14 @@ function world() {
   const approvals = []; const notes = [];
   const pipeline = new Pipeline({ store, settings, notifications: { create: (n) => notes.push(n) } });
   const judge = { ready: true, qualify: async ({ lead }) => (/Phone-only/.test(lead.gap) ? { verdict: 'hold', why: 'possible fit, evidence not strong enough yet' } : { verdict: 'qualify', why: 'ok' }) };
-  const prospector = new Prospector({ store, settings, ai, judge, pipeline, approvals: { request: (a) => { approvals.push(a); return { id: 'appr-1234567' }; } }, notifications: { create: (n) => notes.push(n) }, serpKey: 'k', fetchImpl, fetchPage, mx });
+  const prospector = new Prospector({ store, settings, ai, judge, pipeline, approvals: { request: (a) => { approvals.push(a); return { id: 'appr-1234567' }; } }, notifications: { create: (n) => notes.push(n) }, serpKey: 'k', fetchImpl, fetchPage, mx, ...(now ? { now } : {}) });
   return { dir, store, settings, prospector, pipeline, serpCalls, approvals, notes, writes, close: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 test('prospector: source -> audit with verified evidence -> qualify -> contact -> draft/review/rewrite -> one approval', async () => {
-  const w = world();
+  // Fixed clock: the day's search allowance is the month's budget shared over the run days left, so on a real
+  // clock early in a month this run got 1 search and stopped before exhausting the segment.
+  const w = world({ now: () => Date.parse('2026-10-28T03:00:00Z') }); // Wednesday 08:30 IST, 3 run days left
   try {
     assert.throws(() => w.prospector.setConfig({ enabled: true }), /at least one segment/);
     assert.throws(() => w.prospector.setConfig({ segments: [{ vertical: 'freight forwarders', location: 'Dubai', timezone: 'Mars/Base' }] }), /IANA/);

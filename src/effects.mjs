@@ -1,6 +1,9 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 
-const statuses = new Set(['proposed', 'staged', 'awaiting_approval', 'approved', 'committing', 'effect_unknown', 'verified_success', 'verified_failure']);
+const statuses = new Set(['proposed', 'staged', 'awaiting_approval', 'approved', 'committing', 'effect_unknown', 'verified_success', 'verified_failure', 'expired']);
+// A task in one of these states may not collect an approval or start a commit (it can still be retried into 'queued').
+const CLOSED_TASK = new Set(['blocked', 'completed', 'failed', 'cancelled']);
+const COMMIT_WINDOW_MS = 2 * 60_000;
 
 function digest(value) { return createHash('sha256').update(value).digest('hex'); }
 function encodeArgs(args) {
@@ -9,17 +12,24 @@ function encodeArgs(args) {
 }
 
 export class Effects {
-  constructor(store) {
+  constructor(store, { commitWindowMs = COMMIT_WINDOW_MS } = {}) {
+    this.store = store;
     this.db = store.db;
+    this.commitWindowMs = commitWindowMs;
     const columns = new Set(this.db.prepare('PRAGMA table_info(effects)').all().map(row => row.name));
     if (!columns.has('approval_hash')) this.db.exec('ALTER TABLE effects ADD COLUMN approval_hash TEXT');
     if (!columns.has('approval_expires_at')) this.db.exec('ALTER TABLE effects ADD COLUMN approval_expires_at TEXT');
     if (!columns.has('receipt')) this.db.exec('ALTER TABLE effects ADD COLUMN receipt TEXT');
-    this.db.prepare("UPDATE effects SET status='effect_unknown', updated_at=? WHERE status='committing'").run(new Date().toISOString());
+    if (!columns.has('commit_by')) this.db.exec('ALTER TABLE effects ADD COLUMN commit_by TEXT');
+    const now = new Date().toISOString();
+    this.db.prepare("UPDATE effects SET status='effect_unknown', updated_at=? WHERE status='committing'").run(now);
+    // Close approvals that ran out while we were down, so nothing looks like it is still waiting (or still live).
+    this.db.prepare("UPDATE effects SET status='expired', approval_hash=NULL, updated_at=? WHERE status='awaiting_approval' AND approval_expires_at <= ?").run(now, now);
+    this.db.prepare("UPDATE effects SET status='expired', updated_at=? WHERE status='approved' AND (commit_by IS NULL OR commit_by <= ?)").run(now, now);
   }
 
   get(id) {
-    const row = this.db.prepare('SELECT id, task_id, kind, exact_args, status, created_at, updated_at, approval_expires_at, receipt FROM effects WHERE id=?').get(id);
+    const row = this.db.prepare('SELECT id, task_id, kind, exact_args, status, created_at, updated_at, approval_expires_at, commit_by, receipt FROM effects WHERE id=?').get(id);
     return row ? { ...row, exact_args: JSON.parse(row.exact_args), receipt: row.receipt ? JSON.parse(row.receipt) : null } : null;
   }
 
@@ -53,29 +63,72 @@ export class Effects {
   }
 
   approve(id, token, exactArgs) {
-    const row = this.#require(id, 'awaiting_approval');
-    if (Date.parse(row.approval_expires_at) <= Date.now()) throw new Error('approval expired');
-    const supplied = Buffer.from(digest(String(token)), 'hex');
-    const expected = Buffer.from(row.approval_hash, 'hex');
-    if (!timingSafeEqual(supplied, expected)) throw new Error('invalid approval');
-    if (encodeArgs(exactArgs) !== row.exact_args) throw new Error('arguments changed after approval request');
-    this.db.prepare("UPDATE effects SET status='approved', approval_hash=NULL, updated_at=? WHERE id=?").run(new Date().toISOString(), id);
+    this.#transaction(() => {
+      const row = this.#require(id, 'awaiting_approval');
+      const now = new Date();
+      if (Date.parse(row.approval_expires_at) <= now.getTime()) {
+        // Closed, not left awaiting a decision that can no longer be made.
+        this.db.prepare("UPDATE effects SET status='expired', approval_hash=NULL, updated_at=? WHERE id=?").run(now.toISOString(), id);
+        return new Error('approval expired');
+      }
+      this.#requireOpenTask(row.task_id);
+      const supplied = Buffer.from(digest(String(token)), 'hex');
+      const expected = Buffer.from(row.approval_hash, 'hex');
+      if (!timingSafeEqual(supplied, expected)) throw new Error('invalid approval');
+      if (encodeArgs(exactArgs) !== row.exact_args) throw new Error('arguments changed after approval request');
+      // Its own short deadline: approval_expires_at may be nearly spent by now.
+      const commitBy = new Date(now.getTime() + this.commitWindowMs).toISOString();
+      this.db.prepare("UPDATE effects SET status='approved', approval_hash=NULL, commit_by=?, updated_at=? WHERE id=?").run(commitBy, now.toISOString(), id);
+    });
     return this.get(id);
   }
 
   beginCommit(id, exactArgs) {
-    const row = this.#require(id, 'approved');
-    if (encodeArgs(exactArgs) !== row.exact_args) throw new Error('arguments changed before commit');
-    this.db.prepare("UPDATE effects SET status='committing', updated_at=? WHERE id=?").run(new Date().toISOString(), id);
+    this.#transaction(() => {
+      const row = this.#require(id, 'approved');
+      const now = new Date();
+      if (!row.commit_by || Date.parse(row.commit_by) <= now.getTime()) {
+        this.db.prepare("UPDATE effects SET status='expired', updated_at=? WHERE id=?").run(now.toISOString(), id);
+        return new Error('commit window expired');
+      }
+      this.#requireOpenTask(row.task_id);
+      if (encodeArgs(exactArgs) !== row.exact_args) throw new Error('arguments changed before commit');
+      this.db.prepare("UPDATE effects SET status='committing', updated_at=? WHERE id=?").run(now.toISOString(), id);
+    });
     return this.get(id);
   }
 
+  // From 'committing' after the handler returns, or from 'effect_unknown' once someone has inspected the
+  // target and knows what really happened. Settling an unknown row records it; it never re-runs it.
   resolve(id, status, receipt) {
     if (!['effect_unknown', 'verified_success', 'verified_failure'].includes(status)) throw new TypeError('invalid resolution');
-    this.#require(id, 'committing');
+    const row = this.db.prepare('SELECT status FROM effects WHERE id=?').get(id);
+    if (!row) throw new Error('effect not found');
+    if (row.status === 'effect_unknown') {
+      if (status === 'effect_unknown') throw new Error('effect is already effect_unknown');
+    } else if (row.status !== 'committing') {
+      throw new Error(`effect must be committing or effect_unknown; got ${row.status}`);
+    }
     if (!receipt || typeof receipt !== 'object') throw new TypeError('receipt required');
-    this.db.prepare('UPDATE effects SET status=?, receipt=?, updated_at=? WHERE id=?').run(status, JSON.stringify(receipt), new Date().toISOString(), id);
+    const updated = this.db.prepare('UPDATE effects SET status=?, receipt=?, updated_at=? WHERE id=? AND status=?').run(status, JSON.stringify(receipt), new Date().toISOString(), id, row.status);
+    if (updated.changes !== 1) throw new Error('effect changed concurrently');
     return this.get(id);
+  }
+
+  // Runs fn in one BEGIN IMMEDIATE. fn may return an Error: its writes are kept and the error is thrown after COMMIT.
+  #transaction(fn) {
+    this.db.exec('BEGIN IMMEDIATE');
+    let result;
+    try { result = fn(); } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    this.db.exec('COMMIT');
+    if (result instanceof Error) throw result;
+    return result;
+  }
+
+  #requireOpenTask(taskId) {
+    const task = this.store.getTask(taskId);
+    if (!task) throw new Error('task not found');
+    if (CLOSED_TASK.has(task.status)) throw new Error(`task is ${task.status}`);
   }
 
   #require(id, status) {

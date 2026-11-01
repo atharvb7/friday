@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { request } from 'node:http';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -95,6 +96,40 @@ test('wired server: static UI, governor status, true counts, cancel, hardening',
 
     // Overlong memory search is a 400, not a 500.
     assert.equal((await api(`/v1/memory/search?q=${'x'.repeat(201)}`)).status, 400);
+  } finally {
+    await stopServer(child);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('request body: a character split across two chunks arrives intact; the size limit counts bytes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'friday-server-'));
+  const child = startServer(dir);
+  try {
+    await waitForBoot();
+    const token = readFileSync(join(dir, 'access-token'), 'utf8').trim();
+    const post = (parts) => new Promise((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port: PORT, path: '/v1/tasks', method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }, (res) => {
+        const chunks = []; res.on('data', (c) => chunks.push(c)); res.on('end', () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString('utf8') }));
+      });
+      req.on('error', reject);
+      req.flushHeaders();
+      // Separate writes with a pause so the server reads them as separate chunks.
+      (async () => { for (const part of parts) { req.write(part); await new Promise((r) => setTimeout(r, 50)); } req.end(); })();
+    });
+
+    const body = Buffer.from(JSON.stringify({ title: 'Café', instruction: 'Réserver une table' }), 'utf8');
+    const cut = body.indexOf(Buffer.from('é')) + 1; // between the two bytes of é
+    const created = await post([body.subarray(0, cut), body.subarray(cut)]);
+    assert.equal(created.status, 201, created.text);
+    const task = JSON.parse(created.text).task;
+    assert.equal(task.title, 'Café');
+    assert.equal(task.instruction, 'Réserver une table');
+
+    // 30,000 three-byte characters = 90 KB of body in 30,000 UTF-16 units: over the 64 KB limit.
+    const big = Buffer.from(JSON.stringify({ title: 'x', instruction: '€'.repeat(30000) }), 'utf8');
+    const tooBig = await post([big]).catch(() => ({ status: 'reset' }));
+    assert.notEqual(tooBig.status, 201);
   } finally {
     await stopServer(child);
     rmSync(dir, { recursive: true, force: true });
