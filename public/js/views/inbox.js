@@ -10,9 +10,9 @@ export function render({ app, api, toast, refresh }) {
     if (app.needsCode?.() && app.totpActive) { const c = prompt('Authenticator code (6 digits)'); return c ? c.trim() : null; }
     return undefined;
   }
-  async function decide(a, approve) {
+  async function decide(a, approve, note = '') {
     const totp = await totpFor(); if (totp === null) return;
-    try { await api(`/v1/approvals/${a.id}/decide`, { method: 'POST', body: { approve }, totp }); toast(approve ? 'Approved — doing it now.' : 'Denied.'); }
+    try { await api(`/v1/approvals/${a.id}/decide`, { method: 'POST', body: { approve, ...(note.trim() ? { note: note.trim() } : {}) }, totp }); toast(approve ? 'Approved — doing it now.' : 'Denied.'); }
     catch (e) { toast(e.message === 'totp_required' ? 'A valid authenticator code is required.' : `Failed: ${e.message}`); }
     load(); refresh();
   }
@@ -34,10 +34,13 @@ export function render({ app, api, toast, refresh }) {
     if (tab === 'approvals') {
       if (!a.approvals.length) body.append(h('div', { class: 'empty' }, h('div', { class: 'big' }, '✅'), 'Nothing waiting on you.'));
       for (const x of a.approvals) {
+        const note = h('input', { type: 'text', maxlength: '500', placeholder: 'Note for Friday (optional, e.g. why you deny)', 'aria-label': 'Note for Friday' });
         body.append(h('div', { class: 'card stack' },
           h('div', { class: 'row wrap' }, h('strong', { class: 'grow' }, x.summary), h('span', { class: `chip ${x.risk === 'critical' ? 'bad' : 'warn'}` }, x.risk), h('span', { class: 'chip' }, x.category), h('span', { class: 'faint' }, timeAgo(x.created_at))),
+          x.repeat ? h('div', { class: 'chip warn' }, `Repeat: same as the one you approved ${timeAgo(x.repeat.approved_at)}, which already ran`) : null,
           ...(Array.isArray(x.payload?.emails) ? [emailPreview(x.payload.emails), h('details', {}, h('summary', { class: 'faint small' }, 'Exact payload'), rawPayload(x))] : [rawPayload(x)]),
-          h('div', { class: 'row' }, h('button', { class: 'btn good', onclick: () => decide(x, true) }, 'Approve'), h('button', { class: 'btn bad', onclick: () => decide(x, false) }, 'Deny'),
+          note,
+          h('div', { class: 'row' }, h('button', { class: 'btn good', onclick: () => decide(x, true, note.value) }, 'Approve'), h('button', { class: 'btn bad', onclick: () => decide(x, false, note.value) }, 'Deny'),
             h('span', { class: 'faint small' }, 'Approving runs exactly what is shown above.'))));
       }
     } else if (tab === 'questions') {

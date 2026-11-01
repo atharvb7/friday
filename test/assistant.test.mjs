@@ -120,6 +120,50 @@ test('policy: tier matrix, critical needs time-boxed high, expiry reverts, revok
   st.close(); rmSync(dir, { recursive: true, force: true });
 });
 
+test('approvals: a restart mid-run marks the result unknown and tells the chat; repeats are flagged; hidden characters refused; notes reach the chat', async () => {
+  const r = rig();
+  try {
+    let ap = new Approvals({ store: r.store, notifications: r.notifications, chat: r.chat, bus: r.bus, now: r.now });
+    const ran = [];
+    ap.register('send_message', async (payload) => { ran.push(payload); return { sent: true }; });
+    const convo = r.chat.createConversation('c');
+    const msg = { to: 'Rohan', text: 'hi' };
+
+    // Crash between the claim and the result: the row is approved with no result.
+    const cut = ap.request({ category: 'messaging', risk: 'consequential', tool: 'send_message', summary: 'Send hi to Rohan', payload: msg, conversationId: convo.id });
+    r.store.db.prepare("UPDATE approvals SET status='approved', decided_at=?, decided_by='owner' WHERE id=?").run(new Date(r.now()).toISOString(), cut.id);
+    ap = new Approvals({ store: r.store, notifications: r.notifications, chat: r.chat, bus: r.bus, now: r.now });
+    assert.deepEqual(JSON.parse(ap.get(cut.id).result), { error: 'interrupted', unknown: true });
+    assert.match(r.chat.listMessages(convo.id).at(-1).content, /restarted while doing “Send hi to Rohan”.*can't tell whether it finished/);
+    assert.equal(ran.length, 0, 'never re-run');
+    new Approvals({ store: r.store, notifications: r.notifications, chat: r.chat, bus: r.bus, now: r.now });
+    assert.equal(r.chat.listMessages(convo.id).filter((m) => /restarted while/.test(m.content)).length, 1, 'announced once');
+
+    // A repeat of an action that already ran is still asked, with a flag; an interrupted one is not a repeat source.
+    ap.register('send_message', async (payload) => { ran.push(payload); return { sent: true }; });
+    assert.equal(ap.request({ category: 'messaging', risk: 'consequential', tool: 'send_message', summary: 's', payload: msg }).repeat, null);
+    const first = ap.request({ category: 'messaging', risk: 'consequential', tool: 'send_message', summary: 's', payload: { to: 'Asha', text: 'yo' } });
+    await ap.decide(first.id, true);
+    const again = ap.request({ category: 'messaging', risk: 'consequential', tool: 'send_message', summary: 's', payload: { to: 'Asha', text: 'yo' } });
+    assert.equal(again.repeat.id, first.id);
+    assert.match(r.notifications.list()[0].title, /\(repeat\)/);
+    assert.equal(ap.request({ category: 'messaging', risk: 'consequential', tool: 'send_message', summary: 's', payload: { to: 'Asha', text: 'other' } }).repeat, null);
+
+    // Direction overrides / tag characters are refused; emoji ZWJ and Indic ZWNJ are fine.
+    assert.throws(() => ap.request({ category: 'messaging', risk: 'consequential', tool: 'send_message', summary: 's', payload: { to: 'a', text: 'pay ‮exe.txt' } }), /invisible_characters/);
+    assert.throws(() => ap.request({ category: 'messaging', risk: 'consequential', tool: 'send_message', summary: 'x\u{E0041}', payload: {} }), /invisible_characters/);
+    ap.request({ category: 'messaging', risk: 'consequential', tool: 'send_message', summary: 's', payload: { text: '👨‍👩‍👧 क्‌ष' } });
+
+    // The owner's note: on deny it reaches the conversation; on approve it is appended to the result line.
+    const d = ap.request({ category: 'messaging', risk: 'consequential', tool: 'send_message', summary: 'Email the landlord', payload: { to: 'landlord' }, conversationId: convo.id });
+    assert.equal((await ap.decide(d.id, false, 'owner', '  wait until Monday  ')).note, 'wait until Monday');
+    assert.match(r.chat.listMessages(convo.id).at(-1).content, /You declined “Email the landlord”: wait until Monday/);
+    const e = ap.request({ category: 'messaging', risk: 'consequential', tool: 'send_message', summary: 'Ping Asha', payload: { to: 'Asha', n: 2 }, conversationId: convo.id });
+    await ap.decide(e.id, true, 'owner', 'keep it short');
+    assert.match(r.chat.listMessages(convo.id).at(-1).content, /Done after your approval: Ping Asha\n\nYour note: keep it short/);
+  } finally { r.done(); }
+});
+
 test('approvals: binds exact payload, executes once, expires, tamper detected', async () => {
   const r = rig();
   try {

@@ -27,7 +27,8 @@ export function assistantRoutes(router, ctx) {
   router.post('/v1/approvals/:id([a-f0-9-]+)/decide', async ({ params, body, principal }) => {
     const b = await body();
     if (typeof b.approve !== 'boolean') return [400, { error: 'approve must be boolean' }];
-    try { return [200, { approval: await approvals.decide(params.id, b.approve, principal.id) }]; }
+    if (b.note !== undefined && typeof b.note !== 'string') return [400, { error: 'note must be a string' }];
+    try { return [200, { approval: await approvals.decide(params.id, b.approve, principal.id, b.note) }]; }
     catch (e) { return bad(e, e.message === 'not_found' ? 404 : 409); }
   });
 
