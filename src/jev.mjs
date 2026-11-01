@@ -82,7 +82,9 @@ function questionsFor(text) {
 }
 
 export class JevClient {
-  constructor({ apiKey = null, endpoint = null, model = PINNED_MODEL, timeoutMs = 5000, fetchImpl = globalThis.fetch } = {}) {
+  // meter({ provider, model, ms, usage, ok, error }): optional, records each API call (src/usage.mjs prices it).
+  constructor({ apiKey = null, endpoint = null, model = PINNED_MODEL, timeoutMs = 5000, fetchImpl = globalThis.fetch, meter = null } = {}) {
+    this.meter = meter;
     this.apiKey = apiKey ?? process.env.FRIDAY_JEV_KEY ?? null;
     this.endpoint = endpoint ?? (this.apiKey?.startsWith('jv_live_') ? HOSTED_URL : OFFICIAL_URL);
     this.model = model;
@@ -96,6 +98,8 @@ export class JevClient {
     if (!this.configured) throw new Error('jev_not_configured');
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(new Error('jev_timeout')), this.timeoutMs);
+    const t0 = Date.now();
+    const meter = (m) => { try { this.meter?.({ provider: 'typesafe', model: this.model, ms: Date.now() - t0, ...m }); } catch { /* metering never breaks a call */ } };
     try {
       const res = await this.fetchImpl(this.endpoint, {
         method: 'POST', signal: ctrl.signal,
@@ -106,8 +110,10 @@ export class JevClient {
       const data = await res.json();
       const answers = data.answers ?? {};
       const confidence = Object.fromEntries(Object.entries(answers).map(([k, a]) => [k, a?.confidence ?? null]));
+      meter({ ok: true, usage: data.usage ?? null });
       return { answers, confidence, model: data.model ?? this.model, usage: data.usage ?? null, source: 'jev' };
-    } finally { clearTimeout(timer); }
+    } catch (error) { meter({ ok: false, error: String(error?.message ?? error).slice(0, 200) }); throw error; }
+    finally { clearTimeout(timer); }
   }
 
   // One batched call: intent choice + risk score + approval noul + urgency.

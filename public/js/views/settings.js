@@ -191,6 +191,20 @@ export function render({ app, api, toast, go }) {
     const chip = (s) => ({ ok: 'good', degraded: 'warn', down: 'bad', off: '' })[s] ?? '';
     section(`System health — ${health.overall}`, h('div', { class: 'list' }, health.checks.map((c) => h('div', { class: 'row' }, h('span', { class: `chip ${chip(c.status)}` }, c.status), h('strong', {}, c.name.replace(/_/g, ' ')), h('span', { class: 'muted grow' }, c.detail)))));
     section('Models (last 24h)', models.stats24h.length ? h('div', { class: 'list' }, models.stats24h.map((s) => h('div', { class: 'row wrap' }, h('span', { class: 'chip accent' }, s.role), h('span', { class: 'mono grow' }, s.model.split('/').pop()), h('span', { class: 'muted' }, `${s.ok_calls}/${s.calls} ok · ${s.avg_ms}ms · ${(s.prompt_tokens + s.completion_tokens).toLocaleString()} tok`)))) : h('p', { class: 'muted' }, 'No model calls yet.'));
+    try { // Spend and daily limits in one place (src/usage.mjs)
+      const { usage: u } = await api('/v1/usage');
+      const money = (n) => (n == null ? 'unpriced' : n === 0 ? 'free' : `$${n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`);
+      const rowsFor = (list, today) => list.map((r) => h('div', { class: 'row wrap' },
+        h('span', { class: 'chip' }, r.provider), h('span', { class: 'mono grow' }, r.model.split('/').pop()),
+        today && r.limit != null ? h('span', { class: `chip ${r.used_today >= r.limit ? 'bad' : r.used_today >= r.limit * 0.8 ? 'warn' : 'good'}`, title: `resets ${r.resets}` }, `${r.used_today}/${r.limit} today`) : null,
+        h('span', { class: 'muted' }, `${r.calls} calls${r.errors ? ` (${r.errors} failed)` : ''} · ${(r.input_tokens + r.output_tokens).toLocaleString()} tok · ${money(r.usd)}`)));
+      section(`Usage — today ${money(u.usd_today)}, this month ${money(u.usd_month)}`,
+        h('h4', {}, 'Today'), u.today.length ? h('div', { class: 'list' }, rowsFor(u.today, true)) : h('p', { class: 'muted' }, 'No calls yet today.'),
+        h('h4', {}, 'This month'), u.month.length ? h('div', { class: 'list' }, rowsFor(u.month, false)) : h('p', { class: 'muted' }, 'No calls this month.'),
+        u.serpapi ? h('p', { class: 'muted' }, `SerpApi: ${u.serpapi.used}${u.serpapi.budget ? ` of ${u.serpapi.budget}` : ''} searches in ${u.serpapi.month}`) : null,
+        u.unpriced.length ? h('p', { class: 'muted small' }, `No price on file for: ${u.unpriced.join(', ')}`) : null,
+        h('p', { class: 'faint small' }, 'A model that reaches its daily limit is skipped until it resets; Friday falls back to the next one.'));
+    } catch { /* older server: no usage endpoint */ }
     const [sk, mcp] = await Promise.all([api('/v1/skills'), owner ? api('/v1/mcp') : Promise.resolve({ config: { servers: {} } })]);
     section('Skills & tools', h('div', { class: 'row wrap' }, sk.skills.map((s) => h('span', { class: 'chip', title: s.description }, s.name))), h('div', { class: 'muted' }, `MCP servers: ${Object.keys(mcp.config.servers).join(', ') || 'defaults from your keys (SerpApi, GitHub)'}`));
   }

@@ -69,6 +69,7 @@ import { Deployer } from './deployer.mjs';
 import { ReelPipeline } from './reel.mjs';
 import { Questions } from './questions.mjs';
 import { loop, loops } from './loops.mjs';
+import { Usage } from './usage.mjs';
 
 function findDshBin() {
   const r = spawnSync('sh', ['-c', 'command -v dsh'], { encoding: 'utf8' });
@@ -153,12 +154,14 @@ export function createContext({ appRoot, env = process.env }) {
     ai.register(new OpenAICompatProvider({ name: 'fallback', baseUrl: env.FRIDAY_FALLBACK_BASE_URL, apiKey: env.FRIDAY_FALLBACK_API_KEY }));
   }
   const settings = new Settings(store);
+  const usage = new Usage({ db: store.db, settings });
+  ai.capCheck = (entry) => usage.capReason(entry); // skip a model whose daily quota is spent (src/usage.mjs)
   const indexer = new MemoryIndexer({ memory, ai, bus });
   memory.onChange = (event, row) => { bus.publish(`memory.${event}`, { id: row.id }); indexer.kick(); };
 
   const ctx = {
     appRoot, env, dataDir, token,
-    bus, auth: new Auth(store, token), ai, settings, indexer, skills, mcpPath,
+    bus, auth: new Auth(store, token), ai, settings, usage, indexer, skills, mcpPath,
     store, memory, effects, governor, worker, dshAdapter, nemotron, nemotronResilient,
     tools: new ToolRegistry({ workspace: workspaceDir }),
     jev: new JevClient({}),
@@ -275,7 +278,7 @@ export function createContext({ appRoot, env = process.env }) {
   { const prev = store.onEvent; store.onEvent = (e) => { prev?.(e); if (['task.completed', 'task.failed'].includes(e.kind)) setTimeout(() => { ctx.watches.onTaskFinished(e.taskId, e.kind).catch(() => {}); }, 500).unref?.(); }; }
   kindRouter.byKind.team = new TeamOrchestrator({ store, router: kindRouter, ai });
   ctx.rules.proactive = ctx.proactive;
-  ctx.salesJudge = new SalesJudge({ jev: new JevClient({ apiKey: env.FRIDAY_JEV_KEY ?? null, timeoutMs: 20_000 }) });
+  ctx.salesJudge = new SalesJudge({ jev: new JevClient({ apiKey: env.FRIDAY_JEV_KEY ?? null, timeoutMs: 20_000, meter: (m) => ai.recordExternal({ role: 'sales_judge', ...m }) }) });
   ctx.pipeline = new Pipeline({ store, settings, gmail: ctx.gmailOutreach, notifications: ctx.notifications, bus, judge: ctx.salesJudge });
   ctx.prospector = new Prospector({ store, settings, ai, judge: ctx.salesJudge, pipeline: ctx.pipeline, approvals: ctx.approvals, notifications: ctx.notifications, bus, serpKey: env.SERPAPI_API_KEY ?? null, hunterKey: env.HUNTER_API_KEY ?? null, reoonKey: env.REOON_API_KEY ?? null });
   ctx.fridayTools = buildFridayTools(ctx);
