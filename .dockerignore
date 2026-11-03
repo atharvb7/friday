@@ -1,7 +1,15 @@
 data
 .env
 .git
-node
+# node/ is the laptop program; the server browser image needs only these files from it
+node/*
+!node/package.json
+!node/package-lock.json
+!node/server-browser.mjs
+!node/browser.mjs
+!node/research-browser.mjs
+!node/netpolicy.mjs
+!node/selfguard.mjs
 desktop-pet
 physical
 docs
