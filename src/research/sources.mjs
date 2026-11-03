@@ -29,7 +29,14 @@ export class Sources {
     this.stats = { laptop: 0, serp: 0, fail: 0 };
   }
 
-  laptopReady() { const n = this.nodes?.online && this.nodes.list?.()[0]; return Boolean(n?.caps?.includes('research_search')); }
+  // Which browser searches: the SERVER browser container first (works with the laptop off), else his laptop's hidden
+  // Chrome. -> 'server' | 'laptop' | null
+  where() {
+    if (this.nodes?.server?.('research_search')) return 'server';
+    const n = this.nodes?.online && this.nodes.list?.()[0];
+    return n?.caps?.includes('research_search') ? 'laptop' : null;
+  }
+  laptopReady() { return this.where() !== null; } // "a browser can search" (name kept for callers)
 
   // SerpApi is shared with prospecting and has 250 searches a month: research takes at most SERP_MONTHLY minus a reserve.
   #serpAllowed() {
@@ -52,8 +59,9 @@ export class Sources {
     if (!q) return { engine: 'none', results: [] };
     if (engine === 'web' && this.laptopReady()) {
       try {
-        const r = await this.nodes.dispatch({ action: 'research_search', args: { query: q, site, recent, num }, timeoutMs: 45_000 });
-        if (r.results?.length) { this.stats.laptop++; return { engine: `laptop:${r.engine}`, results: r.results }; }
+        const where = this.where();
+        const r = await this.nodes.dispatch({ action: 'research_search', args: { query: q, site, recent, num }, timeoutMs: 45_000, where });
+        if (r.results?.length) { this.stats.laptop++; return { engine: `${where}:${r.engine}`, results: r.results }; }
       } catch { /* fall through */ }
     }
     if (this.#serpAllowed()) {
@@ -67,7 +75,7 @@ export class Sources {
       } catch { /* fall through */ }
     }
     this.stats.fail++;
-    return { engine: 'none', results: [], note: this.laptopReady() ? 'search failed' : 'no search backend: his laptop is offline and the SerpApi research budget is used up' };
+    return { engine: 'none', results: [], note: this.where() ? 'search failed' : 'no search backend: the server browser and his laptop are both unavailable and the SerpApi research budget is used up' };
   }
 
   // Free structured sources -> same shape as search results.
@@ -103,10 +111,11 @@ export class Sources {
       } catch { /* try the browser */ }
     }
     const viaLaptop = async () => {
-      const r = await this.nodes.dispatch({ action: 'research_read', args: { url, maxChars }, timeoutMs: 60_000 });
+      const where = this.where();
+      const r = await this.nodes.dispatch({ action: 'research_read', args: { url, maxChars }, timeoutMs: 60_000, where });
       // Behind a login wall LinkedIn still serves its preview description (headline, company, education, location).
       const text = String(r.text ?? '').length < 800 && r.description ? `${r.title ?? ''}\n${r.description}\n${r.text ?? ''}` : r.text;
-      return { url: r.url ?? url, title: r.title ?? '', text: clip(text, maxChars), published: r.published ?? null, via: 'laptop', ...(r.loginWall ? { loginWall: true } : {}), ...(r.description ? { preview: true } : {}) };
+      return { url: r.url ?? url, title: r.title ?? '', text: clip(text, maxChars), published: r.published ?? null, via: where === 'server' ? 'server_browser' : 'laptop', ...(r.loginWall ? { loginWall: true } : {}), ...(r.description ? { preview: true } : {}) };
     };
     const viaJina = async () => {
       const r = await this.fetchPage(`https://r.jina.ai/${url}`, { timeoutMs: 25_000 });

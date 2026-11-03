@@ -5,11 +5,15 @@
 //   node  --POST /v1/node/events-->       reports activity (user is typing) and hello/caps
 // If no node is online, commands fail fast with `node_offline` so callers can
 // queue or tell the user instead of hanging.
+// Roles: 'laptop' (his machine) and 'server' (the headless browser container, device id SERVER_BROWSER_ID). Everything
+// that existed before the server browser (online, list, pick, dispatch) still means THE LAPTOP; the server browser is
+// reached only on purpose: dispatch({ where: 'server' }) or where: 'auto' (server first, laptop fallback).
 import { randomUUID } from 'node:crypto';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_PENDING = 50;
 const HEARTBEAT_MS = 15_000;
+export const SERVER_BROWSER_ID = 'server-browser';
 
 export class NodeHub {
   #nodes = new Map();   // deviceId -> { id, name, caps, res, lastSeen, userActiveUntil }
@@ -19,7 +23,7 @@ export class NodeHub {
   // Called when a node opens its command stream.
   attach(deviceId, name, res, req) {
     this.detach(deviceId, 'replaced');
-    const node = { id: deviceId, name, caps: [], res, lastSeen: this.now(), userActiveUntil: 0, connectedAt: new Date().toISOString() };
+    const node = { id: deviceId, name, role: deviceId === SERVER_BROWSER_ID ? 'server' : 'laptop', caps: [], res, lastSeen: this.now(), userActiveUntil: 0, connectedAt: new Date().toISOString() };
     this.#nodes.set(deviceId, node);
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store, no-transform', Connection: 'keep-alive', 'X-Content-Type-Options': 'nosniff' });
     res.write('retry: 3000\n\n');
@@ -27,7 +31,7 @@ export class NodeHub {
     hb.unref?.();
     const gone = () => { clearInterval(hb); if (this.#nodes.get(deviceId)?.res === res) this.detach(deviceId, 'disconnected'); };
     req.on('close', gone); res.on('error', gone);
-    this.bus?.publish('device.connected', { id: deviceId, name, kind: 'laptop-node' });
+    this.bus?.publish('device.connected', { id: deviceId, name, kind: node.role === 'server' ? 'server-browser' : 'laptop-node' });
     return node;
   }
 
@@ -58,14 +62,32 @@ export class NodeHub {
     this.bus?.publish('node.user_active', { id: deviceId });
   }
 
-  list() { return [...this.#nodes.values()].map((n) => ({ id: n.id, name: n.name, caps: n.caps, platform: n.platform ?? null, connectedAt: n.connectedAt, userActive: n.userActiveUntil > this.now() })); }
-  get online() { return this.#nodes.size > 0; }
-  pick(nodeId = null) { return nodeId ? this.#nodes.get(nodeId) : this.#nodes.values().next().value; }
+  #laptops() { return [...this.#nodes.values()].filter((n) => n.role !== 'server'); }
+  #view(n) { return { id: n.id, name: n.name, role: n.role, caps: n.caps, platform: n.platform ?? null, connectedAt: n.connectedAt, userActive: n.userActiveUntil > this.now() }; }
+  list() { return this.#laptops().map((n) => this.#view(n)); }
+  listAll() { return [...this.#nodes.values()].map((n) => this.#view(n)); }
+  get online() { return this.#laptops().length > 0; }
+  // The server browser, if connected and able to do `cap`.
+  server(cap = null) { const n = [...this.#nodes.values()].find((x) => x.role === 'server'); return n && (!cap || n.caps.includes(cap)) ? n : null; }
+  laptop(cap = null) { const n = this.#laptops()[0]; return n && (!cap || n.caps.includes(cap)) ? n : null; }
+  // where: 'laptop' (default) | 'server' | 'auto' (server browser if it can do it, else the laptop)
+  pick(nodeId = null, { where = 'laptop', action = null } = {}) {
+    if (nodeId) return this.#nodes.get(nodeId);
+    if (where === 'server') return this.server(action) ?? this.server();
+    if (where === 'auto') return this.server(action) ?? this.laptop(action) ?? this.laptop();
+    return this.laptop();
+  }
+  // A dispatch-only view pinned to one side (the computer agent runs against one of these).
+  scoped(where) {
+    const hub = this;
+    return { get online() { return Boolean(where === 'server' ? hub.server() : hub.laptop()); }, list: () => (where === 'server' ? [hub.server()].filter(Boolean).map((n) => hub.#view(n)) : hub.list()),
+      dispatch: (o) => hub.dispatch({ ...o, where }), where };
+  }
 
   // Send a command and await its result. `interactive` actions (input/focus) are
   // refused while the user is active so Friday never fights them for the mouse.
-  dispatch({ action, args = {}, nodeId = null, timeoutMs = DEFAULT_TIMEOUT_MS, interactive = false }) {
-    const node = this.pick(nodeId);
+  dispatch({ action, args = {}, nodeId = null, timeoutMs = DEFAULT_TIMEOUT_MS, interactive = false, where = 'laptop' }) {
+    const node = this.pick(nodeId, { where, action });
     if (!node) return Promise.reject(Object.assign(new Error('node_offline'), { code: 'node_offline' }));
     if (!node.caps.includes(action)) return Promise.reject(Object.assign(new Error(`node_lacks_capability:${action}`), { code: 'node_lacks_capability' }));
     if (interactive && node.userActiveUntil > this.now()) return Promise.reject(Object.assign(new Error('user_active'), { code: 'user_active', retryAfterMs: node.userActiveUntil - this.now() }));

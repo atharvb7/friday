@@ -34,5 +34,5 @@ export function nodeRoutes(router, ctx) {
     return [200, { ok: true }];
   });
 
-  router.get('/v1/nodes', () => [200, { nodes: nodes.list() }]);
+  router.get('/v1/nodes', () => [200, { nodes: nodes.listAll?.() ?? nodes.list() }]);
 }

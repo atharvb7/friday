@@ -114,8 +114,10 @@ const SETTLE_FN = ({ quietMs, maxMs, minInteractive }) => new Promise((resolve) 
 });
 
 export class BrowserController {
-  constructor({ chromium, profileDir, executablePath = '/usr/bin/google-chrome', headless = false, allowedDirs = [], allowPrivate = false, downloadRoot = null }) {
-    Object.assign(this, { chromium, profileDir, executablePath, headless, allowedDirs, allowPrivate }); // allowPrivate is for tests only
+  // proxy + sandbox=false: the server's browser container (node/server-browser.mjs) goes out only through Friday's egress
+  // proxy and runs without Chrome's own sandbox (no user namespaces in a cap-dropped container; the container is the box).
+  constructor({ chromium, profileDir, executablePath = '/usr/bin/google-chrome', headless = false, allowedDirs = [], allowPrivate = false, downloadRoot = null, proxy = null, sandbox = true }) {
+    Object.assign(this, { chromium, profileDir, executablePath, headless, allowedDirs, allowPrivate, proxy, sandbox }); // allowPrivate is for tests only
     this.ctx = null; this.page = null;
     // Files the agent downloads (e.g. generated images/videos) land in <Downloads>/friday-media/<folder>/.
     this.downloadRoot = downloadRoot ?? (allowedDirs.find((d) => /\/Downloads$/.test(d)) ? join(allowedDirs.find((d) => /\/Downloads$/.test(d)), 'friday-media') : null);
@@ -139,7 +141,8 @@ export class BrowserController {
       // Launch like a normal Chrome: keep Chrome's sandbox on and drop the "controlled by automation" flags —
       // Google refuses sign-in ("This browser or app may not be secure") in browsers that advertise automation.
       this.ctx = await this.chromium.launchPersistentContext(this.profileDir, { executablePath: this.executablePath, headless: this.headless, viewport: { width: 1280, height: 800 },
-        chromiumSandbox: true, ignoreDefaultArgs: ['--enable-automation', '--no-sandbox'], args: ['--no-first-run', '--no-default-browser-check', '--disable-blink-features=AutomationControlled'] });
+        ...(this.proxy ? { proxy: { server: this.proxy } } : {}),
+        chromiumSandbox: this.sandbox, ignoreDefaultArgs: this.sandbox ? ['--enable-automation', '--no-sandbox'] : ['--enable-automation'], args: ['--no-first-run', '--no-default-browser-check', '--disable-blink-features=AutomationControlled'] });
       this.ctx.on('close', () => { this.ctx = null; this.page = null; });
       // A site opening a popup / new tab (target=_blank, "continue in app"): follow it, like a person would.
       this.ctx.on('page', (p) => { this.page = p; this.#watchDownloads(p); p.on('close', () => { if (this.page === p) this.page = this.ctx?.pages().at(-1) ?? null; }); });
@@ -147,7 +150,10 @@ export class BrowserController {
       if (!this.allowPrivate) await this.ctx.route('**/*', async (route) => {
         const u = new URL(route.request().url());
         if (['data:', 'blob:', 'about:'].includes(u.protocol)) return route.continue();
-        if (!['http:', 'https:'].includes(u.protocol) || isSelfHost(u.hostname) || await hostIsPrivate(u.hostname)) return route.abort('blockedbyclient');
+        // Behind the egress proxy names do not resolve here; the proxy refuses private targets itself.
+        const host = u.hostname.replace(/^\[|\]$/g, '');
+        const priv = this.proxy ? net.isIP(host) > 0 && isPrivateAddress(host) : await hostIsPrivate(u.hostname);
+        if (!['http:', 'https:'].includes(u.protocol) || isSelfHost(u.hostname) || priv) return route.abort('blockedbyclient');
         return route.continue();
       });
     }

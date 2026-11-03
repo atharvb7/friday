@@ -63,6 +63,27 @@ services:
     pids_limit: 512
     cpus: 4
 
+  # Friday's own headless browser, so research and web tasks work while his laptop is off. Joins the core like the
+  # laptop node (FRIDAY_BROWSER_SECRET; empty = stays off), browser/research actions only, out only via the proxy.
+  browser:
+    <<: *hardening
+    build: { context: ., dockerfile: deploy/Dockerfile.browser }
+    image: friday-browser:local
+    environment:
+      FRIDAY_SERVER_URL: http://friday:4317
+      FRIDAY_BROWSER_SECRET: ${FRIDAY_BROWSER_SECRET:-}
+      FRIDAY_BROWSER_PROXY: http://proxy:3128
+      TZ: ${TZ:-Asia/Kolkata}
+    volumes: ["browser-home:/home/node/browser"]
+    tmpfs: ["/tmp:size=512m,exec"]
+    shm_size: 512m
+    networks: [agentnet]
+    depends_on: [proxy, friday]
+    mem_limit: 1024m
+    memswap_limit: 1024m
+    pids_limit: 512
+    cpus: 2
+
   proxy:
     <<: *hardening
     build: { context: ., dockerfile: deploy/Dockerfile.proxy }
@@ -111,6 +132,7 @@ networks:
   egress: {}
 
 volumes:
+  browser-home:
   agent-home:
   agent-work:
   agent-state:

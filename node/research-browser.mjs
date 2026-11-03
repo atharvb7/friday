@@ -5,7 +5,8 @@
 // If he signs in to LinkedIn/X in this profile once (research_login), logged-in pages are readable too.
 //   search({ query, num, recent, site })  -> { results:[{title,url,snippet,site,date}], answer, related, blocked? }
 //   read({ url, maxChars })               -> { url, title, text, published, site }
-import { hostIsPrivate } from './netpolicy.mjs';
+import net from 'node:net';
+import { hostIsPrivate, isPrivateAddress } from './netpolicy.mjs';
 import { isSelfHost } from './selfguard.mjs';
 import { checkUrl } from './browser.mjs';
 
@@ -17,8 +18,9 @@ const RECENT = { day: 'qdr:d', week: 'qdr:w', month: 'qdr:m', year: 'qdr:y' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class ResearchBrowser {
-  constructor({ chromium, profileDir, executablePath, headless = true, allowPrivate = false }) {
-    Object.assign(this, { chromium, profileDir, executablePath, headless, allowPrivate });
+  // proxy: the server's browser goes out through Friday's egress proxy (no LAN/tailnet/metadata), like her agent.
+  constructor({ chromium, profileDir, executablePath, headless = true, allowPrivate = false, proxy = null, sandbox = true }) {
+    Object.assign(this, { chromium, profileDir, executablePath, headless, allowPrivate, proxy, sandbox });
     this.ctx = null; this.starting = null; this.lastQuery = 0; this.open = 0; this.idle = null; this.blockedUntil = 0;
   }
 
@@ -28,13 +30,16 @@ export class ResearchBrowser {
     if (this.ctx) return this.ctx;
     this.starting ??= (async () => {
       const ctx = await this.chromium.launchPersistentContext(this.profileDir, { executablePath: this.executablePath, headless: this.headless, userAgent: UA, locale: 'en-US',
-        viewport: { width: 1280, height: 900 }, ignoreDefaultArgs: ['--enable-automation'], args: ['--no-first-run', '--no-default-browser-check', '--disable-blink-features=AutomationControlled'] });
+        viewport: { width: 1280, height: 900 }, ...(this.proxy ? { proxy: { server: this.proxy } } : {}), chromiumSandbox: this.sandbox, ignoreDefaultArgs: ['--enable-automation'], args: ['--no-first-run', '--no-default-browser-check', '--disable-blink-features=AutomationControlled'] });
       ctx.on('close', () => { this.ctx = null; });
       // Same rule as his browser: no private/LAN/loopback targets, nothing back to Friday herself; skip heavy media.
       if (!this.allowPrivate) await ctx.route('**/*', async (route) => {
         const req = route.request(); const u = new URL(req.url());
         if (['data:', 'blob:', 'about:'].includes(u.protocol)) return route.continue();
-        if (!['http:', 'https:'].includes(u.protocol) || isSelfHost(u.hostname) || await hostIsPrivate(u.hostname)) return route.abort('blockedbyclient');
+        // Behind the egress proxy names cannot be resolved here (the proxy resolves and refuses private targets itself).
+        const host = u.hostname.replace(/^\[|\]$/g, '');
+        const priv = this.proxy ? net.isIP(host) > 0 && isPrivateAddress(host) : await hostIsPrivate(u.hostname);
+        if (!['http:', 'https:'].includes(u.protocol) || isSelfHost(u.hostname) || priv) return route.abort('blockedbyclient');
         if (['image', 'media', 'font'].includes(req.resourceType())) return route.abort('blockedbyclient');
         return route.continue();
       });

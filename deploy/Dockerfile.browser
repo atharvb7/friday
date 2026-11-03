@@ -1,0 +1,15 @@
+# Friday's server browser: headless Chromium + node/server-browser.mjs. Internal network only; all traffic goes out
+# through the egress proxy. Offers only browser + research actions to the core (no shell, no files).
+FROM node:22-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends chromium fonts-liberation fonts-noto-color-emoji fonts-noto-cjk tini ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /srv/browser/node
+COPY node/package.json node/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+COPY node/server-browser.mjs node/browser.mjs node/research-browser.mjs node/netpolicy.mjs node/selfguard.mjs ./
+# Root filesystem is read-only: Chromium's config/cache/crash dirs live in /tmp (tmpfs).
+ENV CHROMIUM=/usr/bin/chromium FRIDAY_BROWSER_HOME=/home/node/browser HOME=/tmp XDG_CONFIG_HOME=/tmp/.config XDG_CACHE_HOME=/tmp/.cache
+RUN mkdir -p /home/node/browser && chown node:node /home/node/browser   # a fresh named volume copies this ownership
+USER node
+ENTRYPOINT ["tini","--"]
+CMD ["node","server-browser.mjs"]

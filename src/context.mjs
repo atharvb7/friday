@@ -47,6 +47,7 @@ import { loadMcpConfig, renderOverlay, envToForward, withDefaults } from './mcp-
 import { ResearchMemory } from './research-memory.mjs';
 import { ResearchEngine } from './research/engine.mjs';
 import { Sources } from './research/sources.mjs';
+import { SERVER_BROWSER_ID } from './nodes.mjs';
 import { NodeHub } from './nodes.mjs';
 import { WebPush } from './webpush.mjs';
 import { Companion } from './companion.mjs';
@@ -204,6 +205,8 @@ export function createContext({ appRoot, env = process.env }) {
     }
   };
   ctx.nodes = new NodeHub({ bus });
+  // The server browser container (compose service `browser`) signs in with this secret; it gets node scope only.
+  ctx.auth.addService(env.FRIDAY_BROWSER_SECRET, { kind: 'device', id: SERVER_BROWSER_ID, name: 'server browser', scopes: ['node'] });
   ctx.researchMemory = new ResearchMemory({ store, bus });
   // Native research engine (src/research): searches through his laptop's hidden Chrome, reads, quote-checks, writes
   // the report. FRIDAY_RESEARCH_ENGINE=dsh sends deep research to the old background coding agent instead.
@@ -281,6 +284,9 @@ export function createContext({ appRoot, env = process.env }) {
   }
   ctx.questions = new Questions({ store, chat: ctx.chat, notifications: ctx.notifications, bus, profile: ctx.profile });
   kindRouter.byKind.computer = new ComputerAgent({ ai, nodes: ctx.nodes, policy: ctx.policy, approvals: ctx.approvals, bus, audit: ctx.audit, profile: ctx.profile, questions: ctx.questions, learner: ctx.learner });
+  // Web tasks in the SERVER browser (kind 'browser'): same agent, pinned to the headless container (browser tools only),
+  // claimed only while that container is connected — they run with his laptop off.
+  kindRouter.byKind.browser = new ComputerAgent({ ai, nodes: ctx.nodes.scoped('server'), policy: ctx.policy, approvals: ctx.approvals, bus, audit: ctx.audit, profile: ctx.profile, questions: ctx.questions, learner: ctx.learner });
   ctx.hermes = new HermesAdapter({ url: env.FRIDAY_HERMES_URL, key: env.FRIDAY_HERMES_KEY, approvals: ctx.approvals, policy: ctx.policy, learner: ctx.learner });
   ctx.approvals.register('hermes_action', async () => ({ ok: true })); // the adapter answers Hermes itself after the decision
   kindRouter.byKind.hermes = ctx.hermes;

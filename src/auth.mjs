@@ -26,10 +26,15 @@ export class Auth {
     `);
   }
 
+  // Internal services with a fixed secret from the environment (the server browser container): node scope only.
+  #services = [];
+  addService(secret, principal) { if (typeof secret === 'string' && secret.length >= 32) this.#services.push({ b: Buffer.from(secret), principal }); }
+
   authenticate(token) {
     if (!token) return null;
     const b = Buffer.from(token);
     if (b.length === this.owner.length && timingSafeEqual(b, this.owner)) return { kind: 'owner', id: 'owner', scopes: [...SCOPES] };
+    for (const s of this.#services) if (b.length === s.b.length && timingSafeEqual(b, s.b)) return { ...s.principal, scopes: [...s.principal.scopes] };
     if (token.startsWith('fws_')) return this.#session(token);
     const row = this.db.prepare('SELECT * FROM devices WHERE token_hash=? AND revoked_at IS NULL').get(sha(token));
     if (!row) return null;
