@@ -8,7 +8,7 @@
 // Always loaded: small, and needed in almost any conversation.
 export const CORE = new Set(['memory_save', 'memory_search', 'memory_forget', 'time_now', 'set_timezone', 'profile_set',
   'reminder_create', 'reminder_list', 'reminder_cancel', 'reminder_snooze', 'task_create', 'task_list', 'task_cancel', 'answer_task_question',
-  'web_search', 'web_fetch', 'skill_load', 'files_list', 'file_share', 'tools_load', 'todo_add', 'todo_list', 'todo_update', 'reminder_update', 'stop_everything']);
+  'web_search', 'web_fetch', 'research', 'skill_load', 'files_list', 'file_share', 'tools_load', 'todo_add', 'todo_list', 'todo_update', 'reminder_update', 'stop_everything']);
 
 // group -> { about (shown to the model in tools_load), tools, match (words in the user's message that need it) }
 export const GROUPS = {
@@ -26,7 +26,7 @@ export const GROUPS = {
     match: /\b(docs?|documents?|word|excel|sheets?|spreadsheet|xlsx|csv|pptx?|powerpoint|slides?|deck|pdf|resume|cv|invoice|report|letter|file|attached|attachment|table)\b|\[attached files:/i },
   images: { about: 'draw or generate pictures (illustration, photo-style, poster, logo idea, meme, wallpaper)', tools: ['image_create'],
     match: /\b(draw|image|picture|pic|photo|illustrat\w*|poster|wallpaper|logo|meme|sketch|paint\w*|art|render|selfie|avatar)\b/i },
-  research: { about: 'deep multi-source research with a saved report, and search earlier research', tools: ['research_start', 'research_search'],
+  research: { about: 'deep multi-source research with a saved report, search earlier research, sign in to LinkedIn/X for research', tools: ['research_start', 'research_search', 'research_login'],
     match: /\b(research|deep dive|investigate|study|analy[sz]\w*|compare|comparison|report on|market|competitors?|earlier research|you found)\b/i },
   dev: { about: 'software work: coding agent, deploy/host apps on his server, Hermes agent, parallel team of agents', tools: ['code_task', 'app_deploy', 'app_list', 'app_logs', 'app_control', 'app_remove', 'hermes_task', 'team_task'],
     match: /\b(code|coding|program\w*|script|repo\w*|github|git|bug|debug|deploy\w*|host\w*|server|app|apps|website|landing page|api|frontend|backend|build (me|a|an)|hermes|team|agents?|docker|logs?)\b/i },

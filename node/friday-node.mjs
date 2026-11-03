@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { reelEdit, reelFolder } from './reel-edit.mjs';
 import { zipFolder } from './zip.mjs';
 import { applyMoves, scanFolder, undoMoves } from './organize.mjs';
+import { ResearchBrowser } from './research-browser.mjs';
 import { BrowserController } from './browser.mjs';
 import { atspiAvailable, defaultAllowedDirs, filesMoveOnScreen, idleMs, InputDevice, makeDesktop, screenLocked } from './desktop.mjs';
 import { setSelfHosts } from './selfguard.mjs';
@@ -59,7 +60,10 @@ const hasAtspi = await atspiAvailable();
 const waConf = bridgeConfig(CONF_DIR);
 const waExtDir = ensureExtension({ srcDir: new URL('./wa-extension', import.meta.url).pathname, confDir: CONF_DIR, ...waConf });
 const wa = new WaBridge({ ...waConf, version: JSON.parse(readFileSync(join(waExtDir, 'manifest.json'), 'utf8')).version }).start();
+// Hidden Chrome for Friday's research (Google search + reading JS-heavy pages from his home connection).
+const research = chromePath ? new ResearchBrowser({ chromium, profileDir: join(CONF_DIR, 'research-profile'), executablePath: chromePath }) : null;
 const handlers = {
+  ...(research ? { research_search: (a) => research.search(a), research_read: (a) => research.read(a), research_login: (a) => research.login(a) } : {}),
   // Sorting a folder (e.g. ~/Downloads): scan -> the server plans -> apply (inside that folder only) -> undo from a manifest.
   folder_scan: (a) => scanFolder({ dir: a.dir }),
   // via 'screen' (default): each group is moved visibly in the Files app; 'direct' = plain renames (also when locked).
@@ -113,7 +117,7 @@ setInterval(async () => {
 }, 3000).unref();
 
 let stopping = false;
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { stopping = true; input.close(); await browser?.close(); process.exit(0); });
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { stopping = true; input.close(); await browser?.close(); await research?.close(); process.exit(0); });
 
 let backoff = 1000;
 while (!stopping) {

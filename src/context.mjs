@@ -45,6 +45,8 @@ import { Approvals } from './approvals.mjs';
 import { Skills } from './skills.mjs';
 import { loadMcpConfig, renderOverlay, envToForward, withDefaults } from './mcp-config.mjs';
 import { ResearchMemory } from './research-memory.mjs';
+import { ResearchEngine } from './research/engine.mjs';
+import { Sources } from './research/sources.mjs';
 import { NodeHub } from './nodes.mjs';
 import { WebPush } from './webpush.mjs';
 import { Companion } from './companion.mjs';
@@ -203,6 +205,11 @@ export function createContext({ appRoot, env = process.env }) {
   };
   ctx.nodes = new NodeHub({ bus });
   ctx.researchMemory = new ResearchMemory({ store, bus });
+  // Native research engine (src/research): searches through his laptop's hidden Chrome, reads, quote-checks, writes
+  // the report. FRIDAY_RESEARCH_ENGINE=dsh sends deep research to the old background coding agent instead.
+  ctx.researchSources = new Sources({ nodes: ctx.nodes, env, settings });
+  ctx.research = new ResearchEngine({ ai, sources: ctx.researchSources, bus });
+  if (env.FRIDAY_RESEARCH_ENGINE !== 'dsh') kindRouter.byKind.research = ctx.research;
   { // finished research tasks are ingested into persistent research memory
     const prev = store.onEvent;
     store.onEvent = (e) => {
@@ -212,7 +219,7 @@ export function createContext({ appRoot, env = process.env }) {
       if (t?.kind !== 'research') return;
       let reportMd = null;
       try {
-        const files = dshInner.takeFiles?.(t.id);
+        const files = ctx.research.takeFiles(t.id) ?? dshInner.takeFiles?.(t.id);
         reportMd = files?.['report.md'] ?? (() => { try { return readFileSync(join(dshInner.pathFor(t.id, t.workspace), 'report.md'), 'utf8'); } catch { return null; } })();
         const r = files
           ? ctx.researchMemory.ingest({ taskId: t.id, findings: JSON.parse(files['findings.json'] ?? 'null'), reportMd: files['report.md'] ?? null })
