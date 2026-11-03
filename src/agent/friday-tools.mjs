@@ -11,6 +11,7 @@ import { STAGES } from '../pipeline.mjs';
 import { safeFetch, serpSearch, countryForTimezone } from '../web.mjs';
 import { classifyShell } from './desktop-risk.mjs';
 import { lookAtScreen } from './screen-look.mjs';
+import { applyOrganize, planOrganize } from '../organize.mjs';
 const clip = (s, n) => String(s ?? '').slice(0, n);
 const str = (v, name, max = 2000) => {
   if (typeof v !== 'string' || !v.trim() || v.length > max) throw new TypeError(`${name} must be a non-empty string (<=${max})`);
@@ -354,6 +355,30 @@ export function buildFridayTools(ctx) {
         try {
           const r = await nodes.dispatch({ action: 'shell_run', args: { command: str(a.command, 'command', 8000), ...(a.cwd ? { cwd: String(a.cwd) } : {}), timeoutMs: sec * 1000 }, timeoutMs: sec * 1000 + 15_000 });
           return { exit: r.code, ...(r.timedOut ? { timedOut: true } : {}), stdout: clip(r.stdout, 4000), ...(r.stderr ? { stderr: clip(r.stderr, 1500) } : {}) };
+        } catch (e) { return { error: e.message }; }
+      },
+    },
+    {
+      // Sorting a folder used to be dozens of shell `mv`s she had to invent; this scans, plans by topic and moves safely.
+      name: 'folder_organize', risk: 'safe',
+      description: "Sort a messy folder on his laptop (Downloads by default) into a clean folder tree: groups files by what they are about (college labs, a company, an event, IDs, wallpapers, resumes...) or by kind (Images, Installers, Archives...), creates the folders, puts exact duplicates in Duplicates (nothing is deleted), never moves apps in use, launchers' targets, downloads in progress or Friday's own folders, never touches anything outside that folder. action=plan scans and proposes (fast, moves nothing); action=apply does the planId's moves (optionally with his corrections) ON HIS SCREEN in the Files app by default (he watches each group get selected, cut and pasted; via=direct = instant renames, e.g. when he is busy on the laptop); action=undo puts everything back. Use this for ANY organize/sort/tidy/clean-up-files request instead of computer_task or laptop_shell. Only folders inside his home, never the home folder itself.",
+      parameters: obj({ action: { type: 'string', enum: ['plan', 'apply', 'undo'] }, dir: { type: 'string', description: 'folder to sort, default ~/Downloads' }, instructions: { type: 'string', description: 'his wishes for the plan, e.g. "keep wallpapers separate", "college stuff by subject"' }, planId: { type: 'string', description: 'for apply' }, changes: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, to: { type: 'string', description: 'folder path inside dir, or "stay"' } }, required: ['name', 'to'], additionalProperties: false }, description: 'for apply: corrections to the plan' }, undoId: { type: 'string', description: 'for undo (from the apply result)' }, via: { type: 'string', enum: ['screen', 'direct'], description: 'for apply: screen (default) = visibly in the Files app; direct = instant' } }, ['action']),
+      run: async (a, { signal } = {}) => {
+        if (!nodes.online) return { error: 'laptop_offline', note: 'His laptop node is not connected; nothing was touched.' };
+        if (!nodes.list()[0]?.caps?.includes('folder_scan')) return { error: 'node_outdated', note: 'The laptop node needs a restart to get the folder organizer.' };
+        try {
+          if (a.action === 'plan') {
+            const dir = a.dir ? str(a.dir, 'dir', 500) : '~/Downloads';
+            if (/^\s*(~|\/home\/[^/]+)\/?\s*$/.test(dir)) return { error: 'home_folder_refused', note: 'The home folder itself is never reorganized; name a folder inside it.' };
+            const r = await planOrganize({ nodes, ai: ctx.ai, dir, instructions: a.instructions ?? '', signal });
+            return { ...r, next: 'Show him the folder tree (folder: count, a few examples) and what stays. If he already asked you to just do it, call action=apply with this planId now; otherwise ask "go?". Corrections go in changes.' };
+          }
+          if (a.action === 'apply') {
+            const r = await applyOrganize({ nodes, planId: str(a.planId, 'planId', 40), changes: a.changes ?? [], via: a.via ?? 'screen' });
+            return r.error ? r : { ...r, next: `Tell him how many items moved into which folders${r.via === 'screen' ? ' (done on his screen in the Files app; mention any that had to be moved directly)' : ''}, what was skipped and why, and that you can undo it (keep the undoId).` };
+          }
+          if (a.action === 'undo') return await nodes.dispatch({ action: 'folder_undo', args: { undoId: str(a.undoId, 'undoId', 80) }, timeoutMs: 120_000 });
+          return { error: 'action must be plan, apply or undo' };
         } catch (e) { return { error: e.message }; }
       },
     },

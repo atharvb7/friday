@@ -9,8 +9,9 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { reelEdit, reelFolder } from './reel-edit.mjs';
 import { zipFolder } from './zip.mjs';
+import { applyMoves, scanFolder, undoMoves } from './organize.mjs';
 import { BrowserController } from './browser.mjs';
-import { atspiAvailable, defaultAllowedDirs, idleMs, InputDevice, makeDesktop } from './desktop.mjs';
+import { atspiAvailable, defaultAllowedDirs, filesMoveOnScreen, idleMs, InputDevice, makeDesktop, screenLocked } from './desktop.mjs';
 import { setSelfHosts } from './selfguard.mjs';
 import { WaBridge, bridgeConfig, ensureExtension } from './wa-bridge.mjs';
 
@@ -54,10 +55,20 @@ setSelfHosts([new URL(server).hostname, ...(Array.isArray(conf.selfHosts) ? conf
 const desktop = makeDesktop({ allowedDirs, fullAccess, input });
 
 // WhatsApp in his own Chrome through the "Friday for WhatsApp Web" extension (live chats: no screenshots, no mouse).
+const hasAtspi = await atspiAvailable();
 const waConf = bridgeConfig(CONF_DIR);
 const waExtDir = ensureExtension({ srcDir: new URL('./wa-extension', import.meta.url).pathname, confDir: CONF_DIR, ...waConf });
 const wa = new WaBridge({ ...waConf, version: JSON.parse(readFileSync(join(waExtDir, 'manifest.json'), 'utf8')).version }).start();
 const handlers = {
+  // Sorting a folder (e.g. ~/Downloads): scan -> the server plans -> apply (inside that folder only) -> undo from a manifest.
+  folder_scan: (a) => scanFolder({ dir: a.dir }),
+  // via 'screen' (default): each group is moved visibly in the Files app; 'direct' = plain renames (also when locked).
+  folder_apply: async (a) => {
+    const onScreen = a.via !== 'direct' && hasAtspi && fullAccess && (await screenLocked()) !== true;
+    const r = await applyMoves({ dir: a.dir, moves: a.moves, confDir: CONF_DIR, gui: onScreen ? filesMoveOnScreen : null });
+    return { ...r, via: onScreen ? 'screen' : 'direct', ...(a.via !== 'direct' && !onScreen ? { note: 'moved directly: the screen is locked or the Files app is not reachable' } : {}) };
+  },
+  folder_undo: (a) => undoMoves({ undoId: a.undoId, confDir: CONF_DIR }),
   wa_status: async () => (wa.connected ? { connected: true, ...(await wa.command('status', {}, 8000)) } : { connected: false, extensionFolder: waExtDir }),
   wa_read: (a) => wa.command('read', { chat: a.chat, limit: a.limit }),
   wa_open: (a) => wa.command('open', { chat: a.chat }),
@@ -81,8 +92,7 @@ const handlers = {
     reel_edit: (a) => reelEdit(a, { downloadsRoot: allowedDirs.find((d) => /\/Downloads$/.test(d)) ?? join(homedir(), 'Downloads') }),
   } : {}),
 };
-const ATSPI = new Set(['windows_list', 'ui_tree', 'ui_act', 'ui_set_text', 'window_focus', 'window_close']);
-const hasAtspi = await atspiAvailable();
+const ATSPI = new Set(['windows_list', 'ui_tree', 'ui_act', 'ui_set_text', 'window_focus', 'window_close', 'files_move']);
 for (const [name, fn] of Object.entries(desktop)) if (typeof fn === 'function' && (hasAtspi || !ATSPI.has(name))) handlers[name] = (a) => fn(a ?? {});
 const caps = Object.keys(handlers);
 

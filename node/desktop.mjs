@@ -21,6 +21,12 @@ const err = (code, msg = code) => Object.assign(new Error(msg), { code });
 export async function atspiAvailable() {
   try { JSON.parse(await run('python3', [join(HERE, 'atspi-helper.py'), 'windows', '{}'], 8000)); return true; } catch { return false; }
 }
+// Move a group of files ON SCREEN in the Files app (select -> New Folder with Selection, or Cut -> target -> Paste).
+export async function filesMoveOnScreen({ dir, names, target, newFolder }) {
+  const out = JSON.parse(await run('python3', [join(HERE, 'atspi-helper.py'), 'files_move', JSON.stringify({ dir, names, target, ...(newFolder ? { newFolder } : {}) })], 90_000));
+  if (out.error || out.ok === false) throw new Error(out.error ?? 'files_move_failed');
+  return out;
+}
 const atspi = async (cmd, args) => { const out = JSON.parse(await run('python3', [join(HERE, 'atspi-helper.py'), cmd, JSON.stringify(args ?? {})])); if (out.error) throw new Error(out.error); return out; };
 // Arguments go through stdin, never argv: clipboard text (maybe a password) must not show up in `ps`.
 const helper = (cmd, args, timeout = 20_000) => new Promise((res, rej) => {
