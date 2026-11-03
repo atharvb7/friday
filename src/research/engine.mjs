@@ -151,17 +151,22 @@ export class ResearchEngine {
   // ---- quick / standard: inline, for the chat brain ----
   async inline(question, { depth = 'standard', instructions = '', focus = [], signal, trace } = {}) {
     const t0 = this.now(); const b = BUDGET[depth] ?? BUDGET.standard;
+    // The raw question is searched while the plan is still being made (planning costs ~20 s).
+    const early = depth === 'quick' ? null : this.gather([{ q: question }], [], question, { trace });
     const plan = await this.plan(question, { depth, instructions, signal });
     for (const f of focus) if (SITES.has(f)) plan.queries.push({ q: question, site: f });
-    const cands = await this.gather(plan.queries.slice(0, b.queries + focus.length), plan.apis, question, { trace });
+    const seen = early ? await early : new Map();
+    const cands = await this.gather(plan.queries.filter((x) => x.q !== question || x.site).slice(0, b.queries + focus.length), plan.apis, question, { trace, seen });
     const picked = this.rank(cands, { ...b, question });
     const pages = await this.readAndExtract(picked, { subquestions: plan.subquestions, question, signal, trace, extract: depth !== 'quick' });
     const useful = pages.filter((p) => p.facts?.length || p.excerpt);
-    const sources = useful.map((p, i) => ({ n: i + 1, title: p.title, url: p.url, published: p.published ?? null, ...(p.facts?.length ? { facts: p.facts.map((f) => ({ claim: f.claim, quote: f.quote })) } : { excerpt: p.excerpt }) }));
+    // Kept compact on purpose: the brain reads all of it before answering (3 Nov: a big pack made that answer take 110 s).
+    // Facts are already quote-checked here, so the brain gets the claims, not the quotes.
+    const sources = useful.map((p, i) => ({ n: i + 1, title: clip(p.title, 100), url: p.url, published: p.published ?? null, ...(p.facts?.length ? { facts: p.facts.slice(0, 5).map((f) => clip(f.claim, 220)) } : { excerpt: clip(p.excerpt, depth === 'quick' ? 900 : 500) }) }));
     // Search results that were not read still help (snippets: LinkedIn headlines, X posts, Reddit titles).
-    const more = [...cands.values()].filter((c) => !picked.some((p) => p.key === c.key)).slice(0, depth === 'quick' ? 5 : 10).map((c) => ({ title: c.title, url: c.url, snippet: c.snippet, date: c.date }));
-    return { question, depth, kind: plan.kind, subquestions: plan.subquestions, seconds: Math.round((this.now() - t0) / 1000), searched: plan.queries.map((q) => (q.site ? `${q.q} [${q.site}]` : q.q)), sources, also_found: more, engines: { ...this.sources.stats },
-      how_to_answer: 'Answer from these sources only, citing them inline as [n] with the url list at the end; say what is uncertain or missing. Snippets in also_found are search previews (unverified). Never present them as checked facts.' };
+    const more = [...cands.values()].filter((c) => !picked.some((p) => p.key === c.key)).slice(0, depth === 'quick' ? 4 : 6).map((c) => ({ title: clip(c.title, 90), url: c.url, snippet: clip(c.snippet, 180), date: c.date }));
+    return { question, depth, seconds: Math.round((this.now() - t0) / 1000), searched: plan.queries.length + 1, sources, also_found: more,
+      how_to_answer: 'Answer briefly from these sources only, citing [n] and listing the urls; say what is uncertain. also_found = unverified search previews.' };
   }
 
   // ---- deep: background task (worker adapter) ----

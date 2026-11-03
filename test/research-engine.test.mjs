@@ -92,11 +92,11 @@ test('engine inline (standard): planned queries, ranked + deduped sources, quote
   const { src } = fakeSources();
   const eng = new ResearchEngine({ ai: fakeAi(), sources: { ...src, search: src.search.bind(src), read: src.read.bind(src), api: async () => [], stats: src.stats } });
   const r = await eng.inline('Compare Qdrant memory use', { depth: 'standard' });
-  assert.equal(r.kind, 'technical');
   assert.equal(r.sources[0].url, 'https://qdrant.tech/benchmarks/', "the subject's own site ranks first");
-  assert.ok(r.sources.every((s) => !s.facts || s.facts.every((f) => f.claim !== 'Made-up fact')), 'unverifiable facts dropped');
+  assert.ok(r.sources.every((s) => !s.facts || s.facts.every((f) => f !== 'Made-up fact')), 'unverifiable facts dropped');
   assert.ok(r.also_found.some((x) => /reddit/.test(x.url)) || r.sources.some((s) => /reddit/.test(s.url)));
   assert.match(r.how_to_answer, /citing/);
+  assert.ok(JSON.stringify(r).length < 6000, 'compact pack');
 });
 
 test('engine deep run: report with code-built source list, bad citations stripped, findings for research memory', async () => {
