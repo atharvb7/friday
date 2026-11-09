@@ -5,8 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
  && rm -rf /var/lib/apt/lists/*
 RUN npm install -g @deepseek-ai/dsh@0.2.0-rc.2 && npm cache clean --force
 # Project toolchains open-source repos commonly use (contribution setup + the independent verifier run in this image).
-# (pnpm/yarn via npm, not corepack: corepack downloads at run time, which the agent's proxy-only network does not allow)
-RUN pip3 install --no-cache-dir --break-system-packages uv==0.9.5 && npm install -g pnpm@9.15.0 yarn@1.22.22 && npm cache clean --force
+# (pnpm via npm, not corepack: corepack downloads at run time, which the proxy-only network blocks; yarn 1 ships with the node image)
+RUN pip3 install --no-cache-dir --break-system-packages uv==0.9.5 && npm install -g pnpm@9.15.0 && npm cache clean --force && yarn --version
 RUN useradd -m -u 10001 agent && mkdir -p /agent/home /agent/work /agent/state && chown -R agent:agent /agent
 WORKDIR /srv/runner
 COPY src/dsh.mjs src/safefs.mjs src/sandbox.mjs src/research-memory.mjs src/contrib-verify.mjs ./src/
