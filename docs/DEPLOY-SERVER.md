@@ -13,7 +13,7 @@ tailnet device ──HTTPS──► tailscale serve :4317 (tailnet-only, NOT Fun
   └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 - **friday** — 2 GB limit, read-only rootfs, caps dropped. Data in `~/friday-data` (DB, token, voice models, backups) on the SSD.
-- **agent** — 1.5 GB limit, internal network only, no Friday data/keys beyond the model key, runs as uid 10001. The container *is* the sandbox (the host has no bubblewrap and AppArmor blocks user namespaces).
+- **agent** — 2 GB limit (1.5 GB until 2026-11-09; big JS repos hit the OOM killer), internal network only, no Friday data/keys beyond the model key, runs as uid 10001. The container *is* the sandbox (the host has no bubblewrap and AppArmor blocks user namespaces).
 - **proxy** — the agent's only route to the internet. It refuses private/LAN/tailnet/docker/metadata addresses (verified: `example.com` 200, your tailnet service 403, metadata 403).
 - Restarts automatically (`unless-stopped`, docker enabled at boot). Nightly backup at 03:00 (user crontab, keeps 7) → `~/friday-data/backups`.
 - URL: **https://atharvsserver.tail117666.ts.net:4317** (the laptop node, phone and desk companion all use this).

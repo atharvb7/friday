@@ -328,7 +328,7 @@ Friday ships as a hardened Docker compose stack sized for a **6 GB RAM, no-GPU**
 | Container | Role | Limits |
 |---|---|---|
 | `friday` | core: API, UI, brain, scheduler, voice | 2.5 GB · read-only · `127.0.0.1` only |
-| `agent` | sandboxed DSH runner — no inbound, no Friday data | 1.5 GB · internal network only |
+| `agent` | sandboxed DSH runner — no inbound, no Friday data | 2 GB · internal network only |
 | `proxy` | the agent's only way out; blocks private / LAN / tailnet / metadata | 128 MB |
 | `deployer` *(profile `apps`)* | hosts Friday's own apps on the tailnet, fixed tiny API | optional |
 

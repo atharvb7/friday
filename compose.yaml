@@ -58,8 +58,8 @@ services:
     tmpfs: ["/tmp:size=1g,exec"]   # DSH copies its native addon into /tmp and dlopen()s it: docker tmpfs is noexec by default
     networks: [agentnet]
     depends_on: [proxy]
-    mem_limit: 1536m
-    memswap_limit: 1536m
+    mem_limit: 2048m   # raised from 1.5 GB 2026-11-09: open-source jobs on big JS repos hit the OOM killer
+    memswap_limit: 2048m
     pids_limit: 512
     cpus: 4
 
