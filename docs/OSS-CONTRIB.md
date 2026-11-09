@@ -32,6 +32,20 @@ only after you approve it. Code: `src/contrib.mjs` (pipeline), `src/patch.mjs` (
     follow-up commit + reply as another approval card. Merges and closes are reported; maintainer comments are kept as
     lessons and included in every later job.
 
+**Features**: a feature an issue asks for goes through the same pipeline (`kind: feature`): the new test exercises the
+new behaviour, so it must fail before and pass after. The PR says "Closes #N / What this adds". Unrequested features are
+never sent as PRs.
+
+## Bug hunt (finding bugs nobody reported)
+
+`mode` = `issues` (fix existing issues), `hunt`, or `mixed` (default: alternates day by day). A hunt picks an active repo
+that welcomes contributors (or the one you name), reads what its docs promise, probes edge cases, and reports at most ONE
+bug. Before any card: the code location it cites must exist at that commit, the one-line reproduction must fail in a
+clean clone with the error text it quoted (no model), the issue must not already be reported, and a triage review must
+call it a real bug with confidence >= 0.8 (not intended behaviour). The card is an **issue**, not a PR. When maintainers
+confirm it (a label like `bug`/`confirmed`, or a maintainer comment saying so), Friday starts the fix automatically; the
+PR still comes to you as a card. Declined reports become lessons. At most 3 of our bug reports wait on maintainers at once.
+
 Friday never emails maintainers and never comments, pushes or opens anything without an approved card.
 
 ## Setup (server)

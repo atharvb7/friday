@@ -1,6 +1,6 @@
 ---
 name: oss-contribution
-description: Fix one issue in someone else's open-source repository the way a careful senior contributor would: reproduce, write a failing test, make the smallest root-cause fix in the project's style, verify, and hand back a result.json + change.patch. Use for every open-source contribution job.
+description: Fix one issue (bug or requested feature) or hunt for one unreported bug in someone else's open-source repository the way a careful senior contributor would: reproduce, write a failing test, make the smallest root-cause fix in the project's style, verify, and hand back a result.json + change.patch. Use for every open-source contribution job.
 ---
 # Open-source contribution
 
@@ -73,8 +73,10 @@ Also read and use these skills when they apply: `systematic-debugging` (finding 
 }
 ```
 
-- `kind`: `fix` (needs a test that fails before and passes after) or `docs` (documentation-only; then `test` may be empty
-  and `suite` should build or check the docs if the project can).
+- `kind`: `fix` (a bug: needs a test that fails before and passes after), `feature` (the issue asks for new behaviour:
+  the same rule, your test exercises the new behaviour so it fails before because it does not exist yet) or `docs`
+  (documentation-only; then `test` may be empty and `suite` should build or check the docs if the project can).
+  Build a feature only when the issue asks for it and maintainers agreed on the shape; never add unrequested features.
 - `test` must fail on the original commit and pass with your change. `suite` = the project's full test command.
   `lint` = the project's linter on the files you touched, or "" if the project has none. Each is ONE shell line run
   from the repository root, after the `setup` commands, with no network secrets.
@@ -85,9 +87,47 @@ Also read and use these skills when they apply: `systematic-debugging` (finding 
   each point, or why you did not; no apologies, no filler) and `"commit_message"` (one line).
 
 Found a DIFFERENT real bug while working (not the issue you were given) and it is not already reported? You may instead
-write `"status":"found_bug"` with `"bug": {"title", "body", "repro", "expect"}`: `repro` = one shell command that shows
-the bug on the original commit after `setup`, `expect` = exact error text it prints. Friday re-runs it; if it does not
+write `"status":"found_bug"` with a `bug` object exactly as in the Bug hunt section. Friday re-runs it; if it does not
 reproduce, nothing is reported.
+
+## Bug hunt (when the job says BUG HUNT)
+
+Goal: find ONE real, unreported bug and prove it. No patch, no fix yet: if maintainers confirm it, a later job fixes it.
+A wrong report wastes a maintainer's time and hurts the owner's name, so `nothing_found` is a fine, common result.
+
+1. Clone at the given commit, set up, run the existing suite (it must pass; otherwise `nothing_found` with why).
+2. Read the README/docs to learn what the code PROMISES. A bug = the code breaks its own documented contract, its
+   docstring/type hints, or plainly correct behaviour (crash, wrong result, data loss, resource leak) on valid input.
+   NOT bugs: style, missing features, performance opinions, unsupported inputs, behaviour the docs describe, things
+   only reachable through private APIs, "could be cleaner".
+3. Hunt where bugs live: edge cases at boundaries (empty, zero, negative, None/undefined, unicode, very long, leap days,
+   time zones, Windows paths), error paths, recently changed code (`git log -p -20`), parsing/serialisation round trips,
+   off-by-one in slicing/pagination. Write small probing scripts or tests under ./friday-contrib/probes (outside ./repo).
+4. When a probe fails, confirm it is a bug and not your misuse: re-read the docs for that function, check open AND
+   closed issues mentioning it (`gh` is not available: search the code, CHANGELOG and docs; Friday also searches issues).
+5. Make it a ONE-line reproduction that runs from the repository root after `setup`, exits non-zero and prints a
+   distinctive error, e.g. `python -c "from pkg import f; assert f('') == [], f('')"` or `node -e "..."`.
+
+result.json for a hunt:
+
+```json
+{
+  "status": "found_bug",
+  "setup": ["pip install -e ."],
+  "bug": {
+    "title": "parse_range('') raises IndexError instead of returning an empty list",
+    "body": "Plain description: what you call, what the docs promise, what happens instead. 3-6 sentences, no hype.",
+    "expected": "What should happen, citing the doc or docstring that promises it.",
+    "repro": "python -c \"from pkg.ranges import parse_range; print(parse_range(''))\"",
+    "expect": "IndexError: list index out of range",
+    "location": { "path": "src/pkg/ranges.py", "start_line": 41, "end_line": 52 }
+  }
+}
+```
+
+- `location` = the lines (at most 40) where the bug is, in the ORIGINAL commit. Friday checks they exist.
+- `expect` = text that really appears in the command's output (copy it from your run).
+- Or `{"status": "nothing_found", "reason": "what you checked"}`.
 
 ## Never
 

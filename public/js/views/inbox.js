@@ -29,14 +29,15 @@ export function render({ app, api, toast, refresh }) {
     h('div', { class: 'row wrap' }, h('span', { class: 'chip accent' }, ACTION[c.action] ?? c.action), h('strong', { class: 'grow' }, c.repo),
       c.additions !== undefined ? h('span', { class: 'faint small' }, `+${c.additions} −${c.deletions} in ${c.files?.length ?? 0} file(s)`) : null),
     c.issue ? h('div', { class: 'small' }, h('span', { class: 'faint' }, 'Issue: '), h('a', { href: gh(c.issue.url), target: '_blank', rel: 'noopener noreferrer' }, `#${c.issue.number} ${c.issue.title}`)) : null,
+    c.location ? h('div', { class: 'small' }, h('span', { class: 'faint' }, 'Code: '), h('a', { href: gh(c.location), target: '_blank', rel: 'noopener noreferrer' }, c.location.replace(/^https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/[0-9a-f]{40}\//, ''))) : null,
     c.pr ? h('div', { class: 'small' }, h('span', { class: 'faint' }, 'Pull request: '), h('a', { href: gh(c.pr), target: '_blank', rel: 'noopener noreferrer' }, c.pr)) : null,
     c.title ? h('div', {}, h('span', { class: 'faint small' }, 'Title: '), h('strong', {}, c.title)) : null,
     c.commit_message ? h('div', {}, h('span', { class: 'faint small' }, 'Commit: '), h('strong', {}, c.commit_message)) : null,
     c.body ? h('div', { class: 'bubble' }, md(String(c.body).slice(0, 8000))) : null,
     c.reply ? h('div', { class: 'bubble' }, h('div', { class: 'faint small' }, 'Comment on the PR:'), md(String(c.reply).slice(0, 3000))) : null,
     c.proof?.length ? h('div', { class: 'stack small' }, h('span', { class: 'faint' }, 'Independent test run (clean clone):'),
-      ...c.proof.map((p) => h('div', { class: 'row' }, h('span', { class: `chip ${(p.step === 'test_before' ? p.exit !== 0 : p.exit === 0) ? 'good' : 'bad'}` }, p.step === 'test_before' ? (p.exit !== 0 ? 'fails before ✓' : 'passes before ✗') : (p.exit === 0 ? 'pass' : `exit ${p.exit}`)), h('code', { class: 'mono' }, p.cmd)))) : null,
-    c.review?.score ? h('div', { class: 'faint small' }, `Maintainer-style review: ${c.review.score}/10${c.review.notes?.length ? ` · ${c.review.notes.join(' · ')}` : ''}`) : null,
+      ...c.proof.map((p) => { const before = p.step === 'test_before' || p.step === 'repro'; return h('div', { class: 'row' }, h('span', { class: `chip ${(before ? p.exit !== 0 : p.exit === 0) ? 'good' : 'bad'}` }, before ? (p.exit !== 0 ? (p.step === 'repro' ? 'bug reproduced ✓' : 'fails before ✓') : 'passes ✗') : (p.exit === 0 ? 'pass' : `exit ${p.exit}`)), h('code', { class: 'mono' }, p.cmd)); })) : null,
+    c.review?.score ? h('div', { class: 'faint small' }, `${c.action === 'open_issue' ? 'Triage review (real bug?)' : 'Maintainer-style review'}: ${c.review.score}/10${c.review.notes?.length ? ` · ${c.review.notes.join(' · ')}` : ''}`) : null,
     c.diff ? h('details', { open: true }, h('summary', { class: 'faint small' }, 'Exact diff that will be committed'), h('pre', { class: 'mono bubble payload-raw' }, String(c.diff).slice(0, 60000))) : null);
   async function markAll() { await api('/v1/notifications/read-all', { method: 'POST' }); load(); refresh(); }
 

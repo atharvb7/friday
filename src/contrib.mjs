@@ -18,7 +18,12 @@ import { isAway } from './away.mjs';
 import { loop } from './loops.mjs';
 
 export const CONTRIB_DEFAULTS = Object.freeze({ v: 1, enabled: false, run_at: '10:00', days: [1, 2, 3, 4, 5, 6, 7], languages: ['Python', 'JavaScript', 'TypeScript'],
-  labels: ['good first issue', 'help wanted'], min_stars: 30, max_open_prs: 3, daily_starts: 1, max_rounds: 2, skip_repos: [] });
+  labels: ['good first issue', 'help wanted'], min_stars: 30, max_open_prs: 3, daily_starts: 1, max_rounds: 2, skip_repos: [], mode: 'mixed' });
+// mode: 'issues' = fix existing issues only; 'hunt' = look for unreported bugs and propose issues; 'mixed' = alternate.
+export const MODES = Object.freeze(['issues', 'hunt', 'mixed']);
+const MAX_OPEN_ISSUES = 3; // our bug reports still waiting on maintainers before hunting more
+// Labels a maintainer adds when an issue is real and wanted.
+const CONFIRM_LABEL = /^(bug|confirmed|accepted|triaged|help wanted|good first issue|valid|reproduced|type: ?bug|kind\/bug)$/i;
 const LANGS = ['Python', 'JavaScript', 'TypeScript']; // what the agent container can build and test (node + python)
 const ACTIVE = ['working', 'verifying', 'reviewing'];
 const OPEN = [...ACTIVE, 'awaiting_approval', 'pr_open'];
@@ -73,6 +78,7 @@ export class Contrib {
     if (p.max_open_prs !== undefined) c.max_open_prs = Math.max(1, Math.min(10, Math.round(Number(p.max_open_prs) || 3)));
     if (p.daily_starts !== undefined) c.daily_starts = Math.max(1, Math.min(3, Math.round(Number(p.daily_starts) || 1)));
     if (p.max_rounds !== undefined) c.max_rounds = Math.max(1, Math.min(3, Math.round(Number(p.max_rounds) || 2)));
+    if (p.mode !== undefined) { if (!MODES.includes(p.mode)) throw new TypeError(`mode: one of ${MODES.join(', ')}`); c.mode = p.mode; }
     if (p.skip_repos !== undefined) c.skip_repos = (p.skip_repos ?? []).map((r) => String(r).trim().toLowerCase()).filter((r) => /^[\w.-]+\/[\w.-]+$/.test(r)).slice(0, 200);
     this.settings.set('oss_contrib', c);
     return c;
@@ -127,9 +133,10 @@ export class Contrib {
 
   status() {
     const c = this.config();
-    const active = this.db.prepare(`SELECT * FROM oss_attempts WHERE status IN (${OPEN.map(() => '?').join(',')}) ORDER BY created_at`).all(...OPEN).map((r) => this.#row(r));
+    const shown = [...OPEN, 'issue_open'];
+    const active = this.db.prepare(`SELECT * FROM oss_attempts WHERE status IN (${shown.map(() => '?').join(',')}) ORDER BY created_at`).all(...shown).map((r) => this.#row(r));
     const totals = Object.fromEntries(this.db.prepare('SELECT status, COUNT(*) n FROM oss_attempts GROUP BY status').all().map((r) => [r.status, r.n]));
-    return { enabled: c.enabled, config: c, github_login: this.gh?.login ?? null, token_configured: Boolean(this.gh?.configured), open: active.map((a) => ({ id: a.id.slice(0, 8), repo: a.repo, issue: a.issue_number, status: a.status, round: a.round, pr: a.pr_url, waiting_on: a.status === 'awaiting_approval' ? 'your approval' : a.status === 'pr_open' ? (a.feedback?.pending ? 'your go-ahead to address maintainer feedback' : 'maintainers') : 'Friday' })),
+    return { enabled: c.enabled, config: c, github_login: this.gh?.login ?? null, token_configured: Boolean(this.gh?.configured), open: active.map((a) => ({ id: a.id.slice(0, 8), repo: a.repo, issue: a.issue_number, status: a.status, round: a.round, pr: a.pr_url, kind: a.kind, waiting_on: a.status === 'issue_open' ? (a.feedback?.confirmed_at ? 'confirmed; fix started' : 'maintainers to confirm the bug') : a.status === 'awaiting_approval' ? 'your approval' : a.status === 'pr_open' ? (a.feedback?.pending ? 'your go-ahead to address maintainer feedback' : 'maintainers') : 'Friday' })),
       totals, started_today: this.#startedToday(), recent: this.list({ limit: 8 }) };
   }
 
@@ -162,7 +169,7 @@ export class Contrib {
   }
 
   async #issueOk(full, n) {
-    if (this.db.prepare('SELECT 1 FROM oss_attempts WHERE lower(repo)=? AND issue_number=?').get(full.toLowerCase(), n)) return { ok: false, reason: 'already attempted' };
+    if (this.db.prepare("SELECT 1 FROM oss_attempts WHERE lower(repo)=? AND issue_number=? AND kind NOT IN ('issue', 'hunt')").get(full.toLowerCase(), n)) return { ok: false, reason: 'already attempted' };
     if (this.db.prepare(`SELECT 1 FROM oss_attempts WHERE lower(repo)=? AND status IN (${OPEN.map(() => '?').join(',')})`).get(full.toLowerCase(), ...OPEN)) return { ok: false, reason: 'already working on this repository' };
     const i = await this.gh.issue(full, n);
     if (!i || i.state !== 'open' || i.pull_request) return { ok: false, reason: 'not an open issue' };
@@ -176,6 +183,52 @@ export class Contrib {
     const tl = (await this.gh.timeline(full, n).catch(() => [])) ?? [];
     if (tl.some((e) => e.event === 'cross-referenced' && e.source?.issue?.pull_request && e.source.issue.state === 'open')) return { ok: false, reason: 'an open pull request already references it' };
     return { ok: true, issue: i, comments };
+  }
+
+  // The scheduled start: an issue fix or a bug hunt, by mode ('mixed' alternates day by day).
+  startNext({ reason = 'scheduled' } = {}) {
+    const c = this.config();
+    const hunt = c.mode === 'hunt' || (c.mode === 'mixed' && (Number(this.settings.get('oss_mix', 0)) || 0) % 2 === 1);
+    if (c.mode === 'mixed') this.settings.set('oss_mix', (Number(this.settings.get('oss_mix', 0)) || 0) + 1);
+    return hunt ? this.startHunt({ reason }) : this.startOne({ reason });
+  }
+
+  // Bug hunt: read a repository that welcomes contributors, look for one real, unreported bug, prove it, propose an issue.
+  async startHunt({ repo = null, reason = 'scheduled' } = {}) {
+    if (this.#busy) return { not_started: true, note: 'a start is already in progress' };
+    this.#busy = true;
+    try {
+      const login = await this.#ready();
+      const c = this.config();
+      if (this.#count(ACTIVE) > 0) return { not_started: true, note: 'one contribution is already being worked on; one at a time' };
+      if (this.#count(['issue_open']) + this.db.prepare("SELECT COUNT(*) n FROM oss_attempts WHERE status='awaiting_approval' AND kind IN ('hunt','issue')").get().n >= MAX_OPEN_ISSUES)
+        return { not_started: true, note: `${MAX_OPEN_ISSUES} bug reports are already waiting on you or on maintainers` };
+      const candidates = [];
+      if (repo) candidates.push(repo);
+      else {
+        const rr = Number(this.settings.get('oss_hunt_rr', 0)) || 0; this.settings.set('oss_hunt_rr', rr + 1);
+        const lang = c.languages[rr % c.languages.length];
+        const since = new Date(this.now() - 30 * DAY).toISOString().slice(0, 10);
+        const found = await this.gh.searchRepos(`language:${lang} stars:>=${Math.max(c.min_stars, 30)} pushed:>${since} archived:false good-first-issues:>2`);
+        for (const r of found?.items ?? []) candidates.push(r.full_name);
+      }
+      const skipped = [];
+      const recent = new Date(this.now() - 60 * DAY).toISOString();
+      for (const full of candidates.slice(0, 15)) {
+        if (!repo && this.db.prepare("SELECT 1 FROM oss_attempts WHERE lower(repo)=? AND kind IN ('hunt','issue') AND created_at > ?").get(full.toLowerCase(), recent)) { skipped.push(`${full}: hunted in the last 60 days`); continue; }
+        if (this.db.prepare(`SELECT 1 FROM oss_attempts WHERE lower(repo)=? AND status IN (${OPEN.map(() => '?').join(',')})`).get(full.toLowerCase(), ...OPEN)) { skipped.push(`${full}: already working on it`); continue; }
+        const ro = await this.#repoOk(full, login).catch((e) => ({ ok: false, reason: clip(e.message, 120) }));
+        if (!ro.ok) { skipped.push(`${full}: ${ro.reason}`); continue; }
+        const base = await this.gh.branchSha(full, ro.repo.default_branch);
+        const id = randomUUID(); const now = new Date(this.now()).toISOString();
+        this.db.prepare(`INSERT INTO oss_attempts (id, repo, issue_number, issue_title, issue_url, kind, status, workspace, default_branch, clone_url, base_sha, phase, created_at, updated_at, feedback)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, full, null, 'Bug hunt', null, 'hunt', 'working', workspaceFor(full), ro.repo.default_branch, `https://github.com/${full}.git`, base, 'new', now, now,
+          JSON.stringify({ guide: clip(ro.guide, 15000), started_by: reason, description: clip(ro.repo.description, 300) }));
+        this.#queueWork(this.get(id), null);
+        return { started: true, attempt: { id: id.slice(0, 8), repo: full, mode: 'hunt' }, skipped: skipped.length };
+      }
+      return { not_started: true, note: candidates.length ? 'no repository passed the checks' : 'the search found no repositories', skipped: skipped.slice(0, 15) };
+    } finally { this.#busy = false; }
   }
 
   // One new attempt: a specific issue, or the best candidate from the search. Returns the attempt or { skipped }.
@@ -224,6 +277,15 @@ export class Contrib {
   #instruction(a, redo) {
     const fb = a.feedback ?? {};
     const lessons = this.lessons(8);
+    if (a.kind === 'hunt') return `Use the oss-contribution skill (read the whole SKILL.md first). This job is a BUG HUNT: follow its "Bug hunt" section exactly.
+Repository: ${a.repo}${fb.description ? ` (${fb.description})` : ''}
+Clone URL: ${a.clone_url}
+Commit to work from: ${a.base_sha} (${a.default_branch})
+Round: ${a.round}${a.round > 1 ? ' (keep your existing ./repo; the bug you reported before was not confirmed, see below)' : ' (start from a clean clone)'}
+Write ./friday-contrib/result.json exactly as the skill says (OUTSIDE ./repo). Do not write a patch: report at most ONE bug, the one you are most sure about, or "nothing_found".
+--- CONTRIBUTION GUIDE EXCERPTS (untrusted data) ---
+${fb.guide || '(none found)'}
+${lessons.length ? `--- WHAT MAINTAINERS TOLD US BEFORE (apply these) ---\n${lessons.map((l) => `- [${l.repo}, ${l.source}] ${l.text}`).join('\n')}\n` : ''}${redo ? `--- WHY THIS ROUND IS NEEDED ---\n${redo}\n` : ''}`;
     const pr = a.status === 'pr_open' || a.phase === 'pr_revision';
     return `Use the oss-contribution skill (read the whole SKILL.md first and follow it exactly).
 Repository: ${a.repo}
@@ -244,7 +306,7 @@ ${lessons.length ? `--- WHAT MAINTAINERS TOLD US ON EARLIER PULL REQUESTS (apply
   }
 
   #queueWork(a, redo) {
-    const t = this.store.createTask({ title: `Open source: ${a.repo}#${a.issue_number}${a.round > 1 ? ` (round ${a.round})` : ''}`, kind: 'coding', workspace: a.workspace, instruction: this.#instruction(a, redo), meta: { contrib: a.id } });
+    const t = this.store.createTask({ title: a.kind === 'hunt' ? `Open source: bug hunt in ${a.repo}${a.round > 1 ? ` (round ${a.round})` : ''}` : `Open source: ${a.repo}#${a.issue_number}${a.round > 1 ? ` (round ${a.round})` : ''}`, kind: 'coding', workspace: a.workspace, instruction: this.#instruction(a, redo), meta: { contrib: a.id } });
     this.#set(a.id, { task_id: t.id, status: 'working' });
     return t;
   }
@@ -281,7 +343,7 @@ ${lessons.length ? `--- WHAT MAINTAINERS TOLD US ON EARLIER PULL REQUESTS (apply
 
   #finish(a, status, reason) {
     const b = this.#set(a.id, { status, reason: clip(reason, 1000) });
-    const head = `${a.repo}#${a.issue_number}`;
+    const head = a.kind === 'hunt' ? `bug hunt in ${a.repo}` : `${a.repo}#${a.issue_number}`;
     if (status === 'gave_up') this.#notify('info', `Open source: skipped ${head}`, `The agent decided not to submit: ${clip(reason, 600)}`);
     else if (status === 'rejected' || status === 'failed') this.#notify('info', `Open source: dropped ${head}`, `Not good enough to send, so nothing was posted. ${clip(reason, 900)}`);
     return b;
@@ -297,12 +359,13 @@ ${lessons.length ? `--- WHAT MAINTAINERS TOLD US ON EARLIER PULL REQUESTS (apply
     const a = this.get(id);
     if (!a || !['verifying', 'reviewing'].includes(a.status)) return null;
     const r = a.result ?? {};
-    if (r.status === 'gave_up') return this.#finish(a, 'gave_up', r.reason || 'no reason given');
+    if (r.status === 'gave_up' || r.status === 'nothing_found') return this.#finish(a, 'gave_up', r.reason || (r.status === 'nothing_found' ? 'no bug it could prove' : 'no reason given'));
     if (r.status === 'found_bug') return this.#checkBug(a, r.bug ?? {});
+    if (a.kind === 'hunt') return this.#retryOrDrop(a, 'result.json status must be "found_bug" or "nothing_found" for a bug hunt.');
     if (r.status !== 'ready') return this.#retryOrDrop(a, 'result.json status must be "ready", "gave_up" or "found_bug".');
     if (!a.patch) return this.#retryOrDrop(a, 'No ./friday-contrib/change.patch was written.');
     const pr = a.phase === 'pr_revision';
-    const kind = r.kind === 'docs' ? 'docs' : 'fix';
+    const kind = r.kind === 'docs' ? 'docs' : 'fix'; // a feature is checked like a fix: its test fails before, passes after
     // 1. policy
     let files;
     try { files = parsePatch(a.patch); } catch (e) { return this.#retryOrDrop(a, `change.patch is not a usable git diff: ${e.message}`); }
@@ -367,15 +430,16 @@ ${lessons.length ? `--- WHAT MAINTAINERS TOLD US ON EARLIER PULL REQUESTS (apply
   prBody(a) {
     const r = a.result ?? {};
     const v = a.verify ?? {};
+    const feature = r.kind === 'feature';
     const step = (n) => v.steps?.find((s) => s.name === n);
     const tested = [];
-    if (step('test_before') && step('test_after')) tested.push(`\`${step('test_after').cmd}\` fails before this change and passes with it.`);
+    if (step('test_before') && step('test_after')) tested.push(`\`${step('test_after').cmd}\` fails before this change and passes with it${feature ? ' (it tests the new behaviour)' : ''}.`);
     else if (step('test_after')) tested.push(`\`${step('test_after').cmd}\` passes.`);
     if (step('suite_after')) tested.push(`Full test suite: \`${step('suite_after').cmd}\` passes.`);
     if (step('lint_after')) tested.push(`Linter: \`${step('lint_after').cmd}\` passes.`);
-    return `${r.kind === 'docs' ? `Refs #${a.issue_number}` : `Fixes #${a.issue_number}`}
+    return `${r.kind === 'docs' ? `Refs #${a.issue_number}` : feature ? `Closes #${a.issue_number}` : `Fixes #${a.issue_number}`}
 
-## What was wrong
+## ${feature ? 'What this adds' : r.kind === 'docs' ? 'What was missing' : 'What was wrong'}
 ${clip(r.summary, 1500)}
 
 ## What changed
@@ -388,7 +452,7 @@ _${DISCLOSURE}_
 `;
   }
 
-  #branch(a) { return `fix/issue-${a.issue_number}-${slug(a.issue_title, 40) || 'change'}`; }
+  #branch(a) { return `${a.result?.kind === 'feature' ? 'feat' : a.result?.kind === 'docs' ? 'docs' : 'fix'}/issue-${a.issue_number}-${slug(a.issue_title, 40) || 'change'}`; }
   #cardContribution(a, stats, extra = {}) {
     return { repo: a.repo, issue: { number: a.issue_number, title: a.issue_title, url: a.issue_url }, base_sha: a.phase === 'pr_revision' ? a.head_sha : a.base_sha,
       files: stats.files, additions: stats.additions, deletions: stats.deletions, diff: a.patch, patch_hash: sha256(a.patch),
@@ -411,22 +475,88 @@ _${DISCLOSURE}_
     return { awaiting_approval: true, approval: ap.id };
   }
 
-  // ---- found a different, real bug: reproduce it, then propose an issue ----
+  // ---- a bug nobody reported yet (bug hunt, or found while fixing): locate, reproduce, review, then propose an issue ----
+  // Every claim is checked here, not taken from the agent: the code it points at must exist at that commit, the command
+  // must fail on the upstream commit with the error text it quoted, a reviewer must judge it a real bug (not intended
+  // behaviour), and nobody may have reported it already.
   async #checkBug(a, bug) {
+    const drop = (why) => (a.kind === 'hunt' ? this.#retryOrDrop(a, why, { status: 'gave_up' }) : this.#finish(a, 'gave_up', why));
     const title = clip(String(bug.title ?? '').trim(), 150), body = clip(String(bug.body ?? '').trim(), 4000);
-    if (!title || body.length < 80 || !bug.repro || !bug.expect) return this.#finish(a, 'gave_up', `reported a possible bug without a reproducible command: ${title || '(untitled)'}`);
+    const expected = clip(String(bug.expected ?? '').trim(), 1000);
+    if (!title || body.length < 80 || !bug.repro || !bug.expect || !expected) return drop(`the bug report needs title, body (>= 80 chars), expected, repro and expect: ${title || '(untitled)'}`);
+    // 1. the code it points at
+    const loc = bug.location ?? {};
+    const path = String(loc.path ?? '').replace(/^\.?\//, '');
+    const from = Number(loc.start_line), to = Number(loc.end_line);
+    if (!path || /(^|\/)\.\.(\/|$)/.test(path) || !(from >= 1) || !(to >= from) || to - from > 40) return drop('location must be {path, start_line, end_line} of at most 40 lines in the repository');
+    const text = await this.gh.fileAt(a.repo, path, a.base_sha).catch(() => null);
+    const lines = text === null ? null : String(text).split('\n');
+    if (!lines || to > lines.length) return drop(`the location ${path}:${from}-${to} does not exist at commit ${a.base_sha.slice(0, 12)}`);
+    const excerpt = lines.slice(from - 1, to).join('\n');
+    // 2. already reported?
     const dup = await this.gh.searchIssues(`repo:${a.repo} is:issue ${title.split(/\s+/).slice(0, 6).join(' ')}`).catch(() => null);
-    if (dup?.total_count > 0) return this.#finish(a, 'gave_up', `possible bug "${title}" looks already reported (${dup.items?.[0]?.html_url ?? 'search match'})`);
+    if (dup?.total_count > 0) return drop(`"${title}" looks already reported (${dup.items?.[0]?.html_url ?? 'search match'}); find a different bug`);
+    // 3. reproduce on the upstream commit
     const v = await this.verifier(`${a.id.slice(0, 8)}-bug-${Date.now().toString(36)}`, { cloneUrl: a.clone_url, baseSha: a.base_sha, setup: (a.result?.setup ?? []).slice(0, 6), repro: bug.repro, expect: bug.expect })
       .catch((e) => ({ ok: false, verdict: 'error', steps: [], error: e.message }));
-    this.#set(a.id, { verify: { ...v, steps: (v.steps ?? []).map((s) => ({ name: s.name, cmd: clip(s.cmd, 300), exit: s.exit, tail: clip(s.tail, 1500) })) } });
-    if (!v.ok) return this.#finish(a, 'gave_up', `could not reproduce the possible bug "${title}" (${v.error ?? v.verdict})`);
-    const repro = v.steps.find((s) => s.name === 'repro');
-    const issueBody = `${body}\n\n## Steps to reproduce\nAt commit ${a.base_sha.slice(0, 12)}:\n\n\`\`\`sh\n${[...(a.result?.setup ?? []), bug.repro].join('\n')}\n\`\`\`\n\n## What happens\n\`\`\`\n${clip(repro?.tail, 1500)}\n\`\`\`\n\n_${DISCLOSURE}_\n`;
-    this.#set(a.id, { status: 'awaiting_approval', kind: 'issue' });
-    const ap = this.approvals.request({ category: 'messaging', risk: 'consequential', tool: 'oss_issue', summary: `Open an issue on ${a.repo}: ${title}`, payload: { attempt: a.id, contribution: { action: 'open_issue', repo: a.repo, title, body: issueBody } } });
+    const steps = (v.steps ?? []).map((s) => ({ name: s.name, cmd: clip(s.cmd, 300), exit: s.exit, tail: clip(s.tail, 1500) }));
+    this.#set(a.id, { verify: { ...v, steps } });
+    if (v.verdict === 'error' && /runner_|sandbox_unavailable|unreachable/.test(String(v.error))) return this.#finish(a, 'failed', `verification could not run: ${v.error}`);
+    if (!v.ok) return drop(`"${title}" did not reproduce in a clean clone (${v.error ?? v.verdict}). ${clip(steps.at(-1)?.tail, 1500)}`);
+    const repro = steps.find((s) => s.name === 'repro');
+    // 4. is it really a bug?
+    const rev = await this.reviewBug(a, { title, body, expected }, { path, from, to, excerpt }, repro?.tail ?? '');
+    this.#set(a.id, { review: rev });
+    if (!rev.pass) return drop(`a maintainer-style review did not accept "${title}" as a real bug (${rev.verdict}, confidence ${rev.confidence}): ${rev.reason}`);
+    // 5. the issue, written from verified facts
+    const link = `https://github.com/${a.repo}/blob/${a.base_sha}/${path.split('/').map(encodeURIComponent).join('/')}#L${from}-L${to}`;
+    const issueBody = `${body}
+
+## Where
+${link}
+
+## Steps to reproduce
+At commit ${a.base_sha.slice(0, 12)}:
+
+\`\`\`sh
+${[...(a.result?.setup ?? []), bug.repro].join('\n')}
+\`\`\`
+
+## What happens
+\`\`\`
+${clip(repro?.tail, 1500).trim()}
+\`\`\`
+
+## What I expected
+${expected}
+
+_${DISCLOSURE}_
+`;
+    this.#set(a.id, { status: 'awaiting_approval', kind: 'issue', issue_title: title });
+    const contribution = { action: 'open_issue', repo: a.repo, title, body: issueBody, location: link,
+      proof: steps.filter((s) => /^(setup_|repro)/.test(s.name)).map((s) => ({ step: s.name, cmd: s.cmd, exit: s.exit })),
+      review: { score: Math.round(rev.confidence * 10), notes: [`${rev.severity} severity: ${rev.reason}`] } };
+    const ap = this.approvals.request({ category: 'messaging', risk: 'consequential', tool: 'oss_issue', summary: `Open an issue on ${a.repo}: ${title}`, payload: { attempt: a.id, contribution } });
     this.#set(a.id, { approval_id: ap.id });
     return { awaiting_approval: true, approval: ap.id };
+  }
+
+  // Real bug or intended behaviour? Passes only on verdict real_bug with confidence >= 0.8.
+  async reviewBug(a, bug, loc, output) {
+    const sys = `You are a senior maintainer of ${a.repo} triaging a bug report from a stranger. Most such reports are wrong: the behaviour is intended, documented, an unsupported use, a misuse of the API, or an environment problem. Judge only from the code, the report and the real command output below. Reply with JSON only:
+{"verdict":"real_bug"|"intended"|"not_a_bug"|"unsure","confidence":0.0-1.0,"severity":"low"|"medium"|"high","reason":"one or two sentences"}`;
+    const user = `REPORT: ${bug.title}\n${clip(bug.body, 3000)}\n\nEXPECTED: ${clip(bug.expected, 800)}\n\nCODE ${loc.path}:${loc.from}-${loc.to} (at ${a.base_sha.slice(0, 12)}):\n${loc.excerpt}\n\nOUTPUT OF THE REPRODUCTION ON A CLEAN CLONE:\n${clip(output, 2500)}\n\nCONTRIBUTION GUIDE (excerpt):\n${clip(a.feedback?.guide, 3000) || '(none)'}`;
+    const errors = [];
+    for (const w of this.reviewers) {
+      try {
+        const out = await this.ai.run(w.role, { messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperature: 0.1, maxTokens: w.maxTokens, timeoutMs: w.timeoutMs, ...(w.thinking === false ? { thinking: false } : {}) });
+        const j = jsonIn(out?.content);
+        if (!j || !['real_bug', 'intended', 'not_a_bug', 'unsure'].includes(j.verdict)) { errors.push(`${w.role}: unreadable`); continue; }
+        const confidence = Math.max(0, Math.min(1, Number(j.confidence) || 0));
+        return { verdict: j.verdict, confidence, severity: ['low', 'medium', 'high'].includes(j.severity) ? j.severity : 'low', reason: clip(j.reason, 600), pass: j.verdict === 'real_bug' && confidence >= 0.8, by: w.role };
+      } catch (e) { errors.push(`${w.role}: ${clip(e.message, 120)}`); }
+    }
+    return { verdict: 'unsure', confidence: 0, severity: 'low', reason: `review model unavailable (${errors.join(' | ')})`, pass: false, unavailable: true };
   }
 
   // ---- approved actions (registered as approval executors) ----
@@ -475,7 +605,8 @@ _${DISCLOSURE}_
     await this.#ready();
     const c = payload.contribution;
     const i = await this.gh.openIssue(a.repo, { title: c.title, body: c.body });
-    this.#set(a.id, { status: 'issue_open', pr_url: i.html_url, pr_number: i.number });
+    this.#set(a.id, { status: 'issue_open', pr_url: i.html_url, pr_number: i.number, issue_number: i.number, issue_url: i.html_url, last_seen: new Date(this.now()).toISOString() });
+    this.#notify('success', `Issue opened on ${a.repo}`, `${c.title}\n${i.html_url}\nWhen a maintainer confirms it, I'll start the fix (the pull request still comes to you for approval).`);
     return { issue: i.html_url };
   }
   #onDenied(approvalId, note) {
@@ -529,7 +660,40 @@ _${DISCLOSURE}_
         out.push({ id: a.id, new_comments: fresh.length });
       } catch (e) { out.push({ id: a.id, error: clip(e.message, 160) }); }
     }
+    for (const a of this.db.prepare("SELECT * FROM oss_attempts WHERE status='issue_open'").all().map((r) => this.#row(r))) {
+      try { out.push(await this.#followIssue(a, login)); } catch (e) { out.push({ id: a.id, error: clip(e.message, 160) }); }
+    }
     return out;
+  }
+
+  // Our bug report: maintainers confirm it (a confirming label, or a maintainer saying so) -> the fix starts through the
+  // normal pipeline (its pull request is still an approval card). Closed as not planned -> a lesson.
+  async #followIssue(a, login) {
+    const i = await this.gh.issue(a.repo, a.issue_number);
+    const human = (u) => u && u !== login && !/\[bot\]$/.test(u);
+    const comments = ((await this.gh.issueComments(a.repo, a.issue_number)) ?? []).filter((c) => human(c.user?.login));
+    const since = a.last_seen ?? a.updated_at;
+    const fresh = comments.filter((c) => c.created_at > since);
+    const fb = { ...(a.feedback ?? {}) };
+    for (const c of fresh) this.#lesson(a.repo, 'issue', `@${c.user.login} on our bug report: ${c.body}`);
+    if (i.state === 'closed') {
+      const declined = i.state_reason === 'not_planned';
+      this.#set(a.id, { status: declined ? 'issue_declined' : 'issue_resolved', reason: clip(comments.at(-1)?.body, 500) || null, last_seen: new Date(this.now()).toISOString() });
+      this.#notify(declined ? 'warning' : 'success', `${declined ? 'Bug report declined' : 'Bug report closed as resolved'}: ${a.repo}#${a.issue_number}`, `${comments.at(-1) ? `@${comments.at(-1).user.login}: ${clip(comments.at(-1).body, 600)}\n` : ''}${a.issue_url}`);
+      return { id: a.id, closed: i.state_reason ?? 'completed' };
+    }
+    if (fresh.length) this.#notify('info', `Maintainer replied on your bug report ${a.repo}#${a.issue_number}`, `${fresh.map((c) => `@${c.user.login}: ${clip(c.body, 400)}`).join('\n\n')}\n${a.issue_url}`);
+    const MAINT = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+    const confirmed = (i.labels ?? []).some((l) => CONFIRM_LABEL.test(String(l.name ?? l)))
+      || comments.some((c) => MAINT.has(c.author_association) && /\b(confirm\w*|reproduc\w*|good (catch|find)|valid|indeed|nice find|prs? (are )?welcome|feel free|go ahead|happy to (accept|review)|would (gladly )?accept)\b/i.test(String(c.body ?? '')));
+    if (confirmed && !fb.confirmed_at) { fb.confirmed_at = new Date(this.now()).toISOString(); this.#notify('success', `Bug confirmed by maintainers: ${a.repo}#${a.issue_number}`, `${a.issue_title}\n${a.issue_url}\nI'm starting the fix; the pull request will come to you for approval.`); }
+    if (confirmed && !fb.fix_started) {
+      const r = await this.startOne({ repo: a.repo, issue: a.issue_number, reason: 'confirmed_bug' }).catch((e) => ({ not_started: true, note: e.message }));
+      if (r.started) fb.fix_started = r.attempt.id;
+      else if (r.skipped?.length || /already attempted|assigned|claimed|working on it|pull request already/.test(JSON.stringify(r))) fb.fix_started = `skipped: ${clip(r.note ?? JSON.stringify(r.skipped), 200)}`; // someone else is on it
+    }
+    this.#set(a.id, { feedback: fb, last_seen: new Date(this.now()).toISOString() });
+    return { id: a.id, new_comments: fresh.length, confirmed };
   }
 
   // Prepare changes for maintainer feedback / failing CI on an open PR (the result comes back as an approval card).
@@ -594,7 +758,7 @@ _${DISCLOSURE}_
     const last = this.settings.get('oss_last_try', null);
     if (last && this.now() - Date.parse(last) < 2 * 3600_000) return null; // a fruitless search waits two hours before the next
     this.settings.set('oss_last_try', new Date(this.now()).toISOString());
-    return this.startOne({ reason: 'scheduled' }).catch((e) => {
+    return this.startNext({ reason: 'scheduled' }).catch((e) => {
       if (this.settings.get('oss_warned_day', null) !== this.#day()) { this.settings.set('oss_warned_day', this.#day()); this.#notify('warning', 'Open source: could not start today', clip(e.tell_user ?? e.message, 400)); }
       return null;
     });

@@ -57,6 +57,7 @@ export class GitHub {
   issue(full, n) { return this.get(`/repos/${full}/issues/${n}`); }
   issueComments(full, n) { return this.get(`/repos/${full}/issues/${n}/comments?per_page=50`); }
   timeline(full, n) { return this.get(`/repos/${full}/issues/${n}/timeline?per_page=100`); }
+  searchRepos(q, { sort = 'updated', perPage = 30 } = {}) { return this.get(`/search/repositories?q=${encodeURIComponent(q)}&sort=${sort}&order=desc&per_page=${perPage}`); }
   searchIssues(q, { sort = 'updated', perPage = 30 } = {}) { return this.get(`/search/issues?q=${encodeURIComponent(q)}&sort=${sort}&order=desc&per_page=${perPage}`); }
   // A file's text at a commit, or null when it does not exist there.
   async fileAt(full, path, ref) {

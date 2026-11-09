@@ -172,10 +172,10 @@ export function ossTools(contrib) {
   return [
     {
       name: 'oss_setup', risk: 'gated', category: 'system', riskClass: 'routine',
-      description: 'Configure Friday\'s daily open-source contributions: enabled, run_at (HH:MM, his time), days (1-7, Mon=1), languages (Python, JavaScript, TypeScript), labels (issue labels to search, default "good first issue" and "help wanted"), min_stars, max_open_prs (PRs waiting on him or maintainers before she stops starting new ones), daily_starts (1-3), max_rounds (fix attempts per issue, 1-3), skip_repos (owner/repo). Each day she picks an issue in a repo that welcomes contributors, fixes it, proves it with tests in a clean clone, has it reviewed, and sends ONE approval card; nothing reaches GitHub without his approval. Needs approval.',
-      parameters: obj({ enabled: { type: 'boolean' }, run_at: { type: 'string' }, days: { type: 'array', items: { type: 'integer' } }, languages: { type: 'array', items: { type: 'string', enum: ['Python', 'JavaScript', 'TypeScript'] } },
+      description: 'Configure Friday\'s daily open-source contributions: enabled, run_at (HH:MM, his time), days (1-7, Mon=1), languages (Python, JavaScript, TypeScript), labels (issue labels to search, default "good first issue" and "help wanted"), mode (issues = fix existing issues; hunt = look for unreported bugs and propose issues, the fix follows once maintainers confirm; mixed = alternate, default), min_stars, max_open_prs (PRs waiting on him or maintainers before she stops starting new ones), daily_starts (1-3), max_rounds (fix attempts per issue, 1-3), skip_repos (owner/repo). Each day she picks an issue in a repo that welcomes contributors, fixes it, proves it with tests in a clean clone, has it reviewed, and sends ONE approval card; nothing reaches GitHub without his approval. Needs approval.',
+      parameters: obj({ enabled: { type: 'boolean' }, mode: { type: 'string', enum: ['issues', 'hunt', 'mixed'] }, run_at: { type: 'string' }, days: { type: 'array', items: { type: 'integer' } }, languages: { type: 'array', items: { type: 'string', enum: ['Python', 'JavaScript', 'TypeScript'] } },
         labels: { type: 'array', items: { type: 'string' } }, min_stars: { type: 'integer' }, max_open_prs: { type: 'integer' }, daily_starts: { type: 'integer' }, max_rounds: { type: 'integer' }, skip_repos: { type: 'array', items: { type: 'string' } } }, []),
-      summarize: (a) => `Open-source contributions: ${a.enabled === false ? 'OFF' : a.enabled ? 'ON' : 'settings'}${a.languages ? ` · ${a.languages.join('/')}` : ''}${a.run_at ? ` · at ${a.run_at}` : ''}${a.daily_starts ? ` · ${a.daily_starts}/day` : ''}${a.max_open_prs ? ` · max ${a.max_open_prs} open` : ''}`,
+      summarize: (a) => `Open-source contributions: ${a.enabled === false ? 'OFF' : a.enabled ? 'ON' : 'settings'}${a.mode ? ` · mode ${a.mode}` : ''}${a.languages ? ` · ${a.languages.join('/')}` : ''}${a.run_at ? ` · at ${a.run_at}` : ''}${a.daily_starts ? ` · ${a.daily_starts}/day` : ''}${a.max_open_prs ? ` · max ${a.max_open_prs} open` : ''}`,
       run: (a) => ({ saved: true, config: contrib.setConfig(a) }),
     },
     {
@@ -186,9 +186,11 @@ export function ossTools(contrib) {
     },
     {
       name: 'oss_start', risk: 'safe',
-      description: 'Start one open-source contribution now in the background (one at a time; often 20-60 minutes before an approval card arrives, or a note saying why it was dropped). Without repo/issue she searches for a suitable issue; with repo ("owner/name") and issue (number) she checks that one (it is still skipped if the repo bans AI-assisted contributions, needs a CLA/DCO, or someone already claimed it).',
-      parameters: obj({ repo: { type: 'string' }, issue: { type: 'integer' } }, []),
+      description: 'Start one open-source contribution now in the background (one at a time; often 20-60 minutes before an approval card arrives, or a note saying why it was dropped). mode fix (default): without repo/issue she searches for a suitable issue; with repo ("owner/name") and issue (number) she checks that one (still skipped if the repo bans AI-assisted contributions, needs a CLA/DCO, or someone claimed it). mode hunt: she reads a repo (optional repo, else she picks one) looking for ONE real unreported bug, proves it in a clean clone and proposes an issue; once maintainers confirm it she starts the fix.',
+      parameters: obj({ mode: { type: 'string', enum: ['fix', 'hunt'] }, repo: { type: 'string' }, issue: { type: 'integer' } }, []),
       run: (a = {}) => run(async () => {
+        if (a.repo && !/^[\w.-]+\/[\w.-]+$/.test(a.repo)) return { error: 'repo must be owner/name' };
+        if (a.mode === 'hunt') return contrib.startHunt({ repo: a.repo ?? null, reason: 'manual' });
         if ((a.repo && !a.issue) || (!a.repo && a.issue)) return { error: 'give both repo and issue, or neither' };
         if (a.repo && !/^[\w.-]+\/[\w.-]+$/.test(a.repo)) return { error: 'repo must be owner/name' };
         return contrib.startOne({ repo: a.repo ?? null, issue: a.issue ?? null, reason: 'manual' });

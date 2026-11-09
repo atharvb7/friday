@@ -144,10 +144,11 @@ class FakeGitHub {
   }
   async whoami() { this.login = 'atharvb7'; return { login: 'atharvb7', scopes: ['public_repo'], too_broad: [] }; }
   async repo(full) { return { full_name: full, default_branch: 'main', archived: false, fork: false, private: false, has_issues: true, owner: { login: full.split('/')[0] }, stargazers_count: 500, pushed_at: new Date().toISOString(), license: { spdx_id: 'MIT' }, size: 1000, language: 'Python' }; }
-  async issue() { return this.issueData; }
+  async issue(full, n) { return n === this.issueData.number || !this.issued ? this.issueData : { ...this.issued, number: n }; }
+  async searchRepos(q) { this.calls.push(['searchRepos', q]); return { items: [{ full_name: 'acme/calc' }] }; }
   async issueComments() { return this.comments; }
   async timeline() { return []; }
-  async searchIssues(q) { this.calls.push(['search', q]); return { items: [{ repository_url: 'https://api.github.com/repos/acme/calc', number: 7 }], total_count: 1 }; }
+  async searchIssues(q) { this.calls.push(['search', q]); if (q.startsWith('repo:')) return { items: this.dupes ?? [], total_count: (this.dupes ?? []).length }; return { items: [{ repository_url: 'https://api.github.com/repos/acme/calc', number: 7 }], total_count: 1 }; }
   async fileAt(full, path) { if (path === 'CONTRIBUTING.md') return this.guide || null; return this.files[path] ?? null; }
   async branchSha() { return SHA; }
   async ensureFork(full) { this.calls.push(['fork', full]); return `atharvb7/${full.split('/')[1]}`; }
@@ -160,7 +161,7 @@ class FakeGitHub {
   async pullReviewComments() { return []; }
   async checkRuns() { return { check_runs: [] }; }
   async comment(full, n, body) { this.calls.push(['comment', full, n, body]); }
-  async openIssue(full, o) { this.calls.push(['issue', full, o]); return { number: 99, html_url: 'https://github.com/acme/calc/issues/99' }; }
+  async openIssue(full, o) { this.calls.push(['issue', full, o]); this.issued = { state: 'open', title: o.title, body: o.body, html_url: 'https://github.com/acme/calc/issues/99', assignees: [], labels: [] }; return { number: 99, html_url: 'https://github.com/acme/calc/issues/99' }; }
 }
 const RESULT = { status: 'ready', kind: 'fix', pr_title: 'Fix add() returning the difference', summary: 'add() used subtraction. It now adds.', changes: ['calc.py: use +', 'tests/test_calc.py: regression test'], setup: ['pip install -e .'], test: 'python -m pytest tests/test_calc.py -q', suite: 'python -m pytest -q', lint: '' };
 const VERIFIED = { ok: true, verdict: 'verified', steps: [{ name: 'test_before', cmd: RESULT.test, exit: 1, tail: '' }, { name: 'test_after', cmd: RESULT.test, exit: 0, tail: '' }, { name: 'suite_after', cmd: RESULT.suite, exit: 0, tail: '' }] };
@@ -351,4 +352,101 @@ test('workspace names are valid task workspaces', () => {
   for (const r of ['acme/calc', 'Some-Org/a.very.long.repository-name-with-many-parts', 'x/y']) assert.match(workspaceFor(r), /^oss-[a-z0-9][a-z0-9-]{0,35}$/);
   assert.equal(sha256('a').length, 64);
   void mkdirSync;
+});
+
+// ---------- bug hunt ----------
+const BUG = { title: 'add() returns the difference instead of the sum', body: 'The docstring of add() says it returns the sum of both arguments, but add(2, 3) returns -1. Any caller relying on it gets wrong totals.', expected: 'add(2, 3) == 5, as the docstring says.',
+  repro: 'python -c "from calc import add; assert add(2, 3) == 5, add(2, 3)"', expect: 'AssertionError: -1', location: { path: 'calc.py', start_line: 1, end_line: 2 } };
+const HUNT = { status: 'found_bug', setup: ['pip install -e .'], bug: BUG };
+const REPRODUCED = async (req) => (req.repro ? { ok: true, verdict: 'reproduced', steps: [{ name: 'setup_1', cmd: 'pip install -e .', exit: 0, tail: '' }, { name: 'repro', cmd: req.repro, exit: 1, tail: 'Traceback...\nAssertionError: -1' }] } : VERIFIED);
+const triage = (verdict, confidence = 0.9) => async (role, o) => (o.messages[0].content.includes('triaging') ? { content: JSON.stringify({ verdict, confidence, severity: 'medium', reason: 'docstring promises a sum' }) } : APPROVE);
+
+test('hunt: one proven bug -> issue card with code link, real output, expected -> approved -> issue opened', async () => {
+  const w = world({ files: { 'friday-contrib/result.json': JSON.stringify(HUNT) }, verify: REPRODUCED, review: triage('real_bug') });
+  const r = await w.contrib.startHunt({ repo: 'acme/calc' });
+  assert.equal(r.started, true);
+  const t = w.store.nextQueuedTask();
+  assert.match(t.title, /bug hunt in acme\/calc/);
+  assert.match(t.instruction, /BUG HUNT/);
+  await w.finishTask();
+  assert.equal(w.verifies[0].repro, BUG.repro);
+  assert.equal(w.verifies[0].patch, undefined);
+  const card = w.approvals.list()[0];
+  assert.equal(card.tool, 'oss_issue');
+  const c = card.payload.contribution;
+  assert.match(c.body, new RegExp(`https://github.com/acme/calc/blob/${SHA}/calc.py#L1-L2`));
+  assert.match(c.body, /AssertionError: -1/);
+  assert.match(c.body, /## What I expected\nadd\(2, 3\) == 5/);
+  assert.equal(c.review.score, 9);
+  assert.equal(w.gh.calls.filter((x) => x[0] === 'issue').length, 0);
+  await w.approvals.decide(card.id, true);
+  assert.equal(w.gh.calls.filter((x) => x[0] === 'issue').length, 1);
+  assert.equal(w.contrib.status().open[0].waiting_on, 'maintainers to confirm the bug');
+});
+
+test('hunt: when maintainers confirm the bug, the fix starts through the normal pipeline', async () => {
+  const w = world({ files: { 'friday-contrib/result.json': JSON.stringify(HUNT) }, verify: REPRODUCED, review: triage('real_bug') });
+  await w.contrib.startHunt({ repo: 'acme/calc' });
+  await w.finishTask();
+  await w.approvals.decide(w.approvals.list()[0].id, true);
+  await w.contrib.followUp();
+  assert.equal(w.store.nextQueuedTask(), null, 'nothing starts before confirmation');
+  w.gh.issued.labels = [{ name: 'bug' }];
+  await w.contrib.followUp();
+  const fix = w.store.nextQueuedTask();
+  assert.ok(fix, 'fix queued');
+  assert.match(fix.instruction, /Issue #99/);
+  assert.ok(w.notes.some((n) => /Bug confirmed/.test(n.title)));
+  await w.contrib.followUp();
+  assert.equal(w.contrib.list().filter((x) => x.issue?.startsWith('#99')).length, 2, 'the fix is started once');
+});
+
+test('hunt: an invented code location, a non-reproducing bug and "intended behaviour" are never reported', async () => {
+  const fake = world({ files: { 'friday-contrib/result.json': JSON.stringify({ ...HUNT, bug: { ...BUG, location: { path: 'nope.py', start_line: 1, end_line: 3 } } }) }, verify: REPRODUCED, review: triage('real_bug') });
+  await fake.contrib.startHunt({ repo: 'acme/calc' });
+  await fake.finishTask();
+  assert.equal(fake.verifies.length, 0);
+  assert.match(fake.store.nextQueuedTask().instruction, /does not exist at commit/);
+
+  const norepro = world({ files: { 'friday-contrib/result.json': JSON.stringify(HUNT) }, verify: async () => ({ ok: false, verdict: 'not_reproduced', error: 'the command succeeded on the upstream commit', steps: [] }), review: triage('real_bug') });
+  await norepro.contrib.startHunt({ repo: 'acme/calc' });
+  await norepro.finishTask();
+  assert.match(norepro.store.nextQueuedTask().instruction, /did not reproduce/);
+
+  const intended = world({ files: { 'friday-contrib/result.json': JSON.stringify(HUNT) }, verify: REPRODUCED, review: triage('intended') });
+  await intended.contrib.startHunt({ repo: 'acme/calc' });
+  await intended.finishTask();
+  await intended.finishTask();
+  assert.equal(intended.approvals.list().length, 0);
+  assert.equal(intended.contrib.list()[0].status, 'gave_up');
+  for (const x of [fake, norepro, intended]) assert.equal(x.gh.calls.filter((c) => c[0] === 'issue').length, 0);
+});
+
+test('hunt: mode decides what the daily start does', async () => {
+  const w = world({ files: { 'friday-contrib/result.json': JSON.stringify(HUNT) } });
+  w.contrib.setConfig({ mode: 'hunt' });
+  const r = await w.contrib.startNext();
+  assert.equal(r.attempt.mode, 'hunt');
+  assert.ok(w.gh.calls.some((x) => x[0] === 'searchRepos' && /good-first-issues:>2/.test(x[1])));
+  assert.throws(() => w.contrib.setConfig({ mode: 'yolo' }), /mode/);
+});
+
+test('feature requests: test must fail before; PR says what it adds and closes the issue', async () => {
+  const w = world({ files: { 'friday-contrib/result.json': JSON.stringify({ ...RESULT, kind: 'feature', summary: 'Adds a --json flag.' }), 'friday-contrib/change.patch': FIX } });
+  await w.contrib.startOne({ repo: 'acme/calc', issue: 7 });
+  await w.finishTask();
+  assert.equal(w.verifies[0].testBefore, true);
+  const c = w.approvals.list()[0].payload.contribution;
+  assert.match(c.body, /^Closes #7\n\n## What this adds\nAdds a --json flag\./);
+  assert.match(c.body, /tests the new behaviour/);
+  assert.match(c.branch, /^feat\/issue-7-/);
+});
+
+test('hunt: a bug that is already reported is not reported again', async () => {
+  const gh = new FakeGitHub(); gh.dupes = [{ html_url: 'https://github.com/acme/calc/issues/3' }];
+  const w = world({ gh, files: { 'friday-contrib/result.json': JSON.stringify(HUNT) }, verify: REPRODUCED, review: triage('real_bug') });
+  await w.contrib.startHunt({ repo: 'acme/calc' });
+  await w.finishTask();
+  assert.equal(w.verifies.length, 0);
+  assert.match(w.store.nextQueuedTask().instruction, /already reported .*issues\/3/);
 });
