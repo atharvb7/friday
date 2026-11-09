@@ -9,7 +9,7 @@ import { Settings } from '../src/settings.mjs';
 import { EventBus } from '../src/events.mjs';
 import { Approvals } from '../src/approvals.mjs';
 import { parsePatch, applyFilePatch, checkPatchPolicy, sha256 } from '../src/patch.mjs';
-import { runVerify, validateVerifyRequest } from '../src/contrib-verify.mjs';
+import { runVerify, validateVerifyRequest, normalizeCmd } from '../src/contrib-verify.mjs';
 import { Contrib, workspaceFor, AI_BAN, DISCLOSURE } from '../src/contrib.mjs';
 import { ossTools } from '../src/agent/friday-tools.mjs';
 import { GROUPS } from '../src/agent/toolsets.mjs';
@@ -125,6 +125,26 @@ test('verify: repro mode confirms a bug only when the expected error text appear
   const run = (over) => runVerify({ cloneUrl: `file://${repo.dir}`, baseSha: repo.sha, ...over }, { workRoot: mkdtempSync(join(tmpdir(), 'friday-oss-w-')), id: 'r1', allowUrl: () => true });
   assert.equal((await run({ repro: "node -e \"if (require('./add.js')(2,3) !== 5) { console.error('add(2,3) returned -1'); process.exit(1) }\"", expect: 'returned -1' })).verdict, 'reproduced');
   assert.equal((await run({ repro: 'node -e "process.exit(1)"', expect: 'returned -1' })).verdict, 'not_reproduced');
+});
+
+test('verify: Python projects run in a fresh venv under bash; the agent\'s own venv steps are dropped', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'friday-oss-py-'));
+  const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+  git('init', '-q');
+  writeFileSync(join(dir, 'pyproject.toml'), '[project]\nname = "x"\nversion = "0"\n');
+  writeFileSync(join(dir, 'dates.py'), 'def ok(d, m):\n    return True\n');
+  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init');
+  const sha = git('rev-parse', 'HEAD').stdout.trim();
+  const v = await runVerify({ cloneUrl: `file://${dir}`, baseSha: sha,
+    // what agents really wrote: a venv path that only existed in their workspace, `source` (a bashism), then a check
+    setup: ['python3 -m venv friday-contrib/venv && source friday-contrib/venv/bin/activate && python -c "import sys; assert sys.prefix != sys.base_prefix, \'no venv\'"'],
+    repro: 'source .venv/bin/activate && python -c "from dates import ok; assert not ok(30, 2), \'30 February accepted\'"', expect: '30 February accepted' },
+  { workRoot: mkdtempSync(join(tmpdir(), 'friday-oss-w-')), id: 'py1', allowUrl: () => true });
+  assert.equal(v.verdict, 'reproduced', JSON.stringify(v.steps.map((s) => [s.name, s.exit, s.tail])));
+  assert.equal(v.steps.find((s) => s.name === 'python_venv').exit, 0);
+  assert.equal(normalizeCmd('python3 -m venv .venv && . .venv/bin/activate && pip install -e .'), 'pip install -e .');
+  assert.equal(normalizeCmd('uv venv && source .venv/bin/activate && pytest -q'), 'pytest -q');
+  assert.equal(normalizeCmd('npm ci && npm test'), 'npm ci && npm test');
 });
 
 test('verify: only github.com clone URLs and full shas are accepted by default', () => {

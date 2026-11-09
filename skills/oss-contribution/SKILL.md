@@ -33,6 +33,10 @@ Also read and use these skills when they apply: `systematic-debugging` (finding 
    Write down every setup command that worked; Friday re-runs them in a clean clone OF THE SAME CONTAINER IMAGE, so list
    only commands you actually ran here and saw succeed (available: python3/pip, uv, node/npm, pnpm, yarn, git, make, gcc).
    Do not add or upgrade dependencies.
+   **Python:** system pip refuses installs here. First run `python3 -m venv ../friday-contrib/venv && . ../friday-contrib/venv/bin/activate`
+   (from ./repo) and keep it active. Do NOT put venv creation or activation in `setup`/`test`/`suite`/`lint`: Friday runs
+   every command with bash inside its own fresh, already-active venv, so list only e.g. `pip install -e .[test]`.
+   Avoid `--no-build-isolation`; it fails in a fresh venv.
 4. **Run the existing tests first.** If the suite is already broken on the given commit, or you cannot get it to run
    within ~15 minutes, give up (`"status":"gave_up"`) and say why. Do not "fix" unrelated failures.
 5. **Reproduce the bug with a test.** Add a test in the project's existing test files/style that fails on the

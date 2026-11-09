@@ -20,6 +20,7 @@ only after you approve it. Code: `src/contrib.mjs` (pipeline), `src/patch.mjs` (
    edits, no renames/binaries, no credentials.
 5. **Proof** (`src/contrib-verify.mjs`, in the agent container, no model): fresh clone at the exact upstream commit ->
    setup -> targeted test must FAIL -> `git apply` -> targeted test, full suite and linter must PASS. Only exit codes count.
+   Commands run with bash; Python repos get a fresh, already-active venv (the agent's own venv/activate steps are dropped).
 6. **Review**: a strict-maintainer model pass; the code requires verdict approve, score >= 8, no blocker/major problem.
 7. Steps 4-6 failing send the exact failure back to the agent (max `max_rounds`, default 2), then the attempt is dropped
    and you get a one-line note. Nothing is posted.

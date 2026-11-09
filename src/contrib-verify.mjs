@@ -5,13 +5,22 @@
 // Runs inside the agent container (the container is the sandbox) or locally through a sandbox `wrap`.
 // The commands get a minimal environment: no Friday secrets, no GitHub token.
 import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const CLONE_URL_RE = /^https:\/\/github\.com\/[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}\.git$/;
 const SHA_RE = /^[0-9a-f]{40}$/;
 const TAIL = 3000;
 export const VERIFY_LIMITS = Object.freeze({ setupMs: 12 * 60_000, stepMs: 10 * 60_000, totalMs: 30 * 60_000, maxSetup: 6, maxCmd: 500 });
+
+// Python projects run inside a fresh virtualenv that Friday creates and activates (Debian's system pip refuses installs,
+// PEP 668), so the agent's own "make a venv / activate it" steps are dropped: its venv path does not exist in a clean clone.
+const VENV_PART = /^\s*(?:(?:python3?|uv)\s+(?:-m\s+)?venv\b.*|(?:source|\.)\s+\S*bin\/activate\s*)$/;
+export function normalizeCmd(c) {
+  if (!c) return c;
+  return c.split('&&').filter((part) => !VENV_PART.test(part)).join('&&').trim() || null;
+}
+const PY_MARKERS = ['pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt', 'requirements-dev.txt', 'tox.ini'];
 
 function checkCmd(c, name) {
   if (c === null || c === undefined || c === '') return null;
@@ -76,20 +85,28 @@ export async function runVerify(request, { workRoot, id, wrap = null, passEnv = 
   const left = (ms) => Math.max(1000, Math.min(ms, deadline - Date.now()));
   const step = async (name, cmd, args, timeoutMs, cwd = repo) => {
     const res = await run(cmd, args, { cwd, env, timeoutMs: left(timeoutMs), wrap });
-    const s = { name, cmd: cmd === 'sh' ? args[1] : [cmd, ...args].join(' '), ...res };
+    const s = { name, cmd: cmd === 'bash' ? args[1] : [cmd, ...args].join(' '), ...res };
     steps.push(s);
     return s;
   };
-  const sh = (name, c, ms) => step(name, 'sh', ['-c', c], ms);
+  const sh = (name, c, ms) => step(name, 'bash', ['-c', c], ms); // bash: agents write `source x` and other bashisms
   try {
     for (const [n, a] of [['git_init', ['init', '-q']], ['git_remote', ['remote', 'add', 'origin', r.cloneUrl]], ['git_fetch', ['fetch', '-q', '--depth', '1', 'origin', r.baseSha]], ['git_checkout', ['checkout', '-q', 'FETCH_HEAD']]]) {
       const s = await step(n, 'git', a, 5 * 60_000);
       if (s.exit !== 0) return { ok: false, verdict: 'error', steps, error: `${n} failed` };
     }
-    for (const [i, c] of r.setup.entries()) {
+    if (PY_MARKERS.some((f) => existsSync(join(repo, f)))) {
+      const venv = join(root, 'venv');
+      const s = await step('python_venv', 'python3', ['-m', 'venv', venv], 2 * 60_000);
+      if (s.exit === 0) Object.assign(env, { VIRTUAL_ENV: venv, PATH: `${join(venv, 'bin')}:${env.PATH}` });
+    }
+    for (const [i, raw] of r.setup.entries()) {
+      const c = normalizeCmd(raw);
+      if (!c) continue;
       const s = await sh(`setup_${i + 1}`, c, limits.setupMs);
       if (s.exit !== 0) return { ok: false, verdict: 'setup_failed', steps, error: `setup command failed: ${c}` };
     }
+    for (const k of ['repro', 'test', 'suite', 'lint']) if (r[k]) r[k] = normalizeCmd(r[k]) ?? r[k];
     if (r.repro) {
       const s = await sh('repro', r.repro, limits.stepMs);
       const seen = s.exit !== 0 && !s.timed_out && s.tail.includes(r.expect);
