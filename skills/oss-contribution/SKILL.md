@@ -30,7 +30,9 @@ Also read and use these skills when they apply: `systematic-debugging` (finding 
    the code by searching (`grep -rn`), never by guessing paths. Read the issue AND its comments: maintainers often say
    there how they want it fixed.
 3. **Set up the project the way its docs say** (e.g. `npm ci`, `pip install -e .[dev]`, `pip install -r requirements-dev.txt`).
-   Write down every setup command that worked; Friday re-runs them in a clean clone. Do not add or upgrade dependencies.
+   Write down every setup command that worked; Friday re-runs them in a clean clone OF THE SAME CONTAINER IMAGE, so list
+   only commands you actually ran here and saw succeed (available: python3/pip, uv, node/npm, pnpm, yarn, git, make, gcc).
+   Do not add or upgrade dependencies.
 4. **Run the existing tests first.** If the suite is already broken on the given commit, or you cannot get it to run
    within ~15 minutes, give up (`"status":"gave_up"`) and say why. Do not "fix" unrelated failures.
 5. **Reproduce the bug with a test.** Add a test in the project's existing test files/style that fails on the
