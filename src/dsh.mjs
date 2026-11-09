@@ -54,9 +54,11 @@ export class DshAdapter {
     this.#writeSettings();
   }
 
-  // Friday owns this file; it only ever lives inside Friday's DSH home.
+  // Friday owns this file; it only ever lives inside Friday's DSH home. The model is declared explicitly: DSH's built-in
+  // catalog does not list newer NVIDIA models (nemotron-3.5-super-vl -> UNKNOWN_MODEL; the agent was broken from the
+  // 2026-10 model switch until 2026-11-09).
   #writeSettings() {
-    writeFileReplacing(join(this.homeDir, 'settings.yaml'), `llm-pi-ai:\n  providers:\n    ${this.provider}:\n      apiKeyEnv: NVIDIA_API_KEY\nagent-default-model:\n  provider: ${this.provider}\n  model: ${this.model}\n`);
+    writeFileReplacing(join(this.homeDir, 'settings.yaml'), `llm-pi-ai:\n  providers:\n    ${this.provider}:\n      apiKeyEnv: NVIDIA_API_KEY\n      models:\n        - id: ${this.model}\n          contextWindow: 262144\n          maxTokens: 32768\nagent-default-model:\n  provider: ${this.provider}\n  model: ${this.model}\n`);
   }
 
   status() {

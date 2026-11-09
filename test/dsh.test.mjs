@@ -47,6 +47,7 @@ out({type:'final',text:JSON.stringify({home:process.env.HOME,dshHome:process.env
     const a = adapter(dir, bin);
     assert.equal(statSync(join(dir, 'home')).mode & 0o777, 0o700);
     assert.ok(!readFileSync(join(dir, 'home', 'settings.yaml'), 'utf8').includes(KEY), 'API key must not be written to disk');
+    assert.match(readFileSync(join(dir, 'home', 'settings.yaml'), 'utf8'), /models:\n        - id: \S+\n          contextWindow: \d+/, 'the model is declared (DSH\'s catalog lacks newer NVIDIA models)');
     const trace = [];
     const r = await a.run({ taskId: 't-1', instruction: 'do the thing', onTrace: (k, d) => trace.push([k, d]) });
     assert.equal(r.status, 'completed');
