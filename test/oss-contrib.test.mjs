@@ -10,7 +10,7 @@ import { EventBus } from '../src/events.mjs';
 import { Approvals } from '../src/approvals.mjs';
 import { parsePatch, applyFilePatch, checkPatchPolicy, sha256 } from '../src/patch.mjs';
 import { runVerify, validateVerifyRequest, normalizeCmd } from '../src/contrib-verify.mjs';
-import { Contrib, workspaceFor, AI_BAN, DISCLOSURE, ISSUE_DISCLOSURE, reproSteps } from '../src/contrib.mjs';
+import { Contrib, workspaceFor, AI_BAN, DISCLOSURE, ISSUE_DISCLOSURE, reproSteps, CONTRIB_DEFAULTS } from '../src/contrib.mjs';
 import { ossTools } from '../src/agent/friday-tools.mjs';
 import { GROUPS } from '../src/agent/toolsets.mjs';
 
@@ -186,7 +186,7 @@ class FakeGitHub {
 }
 const RESULT = { status: 'ready', kind: 'fix', pr_title: 'Fix add() returning the difference', summary: 'add() used subtraction. It now adds.', changes: ['calc.py: use +', 'tests/test_calc.py: regression test'], setup: ['pip install -e .'], test: 'python -m pytest tests/test_calc.py -q', suite: 'python -m pytest -q', lint: '' };
 const VERIFIED = { ok: true, verdict: 'verified', steps: [{ name: 'test_before', cmd: RESULT.test, exit: 1, tail: '' }, { name: 'test_after', cmd: RESULT.test, exit: 0, tail: '' }, { name: 'suite_after', cmd: RESULT.suite, exit: 0, tail: '' }] };
-const APPROVE = { content: JSON.stringify({ verdict: 'approve', score: 9, solves_issue: true, problems: [], advice: 'Looks good.' }) };
+const APPROVE = { content: JSON.stringify({ verdict: 'approve', score: 9, solves_issue: true, impact: 4, problems: [], advice: 'Looks good.' }) };
 
 function world({ gh = new FakeGitHub(), files = { 'friday-contrib/result.json': JSON.stringify(RESULT), 'friday-contrib/change.patch': FIX }, verify = async () => VERIFIED, review = async () => APPROVE, agentGithubToken = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'friday-oss-'));
@@ -312,7 +312,7 @@ test('contrib: claimed or assigned issues are skipped; the search path rotates l
   const w = world();
   const r = await w.contrib.startOne();
   assert.equal(r.started, true);
-  assert.match(w.gh.calls.find((x) => x[0] === 'search')[1], /-linked:pr label:"good first issue" language:Python/);
+  assert.match(w.gh.calls.find((x) => x[0] === 'search')[1], /-linked:pr label:"bug" language:Python reactions:>=3 /);
 });
 
 test('contrib: refuses to run while the coding agent has its own GitHub token', async () => {
@@ -389,7 +389,7 @@ const BUG = { title: 'add() returns the difference instead of the sum', body: 'T
   repro: 'python -c "from calc import add; assert add(2, 3) == 5, add(2, 3)"', expect: 'AssertionError: -1', location: { path: 'calc.py', start_line: 1, end_line: 2 } };
 const HUNT = { status: 'found_bug', setup: ['pip install -e .'], bug: BUG };
 const REPRODUCED = async (req) => (req.repro ? { ok: true, verdict: 'reproduced', steps: [{ name: 'setup_1', cmd: 'pip install -e .', exit: 0, tail: '' }, { name: 'repro', cmd: req.repro, exit: 1, tail: 'Traceback...\nAssertionError: -1' }] } : VERIFIED);
-const triage = (verdict, confidence = 0.9) => async (role, o) => (o.messages[0].content.includes('triaging') ? { content: JSON.stringify({ verdict, confidence, severity: 'medium', reason: 'docstring promises a sum' }) } : APPROVE);
+const triage = (verdict, confidence = 0.9, impact = 4) => async (role, o) => (o.messages[0].content.includes('triaging') ? { content: JSON.stringify({ verdict, confidence, severity: 'medium', impact, who_hits_it: 'anyone calling add()', reason: 'docstring promises a sum' }) } : APPROVE);
 
 test('hunt: one proven bug -> issue card with code link, real output, expected -> approved -> issue opened', async () => {
   const w = world({ files: { 'friday-contrib/result.json': JSON.stringify(HUNT) }, verify: REPRODUCED, review: triage('real_bug') });
@@ -566,4 +566,39 @@ test('issue text: maintainers get standard repro steps, not the agent workspace 
   assert.doesNotMatch(steps, /friday-contrib/);
   assert.equal(reproSteps(['npm ci'], 'node -e "x()"'), 'npm ci\nnode -e "x()"');
   assert.doesNotMatch(ISSUE_DISCLOSURE, /change/);
+});
+
+test('impact: a correct but tiny change is sent back, never reaches the digest', async () => {
+  const w = world({ review: async () => ({ content: JSON.stringify({ verdict: 'approve', score: 9, solves_issue: true, impact: 2, problems: [], advice: '' }) }) });
+  await w.contrib.startOne({ repo: 'acme/calc', issue: 7 });
+  await w.finishTask();
+  const a = w.contrib.list()[0];
+  assert.notEqual(a.status, 'ready');
+  assert.match(w.store.nextQueuedTask().instruction, /too small to be worth a maintainer's time \(impact 2\/5\)/);
+});
+
+test('impact: a real bug only absurd input triggers is not reported', async () => {
+  const w = world({ files: { 'friday-contrib/result.json': JSON.stringify(HUNT) }, verify: REPRODUCED, review: triage('real_bug', 0.95, 2) });
+  await w.contrib.startHunt({ repo: 'acme/calc' });
+  await w.finishTask();
+  const a = w.contrib.list()[0];
+  assert.notEqual(a.status, 'ready');
+  assert.equal(w.approvals.list().length, 0);
+});
+
+test('demand: feature requests need maintainer agreement; old starter-issue settings move to the new defaults', async () => {
+  const unagreed = new FakeGitHub({ issue: { labels: [{ name: 'enhancement' }] } });
+  const r = await world({ gh: unagreed }).contrib.startOne({ repo: 'acme/calc', issue: 7 });
+  assert.equal(r.not_started, true);
+  const agreed = new FakeGitHub({ issue: { labels: [{ name: 'enhancement' }, { name: 'help wanted' }] } });
+  assert.equal((await world({ gh: agreed }).contrib.startOne({ repo: 'acme/calc', issue: 7 })).started, true);
+  const byComment = new FakeGitHub({ issue: { labels: [{ name: 'enhancement' }] } });
+  byComment.comments = [{ created_at: new Date().toISOString(), body: 'Sounds good, PRs welcome.', user: { login: 'owner' }, author_association: 'OWNER' }];
+  assert.equal((await world({ gh: byComment }).contrib.startOne({ repo: 'acme/calc', issue: 7 })).started, true);
+  const w = world();
+  w.contrib.settings.set('oss_contrib', { v: 1, enabled: true, labels: ['good first issue', 'help wanted'], min_stars: 30 });
+  const c = w.contrib.config();
+  assert.deepEqual(c.labels, CONTRIB_DEFAULTS.labels);
+  assert.equal(c.min_stars, CONTRIB_DEFAULTS.min_stars);
+  assert.equal(c.enabled, true);
 });

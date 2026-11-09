@@ -18,8 +18,8 @@ import { isAway } from './away.mjs';
 import { loop } from './loops.mjs';
 import { normalizeCmd } from './contrib-verify.mjs';
 
-export const CONTRIB_DEFAULTS = Object.freeze({ v: 1, enabled: false, run_at: '10:00', days: [1, 2, 3, 4, 5, 6, 7], languages: ['Python', 'JavaScript', 'TypeScript'],
-  labels: ['good first issue', 'help wanted'], min_stars: 30, max_open_prs: 10, daily_starts: 1, max_rounds: 2, skip_repos: [], mode: 'mixed',
+export const CONTRIB_DEFAULTS = Object.freeze({ v: 2, enabled: false, run_at: '10:00', days: [1, 2, 3, 4, 5, 6, 7], languages: ['Python', 'JavaScript', 'TypeScript'],
+  labels: ['bug', 'help wanted', 'confirmed', 'enhancement'], min_stars: 200, min_reactions: 3, max_open_prs: 10, daily_starts: 1, max_rounds: 2, skip_repos: [], mode: 'mixed',
   continuous: true, pr_cap: 5, issue_cap: 2, digest_at: '20:00', max_attempts_day: 24 });
 // continuous: work around the clock (next job as soon as one ends), within max_attempts_day.
 // Everything that passes waits for ONE daily digest card (digest_at). Approved items are posted spread over the following
@@ -40,6 +40,14 @@ const ACTIVE = ['working', 'verifying', 'reviewing'];
 const QUEUED = ['ready', 'in_digest', 'scheduled']; // passed every check; waiting for the digest / its posting time
 const OPEN = [...ACTIVE, 'awaiting_approval', ...QUEUED, 'pr_open'];
 const OSI = new Set(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'GPL-2.0', 'GPL-3.0', 'LGPL-2.1', 'LGPL-3.0', 'AGPL-3.0', 'Unlicense', '0BSD', 'Zlib', 'EPL-2.0', 'BSL-1.0', 'PSF-2.0', 'Python-2.0', 'GPL-2.0-only', 'GPL-3.0-only', 'GPL-3.0-or-later', 'LGPL-3.0-only', 'AGPL-3.0-only']);
+// Impact: small, cosmetic or junk-input work is not worth a maintainer's time. Reviews score it 1-5; < 3 is dropped.
+export const MIN_IMPACT = 3;
+const IMPACT_SCALE = '1 = cosmetic, typo or wording that nobody would notice; 2 = a rare edge case or malformed input a real user would almost never produce; 3 = something real users hit in normal use, or that users asked for; 4 = a widely felt bug, or a requested feature many users want; 5 = critical: data loss, security, or a crash in common use';
+const FEATURE_LABEL = /^(enhancement|feature|feature[ -]request|new feature|kind\/feature|type: ?(feature|enhancement))$/i;
+const ENDORSED_LABEL = /^(help wanted|accepted|confirmed|approved|ready|good first issue|pr welcome|prs welcome|contributions welcome|status: ?accepted)$/i;
+const MAINT_ASSOC = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+const MAINT_OK = /\b(prs? (are |is )?welcome|feel free|go ahead|happy to (accept|review)|would (gladly )?accept|sounds good|makes sense|let'?s do (it|this)|good idea|we should (add|support|fix))\b/i;
+const demandOf = (i) => { const r = i?.reactions ?? {}; return (r['+1'] ?? 0) + (r.heart ?? 0) + (r.hooray ?? 0) + (r.rocket ?? 0); };
 const BAD_LABELS = /^(question|discussion|wontfix|won't fix|invalid|duplicate|needs[ -]design|needs[ -]decision|needs[ -]discussion|blocked|proposal|rfc|epic|meta|stale|on hold|breaking change|security)$/i;
 // Contribution guides that rule this work out. Matching errs towards skipping a repository.
 export const AI_BAN = [
@@ -88,14 +96,24 @@ export class Contrib {
   }
 
   // ---- configuration ----
-  config() { return { ...CONTRIB_DEFAULTS, ...(this.settings.get('oss_contrib', null) ?? {}) }; }
+  config() {
+    const saved = this.settings.get('oss_contrib', null) ?? {};
+    const c = { ...CONTRIB_DEFAULTS, ...saved };
+    if ((saved.v ?? 1) < 2) { // v2: pick work people asked for (reactions, maintainer labels) in bigger projects, not starter issues
+      if (!saved.labels || JSON.stringify(saved.labels) === JSON.stringify(['good first issue', 'help wanted'])) c.labels = CONTRIB_DEFAULTS.labels;
+      if ((saved.min_stars ?? 30) <= 30) c.min_stars = CONTRIB_DEFAULTS.min_stars;
+      c.v = 2;
+    }
+    return c;
+  }
   setConfig(p = {}) {
     const c = this.config();
     if (p.enabled !== undefined) c.enabled = p.enabled === true;
     if (p.run_at !== undefined) { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(p.run_at))) throw new TypeError('run_at: HH:MM'); c.run_at = p.run_at; }
     if (p.days !== undefined) { const d = [...new Set((p.days ?? []).map(Number).filter((x) => x >= 1 && x <= 7))]; if (!d.length) throw new TypeError('days: 1-7 (Mon=1)'); c.days = d; }
     if (p.languages !== undefined) { const l = (p.languages ?? []).map((x) => LANGS.find((y) => y.toLowerCase() === String(x).toLowerCase())).filter(Boolean); if (!l.length) throw new TypeError(`languages: any of ${LANGS.join(', ')}`); c.languages = [...new Set(l)]; }
-    if (p.labels !== undefined) { const l = (p.labels ?? []).map((x) => clip(String(x).trim(), 40)).filter(Boolean).slice(0, 4); if (l.length) c.labels = l; }
+    if (p.labels !== undefined) { const l = (p.labels ?? []).map((x) => clip(String(x).trim(), 40)).filter(Boolean).slice(0, 6); if (l.length) c.labels = l; }
+    if (p.min_reactions !== undefined) c.min_reactions = Math.max(0, Math.min(100, Math.round(Number(p.min_reactions) || 0)));
     if (p.min_stars !== undefined) c.min_stars = Math.max(0, Math.min(100000, Math.round(Number(p.min_stars) || 0)));
     if (p.max_open_prs !== undefined) c.max_open_prs = Math.max(1, Math.min(20, Math.round(Number(p.max_open_prs) || 10)));
     if (p.continuous !== undefined) c.continuous = p.continuous === true;
@@ -216,6 +234,9 @@ export class Contrib {
     if (bad) return { ok: false, reason: `labelled "${bad}"` };
     const comments = (await this.gh.issueComments(full, n)) ?? [];
     if (comments.some((cm) => this.now() - Date.parse(cm.created_at) < 45 * DAY && CLAIM.test(String(cm.body ?? '')))) return { ok: false, reason: 'someone said they are working on it' };
+    const names = (i.labels ?? []).map((l) => String(l.name ?? l));
+    if (names.some((l) => FEATURE_LABEL.test(l)) && !names.some((l) => ENDORSED_LABEL.test(l))
+      && !comments.some((cm) => MAINT_ASSOC.has(cm.author_association) && MAINT_OK.test(String(cm.body ?? '')))) return { ok: false, reason: 'a feature request the maintainers have not agreed to' };
     const tl = (await this.gh.timeline(full, n).catch(() => [])) ?? [];
     if (tl.some((e) => e.event === 'cross-referenced' && e.source?.issue?.pull_request && e.source.issue.state === 'open')) return { ok: false, reason: 'an open pull request already references it' };
     return { ok: true, issue: i, comments };
@@ -245,7 +266,7 @@ export class Contrib {
         const rr = Number(this.settings.get('oss_hunt_rr', 0)) || 0; this.settings.set('oss_hunt_rr', rr + 1);
         const lang = c.languages[rr % c.languages.length];
         const since = new Date(this.now() - 30 * DAY).toISOString().slice(0, 10);
-        const found = await this.gh.searchRepos(`language:${lang} stars:>=${Math.max(c.min_stars, 30)} pushed:>${since} archived:false good-first-issues:>2`);
+        const found = await this.gh.searchRepos(`language:${lang} stars:>=${Math.max(c.min_stars, 30)} pushed:>${since} archived:false good-first-issues:>2`, { sort: 'stars' });
         for (const r of found?.items ?? []) candidates.push(r.full_name);
       }
       const skipped = [];
@@ -282,8 +303,10 @@ export class Contrib {
         const rr = Number(this.settings.get('oss_rr', 0)) || 0; this.settings.set('oss_rr', rr + 1);
         const lang = c.languages[rr % c.languages.length], label = c.labels[Math.floor(rr / c.languages.length) % c.labels.length];
         const since = new Date(this.now() - 30 * DAY).toISOString().slice(0, 10);
-        const found = await this.gh.searchIssues(`is:issue is:open no:assignee archived:false -linked:pr label:"${label}" language:${lang} comments:<8 updated:>${since}`);
-        for (const it of found?.items ?? []) { const m = /repos\/([^/]+\/[^/]+)$/.exec(it.repository_url ?? ''); if (m) candidates.push({ full: m[1], n: it.number }); }
+        // Demand first: issues people upvoted, most-wanted first. Starter issues are left to human newcomers.
+        const found = await this.gh.searchIssues(`is:issue is:open no:assignee archived:false -linked:pr label:"${label}" language:${lang} reactions:>=${c.min_reactions} comments:<30 updated:>${since}`, { sort: 'reactions-+1' });
+        const items = [...(found?.items ?? [])].sort((x, y) => demandOf(y) - demandOf(x));
+        for (const it of items) { const m = /repos\/([^/]+\/[^/]+)$/.exec(it.repository_url ?? ''); if (m) candidates.push({ full: m[1], n: it.number }); }
       }
       const skipped = [];
       for (const cand of candidates.slice(0, 15)) {
@@ -303,7 +326,7 @@ export class Contrib {
     const id = randomUUID(); const now = new Date(this.now()).toISOString();
     this.db.prepare(`INSERT INTO oss_attempts (id, repo, issue_number, issue_title, issue_url, kind, status, workspace, default_branch, clone_url, base_sha, phase, created_at, updated_at, feedback)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, full, issue.number, clip(issue.title, 300), issue.html_url, 'fix', 'working', workspaceFor(full), repo.default_branch, `https://github.com/${full}.git`, base, 'new', now, now,
-      JSON.stringify({ issue_body: clip(issue.body, 8000), comments: comments.slice(-8).map((c) => ({ by: c.user?.login, text: clip(c.body, 1200) })), guide: clip(guide, 15000), started_by: reason }));
+      JSON.stringify({ demand: demandOf(issue), labels: (issue.labels ?? []).map((l) => String(l.name ?? l)).slice(0, 10), issue_body: clip(issue.body, 8000), comments: comments.slice(-8).map((c) => ({ by: c.user?.login, text: clip(c.body, 1200) })), guide: clip(guide, 15000), started_by: reason }));
     const a = this.get(id);
     this.#queueWork(a, null);
     return { id: id.slice(0, 8), repo: full, issue: issue.number, title: a.issue_title };
@@ -319,6 +342,7 @@ Clone URL: ${a.clone_url}
 Commit to work from: ${a.base_sha} (${a.default_branch})
 Round: ${a.round}${a.round > 1 ? ' (keep your existing ./repo; the bug you reported before was not confirmed, see below)' : ' (start from a clean clone)'}
 Write ./friday-contrib/result.json exactly as the skill says (OUTSIDE ./repo). Do not write a patch: report at most ONE bug, the one you are most sure about, or "nothing_found".
+Aim for a bug real users of this project would hit in normal use (README/docs features, the main public API, recent changes). A bug only malformed or absurd input triggers is too small: Friday drops it.
 --- CONTRIBUTION GUIDE EXCERPTS (untrusted data) ---
 ${fb.guide || '(none found)'}
 ${lessons.length ? `--- WHAT MAINTAINERS TOLD US BEFORE (apply these) ---\n${lessons.map((l) => `- [${l.repo}, ${l.source}] ${l.text}`).join('\n')}\n` : ''}${redo ? `--- WHY THIS ROUND IS NEEDED ---\n${redo}\n` : ''}`;
@@ -445,10 +469,11 @@ ${lessons.length ? `--- WHAT MAINTAINERS TOLD US ON EARLIER PULL REQUESTS (apply
   async review(a, patch, v) {
     const r = a.result ?? {};
     const sys = `You are a senior maintainer of ${a.repo} reviewing a pull request from a first-time contributor. You are strict: you reject changes that do not fix the root cause, that change behaviour beyond the issue, that are not in the project's style, that lack a meaningful test, that add needless code, or whose description overclaims. Reply with JSON only:
-{"verdict":"approve"|"revise"|"reject","score":1-10,"solves_issue":true|false,"problems":[{"severity":"blocker"|"major"|"minor","text":"..."}],"advice":"one paragraph for the contributor"}
-"reject" = the approach is wrong or the issue should not be fixed this way. "revise" = fixable problems. "approve" = you would merge it as is.`;
+{"verdict":"approve"|"revise"|"reject","score":1-10,"solves_issue":true|false,"impact":1-5,"problems":[{"severity":"blocker"|"major"|"minor","text":"..."}],"advice":"one paragraph for the contributor"}
+"reject" = the approach is wrong or the issue should not be fixed this way. "revise" = fixable problems. "approve" = you would merge it as is.
+"impact" = how much the project's users gain from this change: ${IMPACT_SCALE}. Use the issue's upvotes and labels as evidence of demand.`;
     const proof = (v.steps ?? []).filter((s) => /^(test_|suite_|lint_)/.test(s.name)).map((s) => `${s.name}: \`${s.cmd}\` -> exit ${s.exit}`).join('\n');
-    const user = `ISSUE #${a.issue_number}: ${a.issue_title}\n${clip(a.feedback?.issue_body, 5000)}\n\nCONTRIBUTION GUIDE (excerpt):\n${clip(a.feedback?.guide, 4000) || '(none)'}\n\nPR TITLE: ${r.pr_title}\nCONTRIBUTOR'S EXPLANATION:\n${clip(r.summary, 2000)}\n${(r.changes ?? []).map((x) => `- ${clip(x, 300)}`).join('\n')}\n\nINDEPENDENT TEST RUN (exit codes from a clean clone; test_before failing then test_after passing proves the test catches the bug):\n${proof}\n\nDIFF:\n${clip(patch, 30000)}`;
+    const user = `ISSUE #${a.issue_number}: ${a.issue_title}\nUPVOTES: ${a.feedback?.demand ?? 'unknown'}; LABELS: ${(a.feedback?.labels ?? []).join(', ') || 'none'}\n${clip(a.feedback?.issue_body, 5000)}\n\nCONTRIBUTION GUIDE (excerpt):\n${clip(a.feedback?.guide, 4000) || '(none)'}\n\nPR TITLE: ${r.pr_title}\nCONTRIBUTOR'S EXPLANATION:\n${clip(r.summary, 2000)}\n${(r.changes ?? []).map((x) => `- ${clip(x, 300)}`).join('\n')}\n\nINDEPENDENT TEST RUN (exit codes from a clean clone; test_before failing then test_after passing proves the test catches the bug):\n${proof}\n\nDIFF:\n${clip(patch, 30000)}`;
     const errors = [];
     for (const w of this.reviewers) {
       try {
@@ -457,8 +482,10 @@ ${lessons.length ? `--- WHAT MAINTAINERS TOLD US ON EARLIER PULL REQUESTS (apply
         if (!j || !['approve', 'revise', 'reject'].includes(j.verdict)) { errors.push(`${w.role}: unreadable`); continue; }
         const problems = (Array.isArray(j.problems) ? j.problems : []).slice(0, 10).map((p) => ({ severity: ['blocker', 'major', 'minor'].includes(p?.severity) ? p.severity : 'major', text: clip(p?.text, 400) }));
         const score = Math.max(1, Math.min(10, Number(j.score) || 1));
-        const pass = j.verdict === 'approve' && score >= 8 && j.solves_issue === true && !problems.some((p) => p.severity !== 'minor');
-        return { verdict: j.verdict, score, solves_issue: j.solves_issue === true, problems, advice: clip(j.advice, 1000), pass, by: w.role };
+        const impact = Math.max(1, Math.min(5, Math.round(Number(j.impact) || 1)));
+        if (impact < MIN_IMPACT) problems.push({ severity: 'major', text: `too small to be worth a maintainer's time (impact ${impact}/5)` });
+        const pass = j.verdict === 'approve' && score >= 8 && j.solves_issue === true && impact >= MIN_IMPACT && !problems.some((p) => p.severity !== 'minor');
+        return { verdict: j.verdict, score, impact, solves_issue: j.solves_issue === true, problems, advice: clip(j.advice, 1000), pass, by: w.role };
       } catch (e) { errors.push(`${w.role}: ${clip(e.message, 120)}`); }
     }
     return { verdict: 'revise', score: 1, solves_issue: false, problems: [{ severity: 'major', text: `review model unavailable (${errors.join(' | ')})` }], advice: '', pass: false, unavailable: true };
@@ -543,7 +570,7 @@ _${DISCLOSURE}_
     if (!v.ok) return drop(`"${title}" did not reproduce in a clean clone (${v.error ?? v.verdict}). ${clip(steps.at(-1)?.tail, 1500)}`);
     const repro = steps.find((s) => s.name === 'repro');
     // 4. is it really a bug?
-    const rev = await this.reviewBug(a, { title, body, expected }, { path, from, to, excerpt }, repro?.tail ?? '');
+    const rev = await this.reviewBug(a, { title, body, expected, impact: bug.impact }, { path, from, to, excerpt }, repro?.tail ?? '');
     this.#set(a.id, { review: rev });
     if (!rev.pass) return drop(`a maintainer-style review did not accept "${title}" as a real bug (${rev.verdict}, confidence ${rev.confidence}): ${rev.reason}`);
     // 5. the issue, written from verified facts
@@ -580,8 +607,9 @@ _${ISSUE_DISCLOSURE}_
   // Real bug or intended behaviour? Passes only on verdict real_bug with confidence >= 0.8.
   async reviewBug(a, bug, loc, output) {
     const sys = `You are a senior maintainer of ${a.repo} triaging a bug report from a stranger. Most such reports are wrong: the behaviour is intended, documented, an unsupported use, a misuse of the API, or an environment problem. Judge only from the code, the report and the real command output below. Reply with JSON only:
-{"verdict":"real_bug"|"intended"|"not_a_bug"|"unsure","confidence":0.0-1.0,"severity":"low"|"medium"|"high","reason":"one or two sentences"}`;
-    const user = `REPORT: ${bug.title}\n${clip(bug.body, 3000)}\n\nEXPECTED: ${clip(bug.expected, 800)}\n\nCODE ${loc.path}:${loc.from}-${loc.to} (at ${a.base_sha.slice(0, 12)}):\n${loc.excerpt}\n\nOUTPUT OF THE REPRODUCTION ON A CLEAN CLONE:\n${clip(output, 2500)}\n\nCONTRIBUTION GUIDE (excerpt):\n${clip(a.feedback?.guide, 3000) || '(none)'}`;
+{"verdict":"real_bug"|"intended"|"not_a_bug"|"unsure","confidence":0.0-1.0,"severity":"low"|"medium"|"high","impact":1-5,"who_hits_it":"which real users hit this in normal use, or 'nobody realistic'","reason":"one or two sentences"}
+"impact": ${IMPACT_SCALE}. A real bug that only malformed or absurd input triggers is impact 2, however correct the report is.`;
+    const user = `REPORT: ${bug.title}\n${clip(bug.body, 3000)}\n\nEXPECTED: ${clip(bug.expected, 800)}${bug.impact ? `\n\nREPORTER'S CLAIM OF WHO HITS IT (verify, do not trust): ${clip(typeof bug.impact === 'string' ? bug.impact : JSON.stringify(bug.impact), 600)}` : ''}\n\nCODE ${loc.path}:${loc.from}-${loc.to} (at ${a.base_sha.slice(0, 12)}):\n${loc.excerpt}\n\nOUTPUT OF THE REPRODUCTION ON A CLEAN CLONE:\n${clip(output, 2500)}\n\nCONTRIBUTION GUIDE (excerpt):\n${clip(a.feedback?.guide, 3000) || '(none)'}`;
     const errors = [];
     for (const w of this.reviewers) {
       try {
@@ -589,7 +617,9 @@ _${ISSUE_DISCLOSURE}_
         const j = jsonIn(out?.content);
         if (!j || !['real_bug', 'intended', 'not_a_bug', 'unsure'].includes(j.verdict)) { errors.push(`${w.role}: unreadable`); continue; }
         const confidence = Math.max(0, Math.min(1, Number(j.confidence) || 0));
-        return { verdict: j.verdict, confidence, severity: ['low', 'medium', 'high'].includes(j.severity) ? j.severity : 'low', reason: clip(j.reason, 600), pass: j.verdict === 'real_bug' && confidence >= 0.8, by: w.role };
+        const impact = Math.max(1, Math.min(5, Math.round(Number(j.impact) || 1)));
+        const reason = clip(`${j.reason ?? ''}${impact < MIN_IMPACT ? ` Too small to report (impact ${impact}/5): ${j.who_hits_it ?? 'no realistic user hits it'}.` : ''}`, 700);
+        return { verdict: j.verdict, confidence, impact, who_hits_it: clip(j.who_hits_it, 300), severity: ['low', 'medium', 'high'].includes(j.severity) ? j.severity : 'low', reason, pass: j.verdict === 'real_bug' && confidence >= 0.8 && impact >= MIN_IMPACT, by: w.role };
       } catch (e) { errors.push(`${w.role}: ${clip(e.message, 120)}`); }
     }
     return { verdict: 'unsure', confidence: 0, severity: 'low', reason: `review model unavailable (${errors.join(' | ')})`, pass: false, unavailable: true };

@@ -78,3 +78,13 @@ Fridayy never emails maintainers and never comments, pushes or opens anything wi
 - The model review is Nemotron reviewing Nemotron; the hard guarantees are the policy checks and the test proof. Read
   the diff on the card before approving.
 - Repos needing services (databases, browsers, GPUs) or other languages will usually fail setup and be dropped.
+
+## Impact over volume (v2 settings)
+- Fix mode searches issues users upvoted (`reactions:>=min_reactions`, default 3), most-wanted first, labelled
+  `bug`, `help wanted`, `confirmed` or `enhancement`, in projects with >= 200 stars. `good first issue` is no longer a
+  default: those are kept for human newcomers. Old v1 settings (starter labels, 30 stars) migrate automatically.
+- Feature requests are taken only when maintainers agreed (an endorsement label or a maintainer comment).
+- Both reviews score impact 1-5 (`MIN_IMPACT` = 3): a correct but tiny change, or a real bug only absurd input triggers,
+  is dropped before it reaches the digest.
+- Bug hunts target README examples, the main public API with realistic inputs, and recent regressions.
+

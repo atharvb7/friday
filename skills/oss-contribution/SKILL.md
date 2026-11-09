@@ -29,6 +29,8 @@ Also read and use these skills when they apply: `systematic-debugging` (finding 
    template, `pyproject.toml`/`package.json` scripts, lint config, `.editorconfig`), and the code around the issue. Find
    the code by searching (`grep -rn`), never by guessing paths. Read the issue AND its comments: maintainers often say
    there how they want it fixed.
+   Your issues are ones users upvoted or maintainers asked for: fix the whole problem the issue and its comments
+   describe (every case people reported), not just the first symptom; if that is too big, give up rather than half-fix.
 3. **Set up the project the way its docs say** (e.g. `npm ci`, `pip install -e .[dev]`, `pip install -r requirements-dev.txt`).
    Write down every setup command that worked; Fridayy re-runs them in a clean clone OF THE SAME CONTAINER IMAGE, so list
    only commands you actually ran here and saw succeed (available: python3/pip, uv, node/npm, pnpm, yarn, git, make, gcc).
@@ -106,9 +108,16 @@ A wrong report wastes a maintainer's time and hurts the owner's name, so `nothin
    docstring/type hints, or plainly correct behaviour (crash, wrong result, data loss, resource leak) on valid input.
    NOT bugs: style, missing features, performance opinions, unsupported inputs, behaviour the docs describe, things
    only reachable through private APIs, "could be cleaner".
-3. Hunt where bugs live: edge cases at boundaries (empty, zero, negative, None/undefined, unicode, very long, leap days,
-   time zones, Windows paths), error paths, recently changed code (`git log -p -20`), parsing/serialisation round trips,
-   off-by-one in slicing/pagination. Write small probing scripts or tests under ./friday-contrib/probes (outside ./repo).
+3. **Hunt where users are.** Only bugs a real user would hit in normal use are worth reporting; Friday scores impact
+   1-5 and drops anything below 3. Start from what people actually do with this project:
+   - the README quickstart and every documented example: run them; they break more often than you'd think;
+   - the main public API (the functions/classes the docs and examples use most), with ordinary, realistic inputs
+     including the common edge cases real data has (empty results, unicode names, time zones, DST, leap years,
+     large inputs, Windows paths, concurrent use);
+   - recent changes (`git log -p -20`): regressions in code users already rely on are the most valuable finds;
+   - round trips users depend on (save -> load, serialise -> parse, encode -> decode) and pagination/limits.
+   Too small, do not report: junk or malformed input nobody would type, missing validation of absurd values, wording,
+   typos, cosmetic output. Write probes under ./friday-contrib/probes (outside ./repo).
 4. When a probe fails, confirm it is a bug and not your misuse: re-read the docs for that function, check open AND
    closed issues mentioning it (`gh` is not available: search the code, CHANGELOG and docs; Fridayy also searches issues).
 5. Make it a ONE-line reproduction that runs from the repository root after `setup`, exits non-zero and prints a
@@ -126,7 +135,8 @@ result.json for a hunt:
     "expected": "What should happen, citing the doc or docstring that promises it.",
     "repro": "python -c \"from pkg.ranges import parse_range; print(parse_range(''))\"",
     "expect": "IndexError: list index out of range",
-    "location": { "path": "src/pkg/ranges.py", "start_line": 41, "end_line": 52 }
+    "location": { "path": "src/pkg/ranges.py", "start_line": 41, "end_line": 52 },
+    "impact": "Who hits this in normal use and what it costs them, e.g. 'any CLI user who passes an empty --range'"
   }
 }
 ```
