@@ -31,7 +31,7 @@ export function buildBoard(ctx, { now = Date.now() } = {}) {
   try {
     const since = new Date(now - day).toISOString();
     for (const a of ctx.store.db.prepare("SELECT id, summary, decided_at FROM approvals WHERE status='approved' AND result LIKE '%\"interrupted\"%' AND decided_at >= ? ORDER BY decided_at DESC LIMIT 5").all(since)) {
-      add({ kind: 'unknown_result', class: 'check', id: a.id, title: `Check whether this happened: ${a.summary}`, detail: 'Friday restarted while doing it after your approval', created_at: a.decided_at });
+      add({ kind: 'unknown_result', class: 'check', id: a.id, title: `Check whether this happened: ${a.summary}`, detail: 'Fridayy restarted while doing it after your approval', created_at: a.decided_at });
     }
   } catch { /* optional */ }
   try {
@@ -41,7 +41,7 @@ export function buildBoard(ctx, { now = Date.now() } = {}) {
     // The most recently due few; the rest as one line, so a backlog does not bury the decisions.
     const overdue = (ctx.commitments?.list({ status: 'open', limit: 100 }) ?? []).filter((c) => c.due_at && Date.parse(c.due_at) < now).sort((x, y) => y.due_at.localeCompare(x.due_at));
     for (const c of overdue.slice(0, 5)) add({ kind: 'todo', class: 'do', id: c.id, title: c.title, detail: `${c.waiting_on ? `waiting on ${c.waiting_on} · ` : ''}was due ${c.due_at.slice(0, 10)}`, created_at: c.due_at, actions: ['done', 'drop'] });
-    if (overdue.length > 5) add({ kind: 'todo_more', class: 'do', id: 'overdue', title: `${overdue.length - 5} more overdue to-dos`, detail: 'ask Friday to go through them with you, or mark them done or dropped', created_at: overdue[5].due_at });
+    if (overdue.length > 5) add({ kind: 'todo_more', class: 'do', id: 'overdue', title: `${overdue.length - 5} more overdue to-dos`, detail: 'ask Fridayy to go through them with you, or mark them done or dropped', created_at: overdue[5].due_at });
   } catch { /* optional */ }
   const rank = { decide: 0, answer: 1, do: 2, check: 3 };
   // To-dos keep the order chosen above (latest due first, then the "more" line); others oldest first.

@@ -22,7 +22,7 @@ const DEFAULTS = {
 };
 
 // Named budgets. 'laptop' protects a shared 16 GB desktop; 'server6g' fits a
-// dedicated 6 GB box where Friday owns the machine (cgroup caps it at ~5 GB).
+// dedicated 6 GB box where Fridayy owns the machine (cgroup caps it at ~5 GB).
 export const PROFILES = Object.freeze({
   laptop: {},
   server6g: {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AT-SPI accessibility helper for the Friday node (read UI trees, press buttons,
+"""AT-SPI accessibility helper for the Fridayy node (read UI trees, press buttons,
 set text). Works on Wayland because it talks to the accessibility bus, not the
 compositor. Usage: atspi-helper.py <cmd> '<json args>'   -> JSON on stdout."""
 import json, os, subprocess, sys, time, warnings

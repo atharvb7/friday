@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copy Friday's artwork to the server checkout. It is git-ignored (owner-supplied art, artist unknown, public repo),
+# Copy Fridayy's artwork to the server checkout. It is git-ignored (owner-supplied art, artist unknown, public repo),
 # so the normal git-based deploy never carries it. Run this, then scripts/deploy-server.sh rebuilds with it.
 # Usage: scripts/deploy-art.sh user@host
 set -euo pipefail

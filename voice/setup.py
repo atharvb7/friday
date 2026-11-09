@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-time model download for Friday voice (run with the voice venv's python). ~250 MB (small Whisper) + ~330 MB (Kokoro)
+"""One-time model download for Fridayy voice (run with the voice venv's python). ~250 MB (small Whisper) + ~330 MB (Kokoro)
 + ~1.2 GB expressive voice (Chatterbox Nano ONNX, MIT; skip with FRIDAY_VOICE_EXPRESSIVE=0)."""
 import os, sys, urllib.request
 ROOT = os.environ.get("FRIDAY_VOICE_HOME", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "voice"))

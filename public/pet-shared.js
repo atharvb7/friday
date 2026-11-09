@@ -1,4 +1,4 @@
-// public/pet-shared.js — Friday's screen-pet state logic, shared by the 2D portrait pet (pet-2d.js) and the
+// public/pet-shared.js — Fridayy's screen-pet state logic, shared by the 2D portrait pet (pet-2d.js) and the
 // companion mapping (src/companion.mjs). Pure: no DOM, no fetch, so node tests import it directly.
 // (The old 3D Megaman viewer and its three.js vendor bundle were removed on 28 Oct 2026: 2.1 MB, a third of the
 // repo, and broken since the CSP blocked its textures.)

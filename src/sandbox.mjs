@@ -1,6 +1,6 @@
-// Confinement for agent processes (DSH). One sandbox layer, owned by Friday:
+// Confinement for agent processes (DSH). One sandbox layer, owned by Fridayy:
 // the agent sees the system read-only, can write only its task workspace and its
-// own DSH home, and cannot see Friday's database, tokens, .env or the user's
+// own DSH home, and cannot see Fridayy's database, tokens, .env or the user's
 // home directory. Network stays on (research/coding need it); secrets are never
 // in its environment or filesystem. Fails closed when bubblewrap is missing.
 import { spawnSync } from 'node:child_process';
@@ -31,7 +31,7 @@ export function buildBwrapArgs({ home, appRoot, dataDir, writable = [], readonly
   for (const keep of ['/run/systemd/resolve', '/run/resolvconf']) if (existsSync(keep)) args.push('--ro-bind', keep, keep);
   const rw = writable.map((p) => resolve(p));
   const ro = readonly.map((p) => resolve(p));
-  // Hide: the user's home, Friday's code/config, Friday's data dir.
+  // Hide: the user's home, Fridayy's code/config, Fridayy's data dir.
   const hide = [home, appRoot, dataDir].filter(Boolean).map((p) => resolve(p));
   // De-duplicate nested hides (hiding the parent already hides the child).
   const roots = hide.filter((p) => !hide.some((q) => q !== p && under(p, q)));

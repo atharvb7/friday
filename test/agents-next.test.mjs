@@ -50,7 +50,7 @@ function fakeHermes({ approval = false } = {}) {
   return new Promise((r) => srv.listen(0, '127.0.0.1', () => r({ srv, seen, url: `http://127.0.0.1:${srv.address().port}` })));
 }
 
-test('hermes: run streams traces, returns the report, sends the key; flagged commands go through Friday approvals', async () => {
+test('hermes: run streams traces, returns the report, sends the key; flagged commands go through Fridayy approvals', async () => {
   const b = base(); const h = await fakeHermes(); const h2 = await fakeHermes({ approval: true });
   try {
     const a = new HermesAdapter({ url: h.url, key: 'k1', approvals: b.approvals });

@@ -49,6 +49,6 @@ export function verifyTotp(secret, code, { now = Date.now(), window = 1 } = {}) 
   return null;
 }
 
-export function otpauthUri(secret, account = 'owner', issuer = 'Friday') {
+export function otpauthUri(secret, account = 'owner', issuer = 'Fridayy') {
   return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}`;
 }

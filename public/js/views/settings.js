@@ -52,7 +52,7 @@ export function render({ app, api, toast, go }) {
     const gRow = (g, label, hint) => h('div', { class: 'row wrap' },
       h('strong', { class: 'grow' }, `${label} `, h('span', { class: `chip ${g.connected ? 'good' : 'warn'}` }, g.connected ? `connected${g.email ? ` · ${g.email}` : ''}` : g.configured ? 'not connected' : 'Google credentials not set on the server'), h('span', { class: 'faint small' }, ` ${hint}`)),
       g.configured && !g.connected ? h('button', { class: 'btn primary', onclick: async () => { try { const r = await api('/v1/google/connect', { method: 'POST', body: { account: g.account } }); window.open(r.url, '_blank', 'noopener'); toast('Sign in with Google in the new tab (pick the right account), then come back.'); } catch (e) { toast(e.message); } } }, 'Connect') : null,
-      g.connected ? h('button', { class: 'btn', onclick: async () => { if (!confirm(`Disconnect ${label} from Friday?`)) return; await api('/v1/google/disconnect', { method: 'POST', body: { account: g.account } }); toast(`${label} disconnected.`); build(); } }, 'Disconnect') : null);
+      g.connected ? h('button', { class: 'btn', onclick: async () => { if (!confirm(`Disconnect ${label} from Fridayy?`)) return; await api('/v1/google/disconnect', { method: 'POST', body: { account: g.account } }); toast(`${label} disconnected.`); build(); } }, 'Disconnect') : null);
     const [gMain, gOut] = gs.accounts ?? [{ ...gs, account: 'main' }, { configured: gs.configured, account: 'outreach' }];
     const gmailRow = h('div', { class: 'stack' }, gRow(gMain, 'Gmail (personal)', 'your inbox'), gRow(gOut, 'Gmail (outreach)', 'sends cold emails, watched for replies'));
     section('Connected apps', gmailRow, !apps.configured ? h('p', { class: 'muted' }, 'Composio is not set up on the server yet (COMPOSIO_API_KEY).') : apps.error ? h('p', { class: 'muted' }, apps.error) :
@@ -68,7 +68,7 @@ export function render({ app, api, toast, go }) {
     const am = await api('/v1/settings/automemory');
     const amBox = h('input', { type: 'checkbox', checked: am.enabled });
     amBox.addEventListener('change', async () => { await api('/v1/settings/automemory', { method: 'POST', body: { enabled: amBox.checked } }); toast(amBox.checked ? 'I’ll decide what to remember.' : 'I’ll only remember what you tell me to.'); });
-    section('Memory', h('label', { class: 'row' }, amBox, ' Let Friday decide what to remember (silently, from our chats)'), h('p', { class: 'muted' }, 'Auto-saved items appear in the Memory tab marked “auto:chat”; edit or delete anything there. Passwords and keys are never saved.'));
+    section('Memory', h('label', { class: 'row' }, amBox, ' Let Fridayy decide what to remember (silently, from our chats)'), h('p', { class: 'muted' }, 'Auto-saved items appear in the Memory tab marked “auto:chat”; edit or delete anything there. Passwords and keys are never saved.'));
 
     // Voice (Whisper listens, Kokoro speaks)
     const vs = await api('/v1/voice/status');
@@ -82,13 +82,13 @@ export function render({ app, api, toast, go }) {
     const preview = async () => {
       toast('Generating…');
       try {
-        const r = await fetch('/v1/voice/speak', { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: expressive.checked ? 'Hey you. [chuckle] It’s me, Friday. [whispering] Did you miss me… or are you just pretending to be busy? [sigh]' : 'Hey you. It’s me, Friday. Did you miss me, or are you just pretending to be busy?', voice: voiceSel.value, speed: Number(speed.value), engine: expressive.checked ? 'expressive' : 'kokoro', pitch: Number(pitch.value) }) });
+        const r = await fetch('/v1/voice/speak', { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: expressive.checked ? 'Hey you. [chuckle] It’s me, Fridayy. [whispering] Did you miss me… or are you just pretending to be busy? [sigh]' : 'Hey you. It’s me, Fridayy. Did you miss me, or are you just pretending to be busy?', voice: voiceSel.value, speed: Number(speed.value), engine: expressive.checked ? 'expressive' : 'kokoro', pitch: Number(pitch.value) }) });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
         const a = new Audio(URL.createObjectURL(await r.blob())); a.play();
       } catch (e) { toast(`Preview failed: ${e.message}`); }
     };
     section('Voice', h('div', { class: 'row wrap' }, h('span', { class: `chip ${vs.stt === 'ready' ? 'good' : 'warn'}` }, `Listening: ${vs.stt === 'ready' ? `Whisper ${vs.sttModel ?? ''}` : 'browser fallback'}`), h('span', { class: `chip ${vs.tts === 'ready' ? 'good' : 'warn'}` }, `Voice: ${vs.tts !== 'ready' ? 'browser fallback' : canExpress && vs.settings.engine === 'expressive' ? 'expressive (Chatterbox)' : 'Kokoro'}`)),
-      ready ? null : h('p', { class: 'muted' }, 'Install the voice engine for accurate listening and a natural voice: run  node bin/friday.mjs voice setup  (one-time ~600 MB download), then restart Friday.'),
+      ready ? null : h('p', { class: 'muted' }, 'Install the voice engine for accurate listening and a natural voice: run  node bin/friday.mjs voice setup  (one-time ~600 MB download), then restart Fridayy.'),
       h('div', {}, h('label', {}, 'Her voice'), voiceSel), h('div', {}, h('label', {}, 'Speaking speed'), speed),
       h('label', { class: 'row' }, expressive, canExpress ? ' Expressive voice — she laughs, sighs, whispers and changes tone (a second or two slower to start)' : ' Expressive voice — not installed on this server'),
       h('div', {}, h('label', {}, 'Cuteness (pitch, expressive voice)'), pitch),
@@ -111,13 +111,13 @@ export function render({ app, api, toast, go }) {
     const qs = h('input', { type: 'time', value: pro.proactive.quietHours.start }); const qe = h('input', { type: 'time', value: pro.proactive.quietHours.end });
     const bon = h('input', { type: 'checkbox', checked: pro.proactive.briefing.enabled }); const bt = h('input', { type: 'time', value: pro.proactive.briefing.time });
     const cap = h('input', { type: 'number', min: 0, max: 50, value: pro.proactive.maxPerDay });
-    section('Proactive Friday', h('label', { class: 'row' }, on, ' Let me speak up when something needs attention'),
+    section('Proactive Fridayy', h('label', { class: 'row' }, on, ' Let me speak up when something needs attention'),
       h('div', { class: 'row wrap' }, h('div', {}, h('label', {}, 'Quiet from'), qs), h('div', {}, h('label', {}, 'until'), qe), h('div', {}, h('label', {}, 'Max per day'), cap)),
       h('label', { class: 'row' }, bon, ' Morning briefing at ', bt),
       h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: async () => { try { await api('/v1/proactive', { method: 'POST', body: { enabled: on.checked, maxPerDay: Number(cap.value), quietHours: { start: qs.value, end: qe.value }, briefing: { enabled: bon.checked, time: bt.value } } }); toast('Saved.'); } catch (e) { toast(e.message); } } }, 'Save'),
         h('button', { class: 'btn', onclick: async () => { toast('Composing…'); const r = await api('/v1/briefing/now', { method: 'POST' }); alert(r.briefing); } }, 'Preview briefing')));
 
-    // Standing rules (created by asking Friday: "when a task fails, tell me")
+    // Standing rules (created by asking Fridayy: "when a task fails, tell me")
     const { rules } = await api('/v1/rules');
     section('Standing rules', rules.length ? h('div', { class: 'list' }, rules.map((r) => h('div', { class: 'row wrap' },
       h('span', { class: `chip ${r.enabled ? 'good' : ''}` }, r.enabled ? 'on' : 'off'), h('strong', { class: 'grow' }, r.name), h('span', { class: 'muted' }, `${r.event} → ${r.action.kind} · fired ${r.fire_count}×`),
@@ -137,7 +137,7 @@ export function render({ app, api, toast, go }) {
       const devList = h('div', { class: 'list' }, devices.filter((d) => !d.revoked_at).map((d) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('strong', {}, d.name), h('div', { class: 'meta muted' }, `${d.scopes.join(', ')} · ${d.last_seen_at ? `seen ${timeAgo(d.last_seen_at)}` : 'never used'}`)),
         h('button', { class: 'btn small bad', onclick: async () => { if (confirm(`Revoke ${d.name}?`)) { await api(`/v1/devices/${d.id}`, { method: 'DELETE' }); build(); } } }, 'Revoke'))));
       const dn = h('input', { type: 'text', placeholder: 'Device name (e.g. phone, laptop-node)' });
-      const sc = h('select', {}, [['read,chat,tasks,approve', 'Phone (chat, tasks, approvals)'], ['guest', 'Guest (chat only — Friday won’t share anything private)'], ['read,node', 'Laptop node'], ['read', 'Read-only (e.g. desk companion)'], ['read,chat,tasks', 'Phone without approvals']].map(([v, l]) => h('option', { value: v }, l)));
+      const sc = h('select', {}, [['read,chat,tasks,approve', 'Phone (chat, tasks, approvals)'], ['guest', 'Guest (chat only — Fridayy won’t share anything private)'], ['read,node', 'Laptop node'], ['read', 'Read-only (e.g. desk companion)'], ['read,chat,tasks', 'Phone without approvals']].map(([v, l]) => h('option', { value: v }, l)));
       const ls = await api('/v1/auth/login-settings').catch(() => null);
       if (ls) {
         const em = h('input', { type: 'email', value: ls.email ?? '', placeholder: 'your@email.com', autocomplete: 'username' });
@@ -154,7 +154,7 @@ export function render({ app, api, toast, go }) {
           h('h4', {}, 'Sign in with Google'),
           ls.google ? null : h('p', { class: 'muted small' }, 'Not set up on the server yet (needs FRIDAY_SITE_URL and the Google redirect address).'),
           h('label', {}, 'Allowed Google account'), ge,
-          h('label', { class: 'row' }, skip, ' Trust Google’s own 2-step verification (skip Friday’s 6-digit code after Google sign-in)'),
+          h('label', { class: 'row' }, skip, ' Trust Google’s own 2-step verification (skip Fridayy’s 6-digit code after Google sign-in)'),
           h('button', { class: 'btn', onclick: async () => { try { await api('/v1/auth/google-login', { method: 'POST', body: { email: ge.value, skipTotp: skip.checked } }); toast('Saved.'); build(); } catch (e) { toast(e.message); } } }, 'Save Google settings'));
       }
       const { users } = await api('/v1/users').catch(() => ({ users: [] }));
@@ -164,7 +164,7 @@ export function render({ app, api, toast, go }) {
         users.length ? h('div', { class: 'list' }, users.map((u) => h('div', { class: 'row wrap' },
           h('div', { class: 'grow' }, h('strong', {}, u.name), h('div', { class: 'meta muted' }, `${u.email} · via ${u.provider}${u.last_login_at ? ` · last seen ${timeAgo(u.last_login_at)}` : ''}`)),
           h('span', { class: `chip ${chip[u.status] ?? ''}` }, u.status),
-          u.status !== 'approved' ? h('button', { class: 'btn small good', onclick: async () => { await api(`/v1/users/${u.id}/status`, { method: 'POST', body: { status: 'approved' } }); toast(`${u.name} can use Friday now.`); build(); } }, 'Approve') : null,
+          u.status !== 'approved' ? h('button', { class: 'btn small good', onclick: async () => { await api(`/v1/users/${u.id}/status`, { method: 'POST', body: { status: 'approved' } }); toast(`${u.name} can use Fridayy now.`); build(); } }, 'Approve') : null,
           u.status === 'approved' ? h('button', { class: 'btn small bad', onclick: async () => { if (confirm(`Disable ${u.name}? They are signed out everywhere.`)) { await api(`/v1/users/${u.id}/status`, { method: 'POST', body: { status: 'disabled' } }); build(); } } }, 'Disable') : null))) : h('p', { class: 'muted' }, 'Nobody else has asked for an account yet.'));
       const { sessions } = await api('/v1/sessions').catch(() => ({ sessions: [] }));
       const sessList = h('div', { class: 'list' }, sessions.map((x) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('strong', {}, `🌐 ${x.name ?? x.principal_kind} · ${String(x.user_agent ?? 'browser').replace(/^Mozilla\/5\.0 \(([^)]*)\).*$/, '$1').slice(0, 60)}`), h('div', { class: 'meta muted' }, `${x.ip ?? '?'} · ${x.last_seen_at ? `seen ${timeAgo(x.last_seen_at)}` : 'not used yet'} · until ${x.expires_at.slice(0, 10)}`)),
@@ -198,7 +198,7 @@ export function render({ app, api, toast, go }) {
         h('div', { class: 'row wrap' }, ...[['all', 'Everything'], ['needs_you', 'Only what needs me']].map(([k, l]) => h('button', { class: `btn small${policy === k ? ' primary' : ''}`, onclick: () => pick(k) }, l))),
         h('p', { class: 'faint small' }, policy === 'needs_you' ? 'Reminders, alerts, approvals and questions still reach your phone; "Done:" messages wait in the inbox and the chat.' : 'Every notification reaches your phone, including "Done:" messages.'));
     } catch { /* older server */ }
-    if (owner) try { // Goals: where each stands (Friday keeps the line current as you talk)
+    if (owner) try { // Goals: where each stands (Fridayy keeps the line current as you talk)
       const { goals } = await api('/v1/goals');
       const inp = h('input', { type: 'text', maxlength: '200', placeholder: 'New goal, e.g. 3 FDE clients by December', 'aria-label': 'New goal' });
       const set = async (g, status) => { try { await api(`/v1/goals/${g.id}`, { method: 'POST', body: { status } }); toast(status === 'done' ? 'Goal done 🎉' : 'Goal dropped'); build(); } catch (e) { toast(e.message); } };
@@ -206,11 +206,11 @@ export function render({ app, api, toast, go }) {
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
       section('Goals', goals.length ? h('div', { class: 'list' }, goals.map((g) => h('div', { class: 'stack bubble' },
         h('div', { class: 'row wrap' }, h('strong', { class: 'grow' }, g.title), h('button', { class: 'btn small good', onclick: () => set(g, 'done') }, 'Done'), h('button', { class: 'btn small', onclick: () => set(g, 'dropped') }, 'Drop')),
-        h('div', { class: g.digest ? '' : 'muted' }, g.digest ?? 'No status yet. Tell Friday how it is going.'),
-        g.digest_at ? h('span', { class: 'faint small' }, `updated ${timeAgo(g.digest_at)}`) : null))) : h('p', { class: 'muted' }, 'No goals yet. Add one, or tell Friday what you are working toward.'),
+        h('div', { class: g.digest ? '' : 'muted' }, g.digest ?? 'No status yet. Tell Fridayy how it is going.'),
+        g.digest_at ? h('span', { class: 'faint small' }, `updated ${timeAgo(g.digest_at)}`) : null))) : h('p', { class: 'muted' }, 'No goals yet. Add one, or tell Fridayy what you are working toward.'),
         h('div', { class: 'row' }, inp, h('button', { class: 'btn primary', onclick: add }, 'Add')));
     } catch { /* older server */ }
-    if (owner) try { // Friday's suggestions: decide open ones, see whether past advice worked
+    if (owner) try { // Fridayy's suggestions: decide open ones, see whether past advice worked
       const { recs, stats } = await api('/v1/recs');
       const open = recs.filter((r) => r.status === 'open');
       const decide = async (r, status) => { try { await api(`/v1/recs/${r.id}/decide`, { method: 'POST', body: { status } }); build(); } catch (e) { toast(e.message); } };
@@ -221,7 +221,7 @@ export function render({ app, api, toast, go }) {
         h('div', { class: 'muted' }, `Because: ${r.because}`), h('div', { class: 'faint small' }, `Expected: ${r.expect} · check on ${new Date(r.review_on).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`),
         r.outcome_note ? h('div', {}, `What happened: ${r.outcome_note}`) : null,
         r.status === 'open' ? h('div', { class: 'row' }, h('button', { class: 'btn small good', onclick: () => decide(r, 'accepted') }, 'Accept'), h('button', { class: 'btn small', onclick: () => decide(r, 'declined') }, 'Decline')) : null);
-      section(`Friday's suggestions — taken ${pct(stats.acceptance)}, worked ${pct(stats.hit_rate)} (${stats.scored} scored, 90 days)`,
+      section(`Fridayy's suggestions — taken ${pct(stats.acceptance)}, worked ${pct(stats.hit_rate)} (${stats.scored} scored, 90 days)`,
         open.length ? h('div', { class: 'list' }, open.map(recRow)) : h('p', { class: 'muted' }, 'No open suggestions.'),
         recs.some((r) => r.status !== 'open') ? h('details', {}, h('summary', { class: 'faint small' }, 'History'), h('div', { class: 'list' }, recs.filter((r) => r.status !== 'open').slice(0, 20).map(recRow))) : null);
     } catch { /* older server */ }
@@ -237,7 +237,7 @@ export function render({ app, api, toast, go }) {
         h('h4', {}, 'This month'), u.month.length ? h('div', { class: 'list' }, rowsFor(u.month, false)) : h('p', { class: 'muted' }, 'No calls this month.'),
         u.serpapi ? h('p', { class: 'muted' }, `SerpApi: ${u.serpapi.used}${u.serpapi.budget ? ` of ${u.serpapi.budget}` : ''} searches in ${u.serpapi.month}`) : null,
         u.unpriced.length ? h('p', { class: 'muted small' }, `No price on file for: ${u.unpriced.join(', ')}`) : null,
-        h('p', { class: 'faint small' }, 'A model that reaches its daily limit is skipped until it resets; Friday falls back to the next one.'));
+        h('p', { class: 'faint small' }, 'A model that reaches its daily limit is skipped until it resets; Fridayy falls back to the next one.'));
     } catch { /* older server: no usage endpoint */ }
     const [sk, mcp] = await Promise.all([api('/v1/skills'), owner ? api('/v1/mcp') : Promise.resolve({ config: { servers: {} } })]);
     section('Skills & tools', h('div', { class: 'row wrap' }, sk.skills.map((s) => h('span', { class: 'chip', title: s.description }, s.name))), h('div', { class: 'muted' }, `MCP servers: ${Object.keys(mcp.config.servers).join(', ') || 'defaults from your keys (SerpApi, GitHub)'}`));
@@ -245,7 +245,7 @@ export function render({ app, api, toast, go }) {
 
   async function enablePush(publicKey, label) {
     try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error('This browser does not support push (iPhone: add Friday to the Home Screen first).');
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error('This browser does not support push (iPhone: add Fridayy to the Home Screen first).');
       const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
       if ((await Notification.requestPermission()) !== 'granted') throw new Error('Permission not granted.');
       const raw = atob(publicKey.replace(/-/g, '+').replace(/_/g, '/'));
@@ -268,7 +268,7 @@ export function render({ app, api, toast, go }) {
         h('h3', {}, 'Set up your authenticator'),
         h('ol', { class: 'muted' }, h('li', {}, 'Open Google Authenticator, Microsoft Authenticator, Authy or 2FAS on your phone.'), h('li', {}, 'Tap + → Scan a QR code, and scan this:')),
         h('div', { class: 'qr-wrap' }, svg),
-        h('details', {}, h('summary', {}, 'Can’t scan? Enter the key manually'), h('p', {}, 'Account: Friday · Key: ', h('code', { class: 'mono' }, grouped)), h('p', { class: 'faint small' }, 'Time-based, 6 digits, every 30 seconds.'),
+        h('details', {}, h('summary', {}, 'Can’t scan? Enter the key manually'), h('p', {}, 'Account: Fridayy · Key: ', h('code', { class: 'mono' }, grouped)), h('p', { class: 'faint small' }, 'Time-based, 6 digits, every 30 seconds.'),
           h('button', { class: 'btn small', type: 'button', onclick: () => navigator.clipboard?.writeText(r.secret).then(() => toast('Key copied.')) }, 'Copy key')),
         h('label', {}, '3. Enter the 6-digit code it shows'), code, err,
         h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'button', onclick: confirmCode }, 'Activate'), h('button', { class: 'btn', type: 'button', onclick: () => dlg.close() }, 'Cancel')));

@@ -35,7 +35,7 @@ export class Approvals {
     for (const r of rows) {
       this.db.prepare('UPDATE approvals SET result=? WHERE id=? AND result IS NULL').run(JSON.stringify({ error: 'interrupted', unknown: true }), r.id);
       if (!(r.decided_at >= recent)) continue; // old history: recorded, not announced
-      const text = `⚠️ Friday restarted while doing “${r.summary}” after your approval. I can't tell whether it finished, so check before asking me to do it again.`;
+      const text = `⚠️ Fridayy restarted while doing “${r.summary}” after your approval. I can't tell whether it finished, so check before asking me to do it again.`;
       try { if (r.conversation_id && this.chat?.getConversation(r.conversation_id)) this.chat.addMessage(r.conversation_id, 'assistant', text); } catch {}
       try { this.notifications?.create({ level: 'warning', title: `Unknown result: ${String(r.summary).slice(0, 120)}`, body: text, conversationId: r.conversation_id }); } catch {}
       try { this.audit?.append(r.conversation_id ?? 'ad-hoc-local', 'approval.interrupted', { id: r.id }); } catch {}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Friday document engine: create / read / edit office documents.
+"""Fridayy document engine: create / read / edit office documents.
 
 Usage: engine.py <request.json>   ->  prints one JSON object to stdout.
 Request: {"op": "create"|"read"|"edit", ...}

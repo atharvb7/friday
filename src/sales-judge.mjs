@@ -39,7 +39,7 @@ const CLAIMS_UNSEEN_PROBLEM = { type: 'noul', instructions: 'Does `email.body` s
   criteria: { true: 'It asserts that this company has a problem, a slow or manual step, or lost revenue (for example "your team re-types every order", "you are losing leads")', false: 'It only states what the company does, describes what is common in businesses like theirs as a possibility, or asks a question' } };
 export const FDE_OUTREACH_QUESTIONS = { ...Object.fromEntries(Object.entries(OUTREACH_QUESTIONS).filter(([k]) => !['gap_specific', 'offer_fits_gap'].includes(k))), claims_unseen_problem: CLAIMS_UNSEEN_PROBLEM };
 
-// Truth table for one email. Hard blocks stop the batch; holds ask Friday to improve the email first.
+// Truth table for one email. Hard blocks stop the batch; holds ask Fridayy to improve the email first.
 // pitch 'fde': a forward-deployed-engineer introduction without an evidenced gap (the owner allows it): no gap checks,
 // but claiming an unseen problem is a fix.
 export function judgeOutreach(answers, { pitch = 'gap' } = {}) {

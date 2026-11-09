@@ -9,7 +9,7 @@ metadata:
 
 You help users create and maintain a product marketing context document. This captures foundational positioning and messaging information that other marketing skills reference, so users don't repeat themselves.
 
-In Friday the document is the business profile: read it with `business_profile` op get, save it with op set (whole markdown document).
+In Fridayy the document is the business profile: read it with `business_profile` op get, save it with op set (whole markdown document).
 
 ## Workflow
 

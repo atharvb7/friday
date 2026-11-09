@@ -1,4 +1,4 @@
-// public/pet-2d.js — Friday's 2D pet: her portrait (/assets/friday.webp) animated on a canvas.
+// public/pet-2d.js — Fridayy's 2D pet: her portrait (/assets/friday.webp) animated on a canvas.
 // It is one flat image, so motion is whole-figure (breathing, sway, a lean toward the pointer,
 // hop, shake) plus a speech bubble by her face for her state (the heart is from her artwork).
 // Drawing on a canvas keeps "Float on screen" (Picture-in-Picture via captureStream) working.
@@ -117,7 +117,7 @@ export async function initPet2D(opts = {}) {
   img.decoding = 'async';
   img.src = PET_IMAGE;
   try { await img.decode(); } catch {
-    if (fallback) { fallback.style.display = 'grid'; fallback.textContent = `Friday's portrait failed to load (${PET_IMAGE}).`; }
+    if (fallback) { fallback.style.display = 'grid'; fallback.textContent = `Fridayy's portrait failed to load (${PET_IMAGE}).`; }
     return { ok: false, reason: 'image' };
   }
   // Pre-render the figure once with a soft fade at the bottom (the artwork is a bust, cut flat).
@@ -203,7 +203,7 @@ export async function initPet2D(opts = {}) {
   function doWave() {
     hopUntil = performance.now() + 1200;
     showBubble({ kind: 'heart' });
-    doTalk('Hey hey~! Friday at your service. What are we doing today?');
+    doTalk('Hey hey~! Fridayy at your service. What are we doing today?');
   }
 
   // Tap her: a little hop and a heart.

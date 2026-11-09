@@ -1,4 +1,4 @@
-// GitHub REST client for open-source contributions. Lives ONLY in Friday core: the token
+// GitHub REST client for open-source contributions. Lives ONLY in Fridayy core: the token
 // (FRIDAY_GITHUB_CONTRIB_TOKEN) is never given to the coding agent, whose container reads untrusted repository text.
 // Every write here runs only from an approved approval card (src/contrib.mjs).
 const API = 'https://api.github.com';

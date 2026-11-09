@@ -47,7 +47,7 @@ async function showLogin(message = '', presetToken = '') {
     if (!r.ok) { fail(j.message ?? ERR[j.error] ?? `Sign-in failed (${j.error ?? r.status}).`); return false; }
     auth.set(j.token, remember.checked); await boot(); return true;
   }
-  const card = h('div', { class: 'card login-card' }, h('div', { class: 'orb idle big' }), h('h1', {}, mode.public ? 'Welcome back' : 'Friday'), h('p', { class: 'muted' }, mode.public ? 'Sign in to your Friday.' : 'Your personal AI. Enter the access token from your Friday server (or a device token from Settings → Devices).'));
+  const card = h('div', { class: 'card login-card' }, h('div', { class: 'orb idle big' }), h('h1', {}, mode.public ? 'Welcome back' : 'Fridayy'), h('p', { class: 'muted' }, mode.public ? 'Sign in to your Fridayy.' : 'Your personal AI. Enter the access token from your Fridayy server (or a device token from Settings → Devices).'));
   root.append(h('div', { class: 'login' }, card));
 
   // Back from Google: finish with the authenticator code (or straight in if Google is trusted).
@@ -65,7 +65,7 @@ async function showLogin(message = '', presetToken = '') {
 
   if (!mode.public) { // private (Tailscale) address: token sign-in as before
     const input = h('input', { type: 'password', autocomplete: 'off', placeholder: 'Access token', 'aria-label': 'Access token', required: true, value: presetToken });
-    card.append(h('form', { class: 'stack', onsubmit: async (e) => { e.preventDefault(); auth.set(input.value.trim(), remember.checked); try { await boot(); } catch (ex) { auth.clear(); fail(ex.status === 401 ? ERR.unauthorized : `Could not reach Friday (${ex.message}).`); } } },
+    card.append(h('form', { class: 'stack', onsubmit: async (e) => { e.preventDefault(); auth.set(input.value.trim(), remember.checked); try { await boot(); } catch (ex) { auth.clear(); fail(ex.status === 401 ? ERR.unauthorized : `Could not reach Fridayy (${ex.message}).`); } } },
       h('label', {}, 'Access token'), input, rememberRow, h('button', { class: 'btn primary full', type: 'submit' }, 'Connect'), err));
     input.focus(); return;
   }
@@ -95,7 +95,7 @@ async function showLogin(message = '', presetToken = '') {
       if (!r.ok) { fail(j.message ?? `Couldn’t send the request (${j.error ?? r.status}).`); return; }
       form.hidden = true; done.hidden = false; done.textContent = `🎉 ${j.message}`; } },
       h('label', {}, 'Name'), nm, h('label', {}, 'Email'), em, h('label', {}, 'Password'), pw, h('button', { class: 'btn full', type: 'submit' }, 'Request access'));
-    card.append(h('details', { class: 'token-login' }, h('summary', {}, 'New here? Create an account'), h('p', { class: 'muted small' }, 'Accounts are approved by Friday’s owner. You can also just use “Continue with Google”.'), form, done));
+    card.append(h('details', { class: 'token-login' }, h('summary', {}, 'New here? Create an account'), h('p', { class: 'muted small' }, 'Accounts are approved by Fridayy’s owner. You can also just use “Continue with Google”.'), form, done));
   }
   // Token sign-in stays available (device pairing QR codes use it).
   const tok = h('input', { type: 'password', autocomplete: 'off', placeholder: 'Access or device token', 'aria-label': 'Access token', value: presetToken });
@@ -119,8 +119,8 @@ function openSheet() {
     app.member ? h('p', { class: 'muted', style: 'text-align:center;margin:4px 0 10px' }, `Signed in as ${app.me?.name ?? 'you'}`) : h('div', { class: 'sheet-grid' }, ...Object.keys(VIEWS).filter((v) => !PRIMARY.includes(v)).map((v) => item(v, LABELS[v], () => go(v), app.current === v ? 'on' : ''))),
     h('div', { class: 'sheet-list' },
       item(isLight() ? 'moon' : 'sun', isLight() ? 'Dark mode' : 'Light mode', toggleTheme),
-      app.member ? null : item('power', app.status?.emergencyStopped ? 'Resume Friday' : 'Emergency stop', emergency, 'danger'),
-      item('logout', 'Sign out', () => { if (confirm('Sign out of Friday on this device?')) app.signOut(); })));
+      app.member ? null : item('power', app.status?.emergencyStopped ? 'Resume Fridayy' : 'Emergency stop', emergency, 'danger'),
+      item('logout', 'Sign out', () => { if (confirm('Sign out of Fridayy on this device?')) app.signOut(); })));
   sheet.hidden = false; requestAnimationFrame(() => sheet.classList.add('open'));
 }
 function closeSheet() { sheet.classList.remove('open'); setTimeout(() => { sheet.hidden = true; }, 220); }
@@ -131,7 +131,7 @@ function buildShell() {
   stateText = h('span', { class: 'state' }, 'idle');
   linkDot = h('span', { class: 'dot' }); linkText = h('span', {}, 'connecting');
   stopBtn = h('button', { class: 'btn quiet icon stop-btn', title: 'Emergency stop: cancel all agents and revoke elevated autonomy', 'aria-label': 'Emergency stop', onclick: emergency }, svgIcon('power', 18), h('span', { class: 'hide-mobile' }, 'Stop'));
-  const nav = h('nav', { class: 'sidebar', 'aria-label': 'Sections' }, h('div', { class: 'brand' }, h('div', { class: 'orb idle' }), 'Friday'));
+  const nav = h('nav', { class: 'sidebar', 'aria-label': 'Sections' }, h('div', { class: 'brand' }, h('div', { class: 'orb idle' }), 'Fridayy'));
   for (const name of Object.keys(VIEWS).filter((v) => !app.member || v === 'chat')) {
     const badge = h('span', { class: 'badge', hidden: true });
     const b = h('button', { class: `nav${PRIMARY.includes(name) ? ' primary' : ''}`, 'data-view': name, onclick: () => go(name), 'aria-label': LABELS[name] }, h('span', { class: 'ico' }, svgIcon(name), badge), h('span', { class: 'lbl' }, LABELS[name]));
@@ -143,10 +143,10 @@ function buildShell() {
   sheet = h('div', { class: 'sheet', hidden: true, onclick: (e) => { if (e.target === sheet) closeSheet(); } });
   sheet.panel = h('div', { class: 'sheet-panel', role: 'dialog', 'aria-label': 'More' }); sheet.append(sheet.panel);
   mainEl = h('main', { class: 'main', id: 'main' });
-  titleEl = h('strong', { class: 'title' }, 'Friday');
+  titleEl = h('strong', { class: 'title' }, 'Fridayy');
   headSlot = h('div', { class: 'head-slot' }); // views put contextual buttons here (e.g. chat history)
   headRight = h('div', { class: 'head-slot right' });
-  stoppedBar = h('div', { class: 'stopped-bar', hidden: true }, 'Friday is stopped — agents are paused. ', h('button', { class: 'btn small', onclick: emergency }, 'Resume'));
+  stoppedBar = h('div', { class: 'stopped-bar', hidden: true }, 'Fridayy is stopped — agents are paused. ', h('button', { class: 'btn small', onclick: emergency }, 'Resume'));
   const top = h('header', { class: 'topbar' }, headSlot, orb, h('div', { class: 'who' }, titleEl, stateText), h('span', { class: 'grow' }),
     h('div', { class: 'status-line hide-mobile' }, linkDot, linkText), headRight, stopBtn,
     h('button', { class: 'btn quiet icon hide-mobile', title: 'Toggle theme', 'aria-label': 'Toggle theme', onclick: () => { toggleTheme(); } }, svgIcon('moon', 18)));
@@ -187,13 +187,13 @@ function paint() {
   linkDot.className = `dot ${app.link === 'online' ? 'on' : 'bad'}`; linkText.textContent = app.link === 'online' ? `${s?.brain === 'friday-brain' ? 'brain online' : 'local mode'}${s?.nodes?.length ? ' · laptop' : ''}` : 'reconnecting…';
   const badge = app.unread + app.pendingApprovals;
   if (navEls.inbox) navEls.inbox.badge.hidden = !badge; if (navEls.inbox) navEls.inbox.badge.textContent = badge > 9 ? '9+' : badge;
-  document.title = badge ? `(${badge}) Friday` : 'Friday';
+  document.title = badge ? `(${badge}) Fridayy` : 'Fridayy';
   stopBtn.hidden = !s || app.member || (app.me && !app.me.scopes.includes('read'));
 }
 
 async function emergency() {
   if (app.status?.emergencyStopped) {
-    if (!confirm('Resume Friday? Agents and the worker will start again.')) return;
+    if (!confirm('Resume Fridayy? Agents and the worker will start again.')) return;
     const totp = app.needsCode() && app.totpActive ? prompt('6-digit authenticator code') : undefined;
     try { await api('/v1/emergency-clear', { method: 'POST', totp }); toast('Resumed.'); } catch (e) { toast(`Could not resume: ${e.message}`); }
   } else {
@@ -232,5 +232,5 @@ async function boot() {
 // Pairing link from a QR code (Settings → Devices): take the token from the fragment, then wipe it from the address bar/history.
 let pairToken = '';
 { const m = /^#pair=([^&]+)/.exec(location.hash); if (m) { try { pairToken = decodeURIComponent(m[1]); auth.set(pairToken, true); } catch { /* ignore */ } history.replaceState(null, '', location.pathname + location.search); } }
-if (auth.token) boot().catch((e) => { const t = auth.token; if (e?.status === 401) auth.clear(); showLogin(e?.status === 401 ? (pairToken ? 'Enter your authenticator code to finish signing in.' : '') : `Something went wrong loading Friday (${e?.message ?? e}). Your token was kept — reload to retry.`, e?.status === 401 && pairToken ? t : ''); console.error(e); }); else showLogin();
+if (auth.token) boot().catch((e) => { const t = auth.token; if (e?.status === 401) auth.clear(); showLogin(e?.status === 401 ? (pairToken ? 'Enter your authenticator code to finish signing in.' : '') : `Something went wrong loading Fridayy (${e?.message ?? e}). Your token was kept — reload to retry.`, e?.status === 401 && pairToken ? t : ''); console.error(e); }); else showLogin();
 addEventListener('hashchange', () => { if (app.me) go(location.hash.slice(1)); });

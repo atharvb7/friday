@@ -1,14 +1,14 @@
-# Phase 1 — Friday systemd user unit and cgroup cap (operator notes)
+# Phase 1 — Fridayy systemd user unit and cgroup cap (operator notes)
 
-Scope: Friday core only (`src/server.mjs` on `127.0.0.1:4317`). This phase
-installs nothing that auto-starts Friday. It stages the user unit and verifies
+Scope: Fridayy core only (`src/server.mjs` on `127.0.0.1:4317`). This phase
+installs nothing that auto-starts Fridayy. It stages the user unit and verifies
 that the memory cap is enforced by the cgroup.
 
 Background: the laptop has ~14.7 GiB usable RAM with past `systemd-oomd` kills
-of browser scopes while Friday was not running (see
+of browser scopes while Fridayy was not running (see
 `docs/friday-handoff-2026-09-28.md`, "RAM strategy"). The live core measured
 ~66 MiB RSS, but that covers only the small core — not DSH, browser workers,
-voice, or computer control. The initial cap keeps active Friday work under
+voice, or computer control. The initial cap keeps active Fridayy work under
 ~2 GiB (`MemoryHigh=1536M`, `MemoryMax=2048M`). See
 `docs/friday-v1-implementation-spec.md` "Memory policy" for the rationale.
 
@@ -74,7 +74,7 @@ If the exact slice path differs on this host, resolve it via
 `memory.peak` under that directory. `memory.peak` is the high-water mark
 for the load test below.
 
-## 3. Check Friday's own cgroup readings via /v1/status
+## 3. Check Fridayy's own cgroup readings via /v1/status
 
 `src/resources.mjs` (`readResources()`) reports the current cgroup v2 usage
 and limits in the status payload's `cgroup` block:
@@ -103,20 +103,20 @@ Run this only after an approved start, with the normal desktop load open
 (Chrome + dev tools, as usual):
 
 1. Record host baseline: `grep MemAvailable /proc/meminfo`, `free -h`,
-   `cat /proc/pressure/memory`, and the Friday cgroup `memory.current`.
-2. Exercise Friday normally (status/task round-trips; no DSH, browser, or
+   `cat /proc/pressure/memory`, and the Fridayy cgroup `memory.current`.
+2. Exercise Fridayy normally (status/task round-trips; no DSH, browser, or
    voice work in this phase) while using the laptop normally for a
    representative session.
-3. Sample every few minutes: host `MemAvailable`, Friday cgroup
+3. Sample every few minutes: host `MemAvailable`, Fridayy cgroup
    `memory.current`/`memory.peak`, `/proc/pressure/memory` (`some`/`full`
    averages), and observed task latency (time to complete a status round-trip
    or queued task step).
-4. Record the high-water marks: host minimum `MemAvailable`, Friday cgroup
+4. Record the high-water marks: host minimum `MemAvailable`, Fridayy cgroup
    `memory.peak`, worst PSI `avg10/avg60`, and worst task latency.
 
 When to queue/reduce instead of raising the cap: if host `MemAvailable`
 drops toward the governor's Constrained/Paused bands (below ~4 GiB / ~2 GiB),
-PSI `some`/`full` stays elevated, or the Friday cgroup approaches
+PSI `some`/`full` stays elevated, or the Fridayy cgroup approaches
 `MemoryHigh` (throttling) — queue new work, reduce concurrency (one worker
 per class; browser work needs ≥ 5 GiB host-available, subagents ≥ 6 GiB per
 the governor's initial levels), or postpone the task. A cap breach or host

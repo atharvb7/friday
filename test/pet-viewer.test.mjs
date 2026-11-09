@@ -16,7 +16,7 @@ test('pet-shared imports cleanly without DOM/WebGL globals', () => {
   assert.equal(typeof globalThis.WebGLRenderingContext, 'undefined');
 });
 
-test('poseFor covers every Friday presence state with an emoji + note', () => {
+test('poseFor covers every Fridayy presence state with an emoji + note', () => {
   assert.deepEqual([...PET_STATES],
     ['sleeping', 'listening', 'thinking', 'acting', 'waiting', 'blocked', 'offline', 'done']);
   for (const s of PET_STATES) {

@@ -1,5 +1,5 @@
 fn main() {
     tauri::Builder::default()
         .run(tauri::generate_context!())
-        .expect("error while running Friday Pet");
+        .expect("error while running Fridayy Pet");
 }

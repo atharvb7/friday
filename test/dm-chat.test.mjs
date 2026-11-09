@@ -20,7 +20,7 @@ function rig() {
     { id: 'grp', participants: { data: [{ id: 'me', username: 'atharv' }, { id: '258', username: 'pandeyy.jr' }, { id: '9', username: 'x' }] } },
     { id: 'dm1', participants: { data: [{ id: 'me', username: 'atharv' }, { id: '258', username: 'pandeyy.jr' }] } },
   ];
-  let msgs = [{ id: 'm1', from: { id: 'me' }, message: 'Hey Aditya! I am Friday' }];
+  let msgs = [{ id: 'm1', from: { id: 'me' }, message: 'Hey Aditya! I am Fridayy' }];
   const composio = { execute: async (_t, action, args) => {
     if (action === 'LIST_ALL_CONVERSATIONS') return { data: { data: convs } };
     if (action === 'LIST_ALL_MESSAGES') { assert.equal(args.conversation_id, 'dm1', 'always the 1:1 thread, never the group'); return { data: { data: msgs } }; }

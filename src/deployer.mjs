@@ -1,4 +1,4 @@
-// Client for the deployer container (deployer/server.mjs). Friday's own apps only; see that file for the limits.
+// Client for the deployer container (deployer/server.mjs). Fridayy's own apps only; see that file for the limits.
 export class Deployer {
   constructor({ url, secret, fetchImpl = globalThis.fetch }) { Object.assign(this, { url: url ? String(url).replace(/\/+$/, '') : '', secret: secret ?? '', fetchImpl }); }
   get configured() { return Boolean(this.url && this.secret); }

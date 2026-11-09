@@ -3,7 +3,7 @@ name: security-review
 description: Security code review for vulnerabilities. Use when asked to "security review", "find vulnerabilities", "check for security issues", "audit security", "OWASP review", or review code for injection, XSS, authentication, authorization, cryptography issues. Provides systematic review with confidence-based reporting.
 license: LICENSE
 ---
-> **Friday note:** some referenced files (Go/Rust/Java, Kubernetes/Terraform/CI/cloud) are not included — use general principles for those.
+> **Fridayy note:** some referenced files (Go/Rust/Java, Kubernetes/Terraform/CI/cloud) are not included — use general principles for those.
 
 
 <!--

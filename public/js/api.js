@@ -17,7 +17,7 @@ export class ApiError extends Error { constructor(status, message) { super(messa
 export async function api(path, { method = 'GET', body, totp, headers = {}, signal } = {}) {
   const res = await fetch(path, {
     method, signal, cache: 'no-store',
-    headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(totp ? { 'X-Friday-Totp': totp } : {}), ...headers },
+    headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(totp ? { 'X-Fridayy-Totp': totp } : {}), ...headers },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   let data = {};

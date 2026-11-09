@@ -1,4 +1,4 @@
-// One Friday state for every body: web pet, desktop pet, phone orb, ESP32 desk
+// One Fridayy state for every body: web pet, desktop pet, phone orb, ESP32 desk
 // companion, future AR/VR. Derived purely from real events — never random.
 //
 // states: idle listening thinking planning researching browsing coding computer_use

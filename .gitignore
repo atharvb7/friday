@@ -1,4 +1,4 @@
-# Friday local/runtime artifacts — never commit these.
+# Fridayy local/runtime artifacts — never commit these.
 # data/ holds the bearer token (access-token) and SQLite DB.
 data/
 *.sqlite
@@ -33,7 +33,7 @@ Thumbs.db
 .sbx-*/
 .claude/
 
-# Friday's artwork: owner-supplied, artist unknown — kept out of this public repo.
+# Fridayy's artwork: owner-supplied, artist unknown — kept out of this public repo.
 # scripts/deploy-art.sh copies it to the server (see public/assets/ATTRIBUTION.md).
 public/assets/friday.webp
 public/assets/friday-face.webp

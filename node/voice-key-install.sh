@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Binds Friday push-to-talk (node/voice-key.mjs) to a GNOME custom keyboard shortcut. Re-running updates it.
+# Binds Fridayy push-to-talk (node/voice-key.mjs) to a GNOME custom keyboard shortcut. Re-running updates it.
 #   FRIDAY_VOICE_TOKEN=fdv_... ./voice-key-install.sh              # backtick (`), stores the token
 #   ./voice-key-install.sh --key '<Super>grave'                    # Super+` instead (backtick keeps typing)
 #   ./voice-key-install.sh --screen-key '<Super><Shift>grave'      # optional 2nd shortcut: always attach a screenshot
 # Binding plain ` means that key no longer types a backtick anywhere (GNOME takes it first). Undo: voice-key-uninstall.sh
-# The token: create a device with scopes read,chat (Friday web UI -> Settings -> Devices, or on the server
+# The token: create a device with scopes read,chat (Fridayy web UI -> Settings -> Devices, or on the server
 # `node bin/friday.mjs device add laptop-voice read,chat`). The laptop node's own token (read,node) cannot chat.
 set -euo pipefail
 KEY='grave'; SCREEN_KEY=''
@@ -50,11 +50,11 @@ add_binding() { # id name binding command
 }
 q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 CMD="sh -c $(q "exec $(q "$NODE") $(q "$SCRIPT") \"\$@\" >>$(q "$LOG") 2>&1") voice-key"
-add_binding friday-voice 'Friday push-to-talk' "$KEY" "$CMD"
-echo "Bound $KEY -> Friday push-to-talk"
+add_binding friday-voice 'Fridayy push-to-talk' "$KEY" "$CMD"
+echo "Bound $KEY -> Fridayy push-to-talk"
 if [ -n "$SCREEN_KEY" ]; then
-  add_binding friday-voice-screen 'Friday: ask about the screen' "$SCREEN_KEY" "$CMD --screen"
-  echo "Bound $SCREEN_KEY -> Friday push-to-talk with a screenshot"
+  add_binding friday-voice-screen 'Fridayy: ask about the screen' "$SCREEN_KEY" "$CMD --screen"
+  echo "Bound $SCREEN_KEY -> Fridayy push-to-talk with a screenshot"
 fi
 
 # Super+` is GNOME's "switch windows of an app" by default (<Super>Above_Tab); say so instead of silently clashing.

@@ -2,7 +2,7 @@
 name: writing-plans
 description: Use when you have a spec or requirements for a multi-step task, before touching code
 ---
-> **Friday note:** there are no subagents or worktree helpers here — after writing the plan, execute it yourself, step by step, in the same workspace, verifying each step. Ignore mentions of subagent-driven development or git worktree skills.
+> **Fridayy note:** there are no subagents or worktree helpers here — after writing the plan, execute it yourself, step by step, in the same workspace, verifying each step. Ignore mentions of subagent-driven development or git worktree skills.
 
 
 # Writing Plans

@@ -1,4 +1,4 @@
-// test/tools.test.mjs — coverage for the Friday tool registry:
+// test/tools.test.mjs — coverage for the Fridayy tool registry:
 // traversal blocked, symlink escape blocked, oversized args rejected,
 // happy paths, and approval binding (args change after approval fails).
 

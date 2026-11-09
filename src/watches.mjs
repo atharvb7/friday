@@ -1,9 +1,9 @@
-// Proactive Friday, part 2: she acts on her own.
+// Proactive Fridayy, part 2: she acts on her own.
 //  - Follow-ups: when a task finishes, its report is checked for appointments (-> reminders before them, created
 //    automatically — they are the user's own reminders) and for things that still need the user (-> one nudge).
 //  - Watches: "keep an eye on X and tell me / do Y when Z". Web watches poll a public page from the server;
 //    laptop watches run a short READ-ONLY check on the laptop (e.g. "new WhatsApp message from Salex Now").
-//    When the condition is met Friday notifies, or queues the follow-up task that was approved with the watch.
+//    When the condition is met Fridayy notifies, or queues the follow-up task that was approved with the watch.
 import { createHash, randomUUID } from 'node:crypto';
 import { safeFetch } from './web.mjs';
 import { parseWhen } from './time.mjs';

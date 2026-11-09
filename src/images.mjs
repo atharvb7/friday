@@ -1,4 +1,4 @@
-// Pictures Friday makes: text-to-image on NVIDIA's hosted FLUX models (same key as her brain). Every image becomes a
+// Pictures Fridayy makes: text-to-image on NVIDIA's hosted FLUX models (same key as her brain). Every image becomes a
 // chat file (attached to her reply, shown inline by the web app) plus a row with its prompt, seed and model; the chat
 // history shows her that prompt again, so "same one but at night" starts from what she actually wrote. Even with the
 // same seed FLUX reframes the scene when the prompt changes, so a tweak is a new render, not an edit.

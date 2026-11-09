@@ -1,4 +1,4 @@
-// WhatsApp live chat: Friday keeps chatting with one contact in the WhatsApp Web tab that is already open in his Chrome.
+// WhatsApp live chat: Fridayy keeps chatting with one contact in the WhatsApp Web tab that is already open in his Chrome.
 // 28 Oct: done with watches (checked every 15-30 min) + one full computer_task per reply (re-open tab, search, read,
 // type: 3-10 min each), replies queued behind each other and she re-introduced herself. Now one session per chat:
 //   every ~2 s the laptop fingerprints the message area (no model) -> on change a vision model reads the last messages
@@ -13,7 +13,7 @@ const MAX_MINUTES = 180, MAX_REPLIES = 80, POLL_MS = 2000;
 // Each check is a full-screen screenshot: fast while the chat is moving, every ~6 s once it has been quiet for a minute.
 const QUIET_AFTER_MS = 60_000, QUIET_EVERY = 3;
 
-const SYSTEM = ({ owner, friend, goal }) => `You are Friday, ${owner}'s personal AI assistant, chatting on WhatsApp with ${friend}, a friend of ${owner}. ${owner} asked you to chat with them${goal ? ` (${goal})` : ''}.
+const SYSTEM = ({ owner, friend, goal }) => `You are Fridayy, ${owner}'s personal AI assistant, chatting on WhatsApp with ${friend}, a friend of ${owner}. ${owner} asked you to chat with them${goal ? ` (${goal})` : ''}.
 Style: text like a real person on WhatsApp, not like a chatbot: short (usually one line, max two sentences), quick, witty, casual, in ENGLISH only (casual texting English, even when they write Hindi/Hinglish), mirroring their slang and energy; lowercase is fine. At most ONE emoji and often none. Never use lists or formal greetings. Answer what they ACTUALLY said in their latest message; never re-introduce yourself once the chat has started.
 ${FEMININE_HINDI}
 Rules (never break them):
@@ -99,7 +99,7 @@ export class WaChats {
   }
 
   // WhatsApp's tab in front, decided by the window title (Chrome names the active tab), never by the vision model: on
-  // 28 Oct it said "WhatsApp visible" while the Friday tab was in front, and the search/typing landed on that page.
+  // 28 Oct it said "WhatsApp visible" while the Fridayy tab was in front, and the search/typing landed on that page.
   async #bringWhatsAppToFront() {
     if (await this.#frontIsWhatsApp()) return true;
     await this.#node('window_focus', { app: 'google-chrome' }, 20_000, { waitIdleMs: 90_000 }).catch(() => null);
@@ -139,7 +139,7 @@ export class WaChats {
     return geo;
   }
 
-  // The "Friday for WhatsApp Web" extension in his Chrome reads and sends inside the tab itself (works in a background
+  // The "Fridayy for WhatsApp Web" extension in his Chrome reads and sends inside the tab itself (works in a background
   // tab while he uses the laptop, ~1 s per action). Screens + mouse are only the fallback when it is not loaded.
   async #extension() {
     const caps = this.nodes.list?.()?.[0]?.caps ?? [];
@@ -237,7 +237,7 @@ export class WaChats {
       const r = this.#ext.has(s.id) || await this.#extension() ? await this.#node('wa_read', { chat: s.contact, limit: 20 }) : null;
       const msgs = r?.messages ?? [];
       const owner = this.settings.get('user_name', null) ?? 'the owner';
-      const transcript = msgs.map((m) => `${m.from === 'them' ? s.contact : 'Friday'}: ${String(m.text).slice(0, 300)}`).join('\n');
+      const transcript = msgs.map((m) => `${m.from === 'them' ? s.contact : 'Fridayy'}: ${String(m.text).slice(0, 300)}`).join('\n');
       const out = await this.ai.run('chat', { maxTokens: 300, temperature: 0.9, thinking: false, messages: [
         { role: 'system', content: SYSTEM({ owner, friend: s.contact, goal: s.goal }) },
         { role: 'user', content: `Chat so far (oldest first):\n${transcript || '(nothing readable)'}\n\n${owner} wants you to send ONE more message now, without waiting for them${hint ? `: ${String(hint).slice(0, 300)}` : ''}. Do not repeat anything you already said.` }] });
@@ -251,7 +251,7 @@ export class WaChats {
 
   async #answer(s, msgs, texts, sig) {
     const owner = this.settings.get('user_name', null) ?? 'the owner';
-    const transcript = msgs.map((m) => `${m.from === 'them' ? s.contact : 'Friday'}: ${String(m.text).slice(0, 300)}`).join('\n');
+    const transcript = msgs.map((m) => `${m.from === 'them' ? s.contact : 'Fridayy'}: ${String(m.text).slice(0, 300)}`).join('\n');
     const out = await this.ai.run('chat', { maxTokens: 300, temperature: 0.85, thinking: false, messages: [
       { role: 'system', content: SYSTEM({ owner, friend: s.contact, goal: s.goal }) },
       { role: 'user', content: `Chat so far (oldest first):\n${transcript}\n\nTheir latest: ${texts.join(' / ').slice(0, 1000)}` }] });

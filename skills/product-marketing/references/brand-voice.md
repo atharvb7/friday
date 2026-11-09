@@ -89,7 +89,7 @@ When drafting as a specific person (a founder's posts, an exec's emails, a CEO's
 - Templates for message types they send often
 - Things they never say
 
-Refresh it from their recent writing every quarter or so, and fold in the edits they make to your drafts. Their edits are the most accurate voice data you'll get. In Friday, keep them in the business profile under a "Voice" section.
+Refresh it from their recent writing every quarter or so, and fold in the edits they make to your drafts. Their edits are the most accurate voice data you'll get. In Fridayy, keep them in the business profile under a "Voice" section.
 
 ## How other skills apply it
 

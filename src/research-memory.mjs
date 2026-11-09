@@ -1,5 +1,5 @@
 // Persistent research memory. A research task's agent writes findings.json (+
-// report.md) in its workspace; Friday ingests it into SQLite so "what did we
+// report.md) in its workspace; Fridayy ingests it into SQLite so "what did we
 // learn about X last month?" is answerable with sources, dates and confidence.
 //
 // findings.json: { topic, summary, confidence?, sources:[{url,title,date?,quote?}],

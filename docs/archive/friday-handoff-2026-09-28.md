@@ -1,15 +1,15 @@
-# Friday implementation handoff — 28 September 2026
+# Fridayy implementation handoff — 28 September 2026
 
-This document records the state at the user's request to stop. Implementation and subagent work were stopped. It distinguishes code that exists from code that is connected and usable. The project remains a large, multi-stage build; no claim is made that the full Friday system is finished.
+This document records the state at the user's request to stop. Implementation and subagent work were stopped. It distinguishes code that exists from code that is connected and usable. The project remains a large, multi-stage build; no claim is made that the full Fridayy system is finished.
 
 ## Product decisions carried forward
 
-- Friday runs primarily on the fixed HP Victus laptop. The phone is a remote client while the laptop is powered on and reachable. No separate server machine is required.
-- NVIDIA Nemotron 3 Ultra through the already configured DeepSeek Harness route is the intended primary reasoning path. Friday's DSH state must be separate from the user's personal DSH state.
+- Fridayy runs primarily on the fixed HP Victus laptop. The phone is a remote client while the laptop is powered on and reachable. No separate server machine is required.
+- NVIDIA Nemotron 3 Ultra through the already configured DeepSeek Harness route is the intended primary reasoning path. Fridayy's DSH state must be separate from the user's personal DSH state.
 - **No local model is included now.** No Qwen or other local model is downloaded, loaded, or routed. Outage behavior should be explicit until a later benchmark proves a local fallback fits.
-- Friday Core should own durable tasks, policy, approvals, memory, resource admission, health, and event records. DSH should be an execution adapter behind it.
+- Fridayy Core should own durable tasks, policy, approvals, memory, resource admission, health, and event records. DSH should be an execution adapter behind it.
 - Desktop/browser actions must use semantic APIs first and require exact-target verification for consequential effects.
-- RAM protection is a product requirement because this laptop has already experienced memory-pressure kills while Friday was not running.
+- RAM protection is a product requirement because this laptop has already experienced memory-pressure kills while Fridayy was not running.
 
 The revised implementation contract is [friday-v1-implementation-spec.md](friday-v1-implementation-spec.md). The earlier research and architecture are in [friday-laptop-only-master-design.md](friday-laptop-only-master-design.md). This handoff is the authoritative record of implementation progress at the stop point.
 
@@ -26,7 +26,7 @@ System logs confirm:
 
 An NVIDIA driver allocation failure also appeared on 25 September; that is a separate GPU-memory symptom and should not be conflated with the system-RAM incidents. During a current cgroup inspection, browser-related scopes together charged roughly 3 GiB, the ChatGPT/Codex desktop scope roughly 1.3 GiB, and a terminal scope roughly 0.9 GiB. Cgroup charges include more than unique process RSS. Full evidence and caveats are in [friday-ram-check-2026-09-28.md](friday-ram-check-2026-09-28.md).
 
-The live Friday core measured about **66 MiB RSS** while serving its status API. That measurement covers only the small core, not DSH, browser workers, voice, or computer control.
+The live Fridayy core measured about **66 MiB RSS** while serving its status API. That measurement covers only the small core, not DSH, browser workers, voice, or computer control.
 
 ### RAM strategy implemented in code, pending live integration
 
@@ -43,7 +43,7 @@ The live Friday core measured about **66 MiB RSS** while serving its status API.
 
 The governor also considers cgroup limits. Browser admission requires at least 5 GiB host availability and subagent admission at least 6 GiB. It allows one worker per class and always rejects the `local-model` class. Recovery requires 30 seconds above higher exit thresholds. Optional JSONL telemetry is capped and rotated. The governor's `pressureActions()` are **advice**, not automatic killing; the server and worker must still apply them safely.
 
-Before enabling DSH on this laptop, put the entire Friday service/worker tree into a dedicated systemd user cgroup with a measured `MemoryHigh` and `MemoryMax`, initially targeting under **2 GiB** for active Friday work. Test with normal Chrome and development tools open. Avoid relying on swap as model memory. If DSH/browser workloads exceed the budget, queue them, reduce browser concurrency, or postpone the task; do not raise the limit silently.
+Before enabling DSH on this laptop, put the entire Fridayy service/worker tree into a dedicated systemd user cgroup with a measured `MemoryHigh` and `MemoryMax`, initially targeting under **2 GiB** for active Fridayy work. Test with normal Chrome and development tools open. Avoid relying on swap as model memory. If DSH/browser workloads exceed the budget, queue them, reduce browser concurrency, or postpone the task; do not raise the limit silently.
 
 ## Code present today
 
@@ -78,31 +78,31 @@ The user requested GPT-6 Luna subagents. Three were used:
 
 1. **Memory agent:** finished `resources.mjs`, `resource-governor.mjs`, and four resource tests. Its work is present and passing.
 2. **Phone agent:** finished the base `public/` UI. A follow-up to add memory CRUD and task result/error display was interrupted at the user's stop request; no follow-up changes should be assumed.
-3. **DSH agent:** inspected the local DeepSeek Harness CLI and proposed a cancellable, isolated `dsh --profile headless` adapter. It was interrupted before writing any `dsh*` code. There is no DSH adapter file or active Friday DSH instance.
+3. **DSH agent:** inspected the local DeepSeek Harness CLI and proposed a cancellable, isolated `dsh --profile headless` adapter. It was interrupted before writing any `dsh*` code. There is no DSH adapter file or active Fridayy DSH instance.
 
-The DSH agent identified an important boundary: the default headless profile can expose tools. A phone-submitted instruction must not automatically inherit shell/browser/network privileges. The adapter should remain disabled unless a restricted profile or launcher is verified. It should use Friday-owned `DSH_HOME` and `DSH_AGENTS_HOME`, a scrubbed environment, time/output limits, cancellation, and separate credentials. Never copy personal DSH sessions or its whole home directory.
+The DSH agent identified an important boundary: the default headless profile can expose tools. A phone-submitted instruction must not automatically inherit shell/browser/network privileges. The adapter should remain disabled unless a restricted profile or launcher is verified. It should use Fridayy-owned `DSH_HOME` and `DSH_AGENTS_HOME`, a scrubbed environment, time/output limits, cancellation, and separate credentials. Never copy personal DSH sessions or its whole home directory.
 
 ## Known incomplete integration and issues
 
 These are concrete work items, not merely future ideas:
 
 1. **No live governor enforcement.** Wire `ResourceGovernor` into server status, admission, telemetry, and the worker. Decide which pressure modes cancel an active task, and keep effect outcomes inspectable when cancellation occurs.
-2. **No DSH execution.** Implement and test isolated Friday DSH configuration, model selection for Nemotron, restricted tools/sandbox, subprocess lifecycle, timeout, cancellation, failure mapping, and credential injection without logging secrets. The existing personal DSH Nemotron setup must remain isolated. The previously exposed NVIDIA key should be rotated before reuse.
+2. **No DSH execution.** Implement and test isolated Fridayy DSH configuration, model selection for Nemotron, restricted tools/sandbox, subprocess lifecycle, timeout, cancellation, failure mapping, and credential injection without logging secrets. The existing personal DSH Nemotron setup must remain isolated. The previously exposed NVIDIA key should be rotated before reuse.
 3. **No server/worker connection.** After the adapter is safe, construct `WorkerLoop` in the server, start it, make `/cancel` abort an active worker, and await worker shutdown before closing SQLite. Show real readiness in `/v1/status`.
 4. **Phone UI is not served.** Add fixed-path static serving for `/`, `/styles.css`, and `/app.js`, with appropriate content types, no-store for private responses, a restrictive Content Security Policy, and no directory traversal. End-to-end test token entry, status, task flow, and phone-size layout.
 5. **No remote phone access.** Only after app auth and UI tests, configure Tailscale Serve to proxy the loopback app privately. No Funnel/public internet endpoint. Add stronger re-authentication for approvals and a kill switch.
 6. **No effect sink.** The effect ledger is internal. File writes, messaging, GitHub, browser actions, purchases, deletion, and other external effects must use typed tools that verify targets and pass through the ledger and policy check. Do not expose a generic approval-to-arbitrary-command shortcut.
-7. **No browser/desktop automation.** Build a dedicated Friday Chromium profile, Playwright semantic browser driver, then AT-SPI and supported Wayland RemoteDesktop portal integration. GUI control must have a revocable control lease and pause for local user activity. Tests must cover lock/suspend, wrong recipient, changed UI, and crash after click.
+7. **No browser/desktop automation.** Build a dedicated Fridayy Chromium profile, Playwright semantic browser driver, then AT-SPI and supported Wayland RemoteDesktop portal integration. GUI control must have a revocable control lease and pause for local user activity. Tests must cover lock/suspend, wrong recipient, changed UI, and crash after click.
 8. **No voice, pet, physical device, AR/VR, or proactive automations.** These remain future phases after the core and computer-use reliability gates.
 9. **Small API hardening issues.** `/v1/status` counts at most the 100 tasks returned by `listTasks()` rather than a true database count. An overlong memory search currently falls into a generic 500 instead of 400. The API has no rate limiting or long-running authentication session model. These should be corrected before remote exposure.
-10. **No service installation or startup policy.** Friday is not installed as a systemd service. No laptop power, Tailscale, browser, or OS settings were changed. It is not currently running.
+10. **No service installation or startup policy.** Fridayy is not installed as a systemd service. No laptop power, Tailscale, browser, or OS settings were changed. It is not currently running.
 
 ## Recommended resume order
 
 The following sequence produces a useful, testable vertical slice while keeping RAM bounded:
 
 1. **Integrate governor and server.** Add periodic sampling, status exposure, pressure history, worker admission, and safe shutdown. Create a systemd user unit with an initial memory limit and verify cgroup readings in the running process. Test under ordinary Chrome/VS Code load and record high-water marks.
-2. **Complete the isolated DSH adapter.** Use a separate Friday home/workspace and a restricted, explicitly configured Nemotron profile. Validate normal reply, provider failure, timeout, cancellation, restart, and no leakage from personal DSH. Start with one task at a time and no outbound computer-use permissions.
+2. **Complete the isolated DSH adapter.** Use a separate Fridayy home/workspace and a restricted, explicitly configured Nemotron profile. Validate normal reply, provider failure, timeout, cancellation, restart, and no leakage from personal DSH. Start with one task at a time and no outbound computer-use permissions.
 3. **Connect worker and UI locally.** Serve the PWA, show queued/running/blocked/completed results, support retries only after explicit review of blocked work, and exercise one end-to-end read-only research task. Fix the API hardening issues above.
 4. **Add private phone access.** Test on the user's actual phone over Tailscale, including reconnect, authentication loss, laptop suspend, and task cancellation. Keep outbound actions disabled at this stage.
 5. **Implement typed safe capabilities.** First read-only file search, research with source records, and coding in isolated workspaces. Then dedicated browser profile and staged external effects with approval receipts.
@@ -110,8 +110,8 @@ The following sequence produces a useful, testable vertical slice while keeping 
 
 ### Minimum acceptance gates before broad autonomy
 
-- Friday-owned cgroup stays within the chosen cap while the laptop is used normally; sustained host pressure causes queued work to pause before `systemd-oomd` acts.
-- A task survives UI reload and Friday restart without an unreviewed duplicate effect.
+- Fridayy-owned cgroup stays within the chosen cap while the laptop is used normally; sustained host pressure causes queued work to pause before `systemd-oomd` acts.
+- A task survives UI reload and Fridayy restart without an unreviewed duplicate effect.
 - An ambiguous file, recipient, or account blocks the action.
 - External communications show exact destination and content immediately before a single-use approval.
 - An interruption after a possible send yields `effect_unknown` and inspection, never a blind resend.

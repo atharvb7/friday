@@ -1,7 +1,7 @@
 // Skills: folders with SKILL.md (frontmatter: name, description). Shipped skills
 // live in <repo>/skills, user-installed ones in <data>/skills. They are loaded
 // only when relevant: the model sees a one-line index, then calls skill_load.
-// The same folders are synced into Friday's DSH home so the background agent
+// The same folders are synced into Fridayy's DSH home so the background agent
 // sees them natively.
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';

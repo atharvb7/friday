@@ -1,4 +1,4 @@
-// Friday for WhatsApp Web: runs inside his own WhatsApp tab (no screenshots, no mouse/keyboard, works in a background tab).
+// Fridayy for WhatsApp Web: runs inside his own WhatsApp tab (no screenshots, no mouse/keyboard, works in a background tab).
 // It only answers commands from the laptop node (relayed by background.js): read the open chat, open a chat by name,
 // send text into the open chat. WhatsApp's DOM changes now and then, so every lookup has fallbacks.
 (() => {

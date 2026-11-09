@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Desktop helper for the Friday node (GNOME, Wayland or X11). One command per run, JSON args as argv[2] or on stdin ("-"), JSON on stdout.
+"""Desktop helper for the Fridayy node (GNOME, Wayland or X11). One command per run, JSON args as argv[2] or on stdin ("-"), JSON on stdout.
   screen                      -> desktop size in logical pixels + monitors (Mutter DisplayConfig; xrandr fallback)
   shot '{"maxWidth":1280}'    -> downscaled JPEG of the whole desktop, base64 (xdg-desktop-portal, non-interactive)
   clip_get                    -> clipboard text

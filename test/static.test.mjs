@@ -33,7 +33,7 @@ test('static: serves allow-listed files with CSP; blocks traversal, dotfiles, sy
 
 test('qr encoder: deterministic, right version/size for an otpauth link, finder patterns in the corners', async () => {
   const { encodeQr, qrSvg } = await import('../public/js/qr.js');
-  const uri = 'otpauth://totp/Friday:owner?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Friday';
+  const uri = 'otpauth://totp/Fridayy:owner?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Fridayy';
   const a = encodeQr(uri), b = encodeQr(uri);
   assert.deepEqual(a.modules, b.modules);
   assert.equal(a.size, a.version * 4 + 17);

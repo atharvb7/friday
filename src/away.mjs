@@ -1,6 +1,6 @@
-// Away days: while the owner is away (a trip, exams, a day off) Friday holds back what would ask for his
+// Away days: while the owner is away (a trip, exams, a day off) Fridayy holds back what would ask for his
 // attention or speak in his name on a schedule: the morning briefing, reminders-to-act nudges, prospecting runs
-// and outreach sending/follow-ups. Reminders he set still fire, alerts about Friday itself still come, and
+// and outreach sending/follow-ups. Reminders he set still fire, alerts about Fridayy itself still come, and
 // everything resumes on its own when the away window ends. Stored in settings 'away' as { from, until, note }.
 const DAY = 86_400_000;
 

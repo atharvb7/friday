@@ -1,7 +1,7 @@
-// src/jev.mjs — JEV by TypeSafe AI (System One classification model) for Friday.
+// src/jev.mjs — JEV by TypeSafe AI (System One classification model) for Fridayy.
 // JEV returns typed decisions, not text: choice (up to 255 labels), score
 // (ordered scale), noul (yes/no probability), each with calibrated confidence,
-// in ~70-500ms at ~$0.001/decision. Friday uses it as the fast deterministic
+// in ~70-500ms at ~$0.001/decision. Fridayy uses it as the fast deterministic
 // router: intent classification, risk scoring, approval gating — WITHOUT an LLM
 // round-trip. JEV output is untrusted routing advice; the policy layer (effects,
 // governor, leases) still owns authority. Never grants permission by itself.
@@ -66,7 +66,7 @@ function questionsFor(text) {
   void text;
   return {
     intent: {
-      type: 'choice', instructions: 'What does the user want Friday to do?',
+      type: 'choice', instructions: 'What does the user want Fridayy to do?',
       criteria: { ...INTENT_LABELS },
     },
     risk: {

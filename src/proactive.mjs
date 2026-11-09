@@ -1,7 +1,7 @@
-// Proactive Friday: speaks up only when something deserves attention, with hard
+// Proactive Fridayy: speaks up only when something deserves attention, with hard
 // anti-annoyance limits: quiet hours, a daily cap, and per-topic dedupe.
 // Reminders the user asked for and task results are NOT subject to these limits
-// (they asked for them); this module covers what Friday volunteers.
+// (they asked for them); this module covers what Fridayy volunteers.
 import { statfsSync } from 'node:fs';
 import { inQuietHours, partsInTz, systemTimezone } from './time.mjs';
 import { buildSystemPrompt, normalizePersonality } from './personality.mjs';

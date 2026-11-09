@@ -101,7 +101,7 @@ export function safeFetch(urlStr, { allowPrivate = false, maxBytes = MAX_BYTES, 
       if (opts?.all) return cb(null, list);
       cb(null, list[0].address, list[0].family);
     });
-    req = mod.request(url, { method: 'GET', lookup, timeout: timeoutMs, headers: { 'User-Agent': 'Friday/1.0 (+personal agent)', Accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5', ...headers } }, (res) => {
+    req = mod.request(url, { method: 'GET', lookup, timeout: timeoutMs, headers: { 'User-Agent': 'Fridayy/1.0 (+personal agent)', Accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5', ...headers } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
         res.resume();
         if (redirects >= MAX_REDIRECTS) return reject(new Error('too_many_redirects'));

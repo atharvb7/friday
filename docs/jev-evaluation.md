@@ -1,4 +1,4 @@
-# JEV evaluation for Friday
+# JEV evaluation for Fridayy
 
 **Status:** evaluation only. Nothing installed, downloaded, or benchmarked.
 **Ground rules:** laptop is fixed (i5-13420H, 14 GiB RAM + 4 GiB swap, RTX 3050
@@ -9,13 +9,13 @@ laptop, what safety gating it needs, and a verdict of **adopt / scaffold / defer
 
 ## Candidate 1 — JEV as a JS voice-activity library (wake/VAD/utterance chunking)
 
-**What it would do in Friday:** small JavaScript helper that turns raw microphone
+**What it would do in Fridayy:** small JavaScript helper that turns raw microphone
 audio into speech segments: voice-activity detection, utterance boundaries, and
 "user started / stopped talking" events. It would *not* transcribe (faster-whisper
 keeps that job) — it just decides *when* to listen, when to cut an utterance, and
 when to barge in (duck/cancel TTS). Think "Silero VAD semantics, JS-callable."
 
-**Where it plugs in:** Phase 4 voice pipeline. Two seams: (a) the Friday PWA for
+**Where it plugs in:** Phase 4 voice pipeline. Two seams: (a) the Fridayy PWA for
 phone push-to-talk + client-side VAD pre-trim so only speech frames hit the
 network; (b) the laptop control plane as the event source driving pet states
 `sleeping -> listening -> thinking` and TTS barge-in cancellation.
@@ -39,7 +39,7 @@ as a swappable backend behind that seam. No dependency until Phase 4.
 
 ## Candidate 2 — JEV as a local LLM runtime (on-device small-model server)
 
-**What it would do in Friday:** serve the local-fallback model (the Qwen3.5-4B Q4
+**What it would do in Fridayy:** serve the local-fallback model (the Qwen3.5-4B Q4
 class role in the design doc): intent classification, deterministic-command
 handling, and reduced-autonomy chat when the Nemotron endpoint is unreachable.
 
@@ -70,7 +70,7 @@ tool-call compatibility in a measured spike — not on branding. Revisit with nu
 
 ## Candidate 3 — JEV as ESP32/hardware peripheral (far-field mic / presence / pet beacon)
 
-**What it would do in Friday:** a cheap ESP32 node as Friday's ears-on-the-shelf:
+**What it would do in Fridayy:** a cheap ESP32 node as Fridayy's ears-on-the-shelf:
 far-field push-to-talk button, presence detection (room occupied?), and optionally
 a physical pet-status LED. It would stream Opus audio or just VAD-gated clips to
 the laptop over the tailnet.
@@ -99,7 +99,7 @@ Revisit only after the dashboard pet and voice pipeline prove themselves.
 
 ## Candidate 4 — JEV as an npm package dependency (third-party skill/tool library)
 
-**What it would do in Friday:** prebuilt tools/skills (file search, web helpers,
+**What it would do in Fridayy:** prebuilt tools/skills (file search, web helpers,
 formatters) consumed as a dependency by the DeepSeek Harness worker or control
 plane instead of hand-rolled plugins.
 
@@ -119,7 +119,7 @@ process visibility need explicit rules), egress minimization, and revocation tha
 actually unloads the code path. Anything with install/postinstall scripts or
 network self-update is disqualified.
 
-**Verdict: DEFER (default-deny).** Build the five or six tools Friday actually needs
+**Verdict: DEFER (default-deny).** Build the five or six tools Fridayy actually needs
 in-repo first; vendor a third-party package only to retire a proven in-house tool
 with tests showing superiority. Never `npm install` a capability.
 

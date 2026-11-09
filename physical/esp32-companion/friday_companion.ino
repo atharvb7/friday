@@ -1,14 +1,14 @@
-// Friday desk companion — ESP32-S3 firmware (Arduino-ESP32 core 3.x).
-// STATUS: written against Friday's tested server protocol, but NOT compiled or run on hardware yet
+// Fridayy desk companion — ESP32-S3 firmware (Arduino-ESP32 core 3.x).
+// STATUS: written against Fridayy's tested server protocol, but NOT compiled or run on hardware yet
 // (no ESP32 toolchain/board was available while building it). Expect to debug pin maps and I2S on the bench.
 //
 // Hardware (see README.md): SSD1306 128x64 OLED (I2C), 2x micro servos (pan/tilt), push-to-talk button,
 // I2S MEMS mic (INMP441), I2S amp (MAX98357A), LD2410/PIR presence sensor, status LED.
 //
-// Protocol (all HTTPS to your Friday server, Authorization: Bearer <device token, scopes read+chat>):
+// Protocol (all HTTPS to your Fridayy server, Authorization: Bearer <device token, scopes read+chat>):
 //   GET  /v1/companion/stream   SSE: event "state" data {"state":"researching","detail":..,"unread":n,...}
 //   POST /v1/companion/events   {"type":"presence"|"absence"|"button"}
-//   POST /v1/voice/ask          body: audio/wav (16 kHz mono 16-bit) -> audio/wav reply (X-Friday-* headers = texts)
+//   POST /v1/voice/ask          body: audio/wav (16 kHz mono 16-bit) -> audio/wav reply (X-Fridayy-* headers = texts)
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>

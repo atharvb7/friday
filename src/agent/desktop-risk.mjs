@@ -1,4 +1,4 @@
-// Risk of a shell command or desktop click, decided by Friday (never by the model).
+// Risk of a shell command or desktop click, decided by Fridayy (never by the model).
 // The owner wants full access to his laptop WITHOUT being asked for routine work (open apps, read the screen, type,
 // click, run commands, read/write files). Approval stays only for what is irreversible or reaches other people/money:
 //   deletion   permanent deletes (rm, find -delete, git clean/reset --hard, docker rm), uninstalling software

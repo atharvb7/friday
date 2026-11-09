@@ -20,7 +20,7 @@ test('node address policy matches the server policy on every vector and blocks I
   assert.equal(await hostIsPrivate('does-not-exist.invalid'), true, 'unresolvable names are refused');
 });
 
-test('file policy: Friday data, token-looking and sqlite files are blocked even inside allowed dirs', () => {
+test('file policy: Fridayy data, token-looking and sqlite files are blocked even inside allowed dirs', () => {
   const d = mkdtempSync(join(tmpdir(), 'fn-pol-'));
   try {
     const docs = join(d, 'Documents'); mkdirSync(join(docs, 'friday', 'data'), { recursive: true }); mkdirSync(join(docs, 'notes'));
@@ -29,7 +29,7 @@ test('file policy: Friday data, token-looking and sqlite files are blocked even 
     assert.ok(checkFile(join(docs, 'notes', 'cv.pdf'), [docs]));
     assert.throws(() => checkFile(join(docs, 'friday', 'data', 'access-token'), [docs]), /sensitive_file_blocked/);
     assert.throws(() => checkFile(join(docs, 'friday', 'data', 'friday.sqlite'), [docs]), /sensitive_file_blocked/);
-    assert.throws(() => checkFile(join(docs, 'friday', 'data', 'report.pdf'), [docs]), /inside_friday_data_blocked/, 'siblings of Friday data are blocked too');
+    assert.throws(() => checkFile(join(docs, 'friday', 'data', 'report.pdf'), [docs]), /inside_friday_data_blocked/, 'siblings of Fridayy data are blocked too');
     assert.throws(() => checkFile(join(docs, 'notes', 'wallet.dat'), [docs]), /sensitive_file_blocked/);
   } finally { rmSync(d, { recursive: true, force: true }); }
 });

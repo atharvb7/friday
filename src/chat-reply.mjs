@@ -1,5 +1,5 @@
 // src/chat-reply.mjs — local (no-model) chat answers for safe intents.
-// Runs entirely on Friday's own stores: memory CRUD, confined file tools,
+// Runs entirely on Fridayy's own stores: memory CRUD, confined file tools,
 // conversation context. Anything consequential or unclear becomes words, never
 // an action: the reply explains the approval path instead of acting.
 const REMEMBER_RE = /^(please\s+)?remember(\s+that)?\s+/i;
@@ -72,7 +72,7 @@ export async function answerLocal(route, text, { memory = null, tools = null } =
     }
     if (/\b(who are you|what can you do)\b/.test(low)) {
       return {
-        text: 'I’m Friday, your laptop companion. Right now I can chat, remember things for you, find and read files in my workspace, track tasks, and take reminders. My full reasoning brain connects later — until then, talk to me like a friend.',
+        text: 'I’m Fridayy, your laptop companion. Right now I can chat, remember things for you, find and read files in my workspace, track tasks, and take reminders. My full reasoning brain connects later — until then, talk to me like a friend.',
         acted: false,
       };
     }

@@ -212,18 +212,18 @@ const handler = async (req, res) => {
     let b = {}; try { b = await bodyReader(req)(); } catch { return send(res, 400, { error: 'bad_request' }); }
     const who = ctx.auth.authenticate(String(b.token ?? ''));
     if (!who || who.kind === 'session' || (who.kind === 'device' && who.scopes.includes('node'))) { publicFail(clientIp); return send(res, 401, { error: 'unauthorized' }); }
-    if (!ctx.auth.totpActive()) return send(res, 403, { error: 'totp_not_set_up', message: 'Set up the authenticator from your private (Tailscale) Friday first — internet sign-in needs it.' });
+    if (!ctx.auth.totpActive()) return send(res, 403, { error: 'totp_not_set_up', message: 'Set up the authenticator from your private (Tailscale) Fridayy first — internet sign-in needs it.' });
     if (!ctx.auth.checkTotp(String(b.code ?? ''))) { publicFail(clientIp); return send(res, 401, { error: 'bad_code' }); }
     const s = ctx.auth.createSession(who, { ip: clientIp, userAgent: req.headers['user-agent'], days: b.remember === false ? 1 : 30 });
     try { ctx.audit.append('auth', 'session.created', { kind: who.kind, ip: clientIp }); } catch { /* best effort */ }
     return send(res, 201, { token: s.token, expires_at: s.expires_at });
   }
   if (req.method === 'GET' && url.pathname === '/oauth/google/callback') { // browser redirect from Google: protected by the single-use state
-    const page = (title, msg) => { const b = `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width"><title>${title}</title><body style="font-family:system-ui;max-width:520px;margin:15vh auto;padding:0 16px;text-align:center"><h2>${title}</h2><p>${msg}</p><p><a href="/">Back to Friday</a></p>`; res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'", 'Referrer-Policy': 'no-referrer' }); res.end(b); };
+    const page = (title, msg) => { const b = `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width"><title>${title}</title><body style="font-family:system-ui;max-width:520px;margin:15vh auto;padding:0 16px;text-align:center"><h2>${title}</h2><p>${msg}</p><p><a href="/">Back to Fridayy</a></p>`; res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'", 'Referrer-Policy': 'no-referrer' }); res.end(b); };
     const esc = (s) => String(s).replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
     const g = [ctx.googleOutreach, ctx.google].find((x) => x?.ownsState(url.searchParams.get('state'))) ?? ctx.google;
     g.callback({ code: url.searchParams.get('code'), state: url.searchParams.get('state'), error: url.searchParams.get('error') })
-      .then((r) => { ctx.bus.publish('google.connected', { account: g.account }); page('Gmail connected ✅', `Friday can now use ${esc(r.email ?? 'your Gmail')}${g.account === 'outreach' ? ' for outreach' : ''}. You can close this tab.`); })
+      .then((r) => { ctx.bus.publish('google.connected', { account: g.account }); page('Gmail connected ✅', `Fridayy can now use ${esc(r.email ?? 'your Gmail')}${g.account === 'outreach' ? ' for outreach' : ''}. You can close this tab.`); })
       .catch((e) => page('Gmail not connected', esc(e.message)));
     return;
   }
@@ -277,10 +277,10 @@ const server = createServer(guarded);
 const publicServer = publicPort ? createServer(guarded) : null;
 
 
-server.listen(port, host, () => console.log(`Friday core listening on http://${host}:${port}`));
-publicServer?.listen(publicPort, '0.0.0.0', () => console.log(`Friday public listener (Cloudflare Tunnel) on :${publicPort}`));
+server.listen(port, host, () => console.log(`Fridayy core listening on http://${host}:${port}`));
+publicServer?.listen(publicPort, '0.0.0.0', () => console.log(`Fridayy public listener (Cloudflare Tunnel) on :${publicPort}`));
 server.on('error', (error) => {
-  console.error(`Friday core failed to listen: ${error.message}`);
+  console.error(`Fridayy core failed to listen: ${error.message}`);
   try { ctx.stop(); } catch {}
   process.exitCode = 1;
 });

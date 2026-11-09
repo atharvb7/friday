@@ -1,6 +1,6 @@
 // Other people's accounts (the owner is not in here). Anyone can ask for an account on the public site — with Google
 // or email + password — and it stays 'pending' until the owner approves it from the Inbox. Approved members get
-// their own, separate chats with Friday and NO access to the owner's laptop, mail, Instagram, memory, tasks or
+// their own, separate chats with Fridayy and NO access to the owner's laptop, mail, Instagram, memory, tasks or
 // settings. (Role-based permissions come later; for now there is a single 'member' role.)
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 
@@ -33,7 +33,7 @@ export class Users {
 
   #request(u, via) {
     if (!this.approvals) return;
-    const a = this.approvals.request({ category: 'system', risk: 'consequential', tool: 'user_approve', summary: `New Friday account request: ${u.name} <${u.email}> (via ${via})`, payload: { userId: u.id, email: u.email } });
+    const a = this.approvals.request({ category: 'system', risk: 'consequential', tool: 'user_approve', summary: `New Fridayy account request: ${u.name} <${u.email}> (via ${via})`, payload: { userId: u.id, email: u.email } });
     this.db.prepare('UPDATE users SET approval_id=? WHERE id=?').run(a.id, u.id);
   }
   #pendingCount() { return this.db.prepare("SELECT COUNT(*) n FROM users WHERE status='pending'").get().n; }

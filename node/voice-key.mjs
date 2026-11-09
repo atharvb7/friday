@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Friday push-to-talk for the laptop. Bound to a GNOME custom shortcut (node/voice-key-install.sh), so it works whatever
+// Fridayy push-to-talk for the laptop. Bound to a GNOME custom shortcut (node/voice-key-install.sh), so it works whatever
 // app is focused:
 //   press      -> beep, listen (stops on ~2.2 s of silence, at 30 s, or when you press again) -> beep
 //              -> transcribe (laptop Whisper if installed, else the server) -> screenshot only if the question is about
-//                 the screen -> Friday answers (server brain, 'voice' channel) -> spoken here (laptop voice if installed,
+//                 the screen -> Fridayy answers (server brain, 'voice' channel) -> spoken here (laptop voice if installed,
 //                 else the server's voice) + a notification with the transcript and the answer.
 //   press while she thinks = cancel; press while she talks = stop talking and listen again.
 // One resident instance: a second launch finds the lock and signals it (SIGUSR1 = press, SIGUSR2 = press + screenshot),
@@ -56,7 +56,7 @@ let session = null; const early = [];
 process.on('SIGUSR1', () => (session ? session.press() : early.push({})));
 process.on('SIGUSR2', () => (session ? session.press({ screen: 'always' }) : early.push({ screen: 'always' })));
 const isOurs = (pid) => { try { process.kill(pid, 0); return /voice-key\.mjs/.test(readFileSync(`/proc/${pid}/cmdline`, 'utf8')); } catch { return false; } };
-const SAY = flag('say') ? (opt('say') || 'Hi, I am Friday.') : null; // a voice check never takes the lock (or signals the resident instance)
+const SAY = flag('say') ? (opt('say') || 'Hi, I am Fridayy.') : null; // a voice check never takes the lock (or signals the resident instance)
 const lock = SAY !== null ? { owner: true } : acquireLock(LOCK, { isOurs });
 if (!lock.owner) {
   if (lock.pid) { try { process.kill(lock.pid, flag('screen') ? 'SIGUSR2' : 'SIGUSR1'); process.exit(0); } catch { /* it just exited */ } }
@@ -89,7 +89,7 @@ const cues = {};
 const cue = (kind) => (cfg.cues ? play(cues[kind] ??= cueWav(kind, { volume: cfg.volume })).catch(() => {}) : Promise.resolve());
 
 async function notify({ title, body, transient = true, replace = null }) {
-  const a = ['-a', 'Friday', '-p', '-i', 'audio-input-microphone', ...(transient ? ['-e'] : []), ...(replace ? ['-r', String(replace)] : []), title, body ?? ''];
+  const a = ['-a', 'Fridayy', '-p', '-i', 'audio-input-microphone', ...(transient ? ['-e'] : []), ...(replace ? ['-r', String(replace)] : []), title, body ?? ''];
   return Number(String(await run('notify-send', a, { timeoutMs: 5000 })).trim()) || null;
 }
 const closeNotification = (id) => run('gdbus', ['call', '--session', '--dest', 'org.freedesktop.Notifications', '--object-path', '/org/freedesktop/Notifications', '--method', 'org.freedesktop.Notifications.CloseNotification', String(id)], { timeoutMs: 3000 }).then(() => new Promise((r) => setTimeout(r, 300))).catch(() => {});
@@ -153,7 +153,7 @@ async function api(path, { body, type = 'application/json', signal, timeoutMs = 
 
 // Whisper leans towards words in this prompt. Short spoken commands carry little context ("play Starboy" was heard as
 // "Police Starboy" and "Plishtarva", 28 Oct), so it lists the command verbs and app names he actually uses.
-const sttPrompt = 'Friday, play Starboy on Brave. Pause the music. Open YouTube, Spotify, WhatsApp, VS Code on my laptop. What is on my screen? Remind me tomorrow. Atharv, yaar, accha, haan, bro.';
+const sttPrompt = 'Fridayy, play Starboy on Brave. Pause the music. Open YouTube, Spotify, WhatsApp, VS Code on my laptop. What is on my screen? Remind me tomorrow. Atharv, yaar, accha, haan, bro.';
 const pyWorker = () => (worker ??= new PythonWorker({ python: py, script: ENGINE, idleMs: Math.max(60_000, cfg.lingerMinutes * 60_000), timeoutMs: 120_000, env: { FRIDAY_VOICE_HOME: cfg.localVoiceHome, FRIDAY_STT_MODEL: cfg.sttModel ?? 'small', FRIDAY_VOICE_THREADS: String(cfg.sttThreads ?? 6), ...(cfg.ttsThreads ? { FRIDAY_TTS_THREADS: String(cfg.ttsThreads) } : {}) } }));
 
 async function transcribe(wav, { signal }) {

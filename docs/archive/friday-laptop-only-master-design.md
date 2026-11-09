@@ -1,4 +1,4 @@
-# Friday: laptop-only master feasibility and system design
+# Fridayy: laptop-only master feasibility and system design
 
 **Research date:** 20 September 2026  
 **Decision baseline:** one fixed HP Victus laptop; no separate server machine; Nemotron 3 Ultra through an API as the preferred reasoning model; DeepSeek Harness as the agent runtime; private phone access while the laptop is online; voice, memory, browser work, native desktop control, coding, research, and a visible AI-pet experience.  
@@ -6,7 +6,7 @@
 
 ## The direct answer
 
-**Yes, Friday is doable on this laptop.** It can become a genuinely impressive personal computer agent: you can speak or type from your phone, have the laptop find files, use websites, write code, operate supported desktop applications, ask for approval at the last responsible moment, complete the action, and return a verifiable receipt. It can have persistent memory, a personality, a desktop pet, live task progress, interruptions, scheduled work, and a local reduced-capability mode when the main API fails.
+**Yes, Fridayy is doable on this laptop.** It can become a genuinely impressive personal computer agent: you can speak or type from your phone, have the laptop find files, use websites, write code, operate supported desktop applications, ask for approval at the last responsible moment, complete the action, and return a verifiable receipt. It can have persistent memory, a personality, a desktop pet, live task progress, interruptions, scheduled work, and a local reduced-capability mode when the main API fails.
 
 The honest qualification is that there are three different meanings of “doable”:
 
@@ -18,13 +18,13 @@ This is not a weekend project and should not be designed as a chat UI with a gia
 
 ## What “all on the laptop” means
 
-There will be no separate server computer. The Victus is Friday’s body and home:
+There will be no separate server computer. The Victus is Fridayy’s body and home:
 
 - the control plane, memory, task database, policy engine, browser profiles, voice pipeline, desktop actuators, logs, pet state, and phone web app all run locally;
 - Nemotron requests leave the laptop only when remote reasoning is needed;
 - the phone connects privately to the laptop through Tailscale while the laptop is powered on and online;
 - local fallback inference runs on this laptop;
-- Friday continues deterministic or local work if the Nemotron endpoint is unavailable, within a reduced permission envelope.
+- Fridayy continues deterministic or local work if the Nemotron endpoint is unavailable, within a reduced permission envelope.
 
 The laptop will still run local background services. “No server” means no separate server machine and no public cloud backend owned by us, not “no local process listening for the phone.”
 
@@ -38,14 +38,14 @@ The current machine was inspected read-only. The important facts are:
 | RAM | 14 GiB visible; 4 GiB swap | Sufficient, but concurrency must be controlled. Chrome, a local VLM, speech, Docker, and development tools cannot all expand without limits. |
 | GPU | RTX 3050 Laptop, 6 GiB VRAM | Suitable for one 3–4B quantized local model or burst speech/vision work, not Nemotron Ultra. Models must be loaded and unloaded deliberately. |
 | Storage | 468 GiB root filesystem; about 247 GiB free | Enough for the product, browser profiles, several small models, indexes, and bounded logs. |
-| OS/session | Ubuntu 26.04 LTS; GNOME Shell 50.1; Wayland | Modern and capable, but Wayland deliberately restricts arbitrary global input injection and overlay positioning. Friday must use supported portals and semantic interfaces. |
+| OS/session | Ubuntu 26.04 LTS; GNOME Shell 50.1; Wayland | Modern and capable, but Wayland deliberately restricts arbitrary global input injection and overlay positioning. Fridayy must use supported portals and semantic interfaces. |
 | Tailscale | 1.102.2, connected | The private phone route already exists. No public port or Tailscale Funnel is needed. |
 | Remote-control plumbing | XDG RemoteDesktop portal v2; device mask `7` | This portal advertises pointer, keyboard, and touchscreen injection. It supports persistent authorization using rotating restore tokens. |
-| GNOME Remote Desktop | Installed, currently disabled/inactive and view-only | Can later become a human emergency-control route over Tailscale, but is not Friday’s primary actuator. |
+| GNOME Remote Desktop | Installed, currently disabled/inactive and view-only | Can later become a human emergency-control route over Tailscale, but is not Fridayy’s primary actuator. |
 | Accessibility | AT-SPI packages present; toolkit accessibility currently disabled | Semantic native-app inspection is possible after deliberate enablement and per-app testing. |
 | Power while plugged in | AC inactivity action is currently `nothing` | Helpful for unattended use; lid, thermal, lock, and reboot behavior still need tests. |
 | Runtime | Node 22.22, Python 3.14.4, Docker 29 | DeepSeek Harness can run in the Node ecosystem. ML sidecars should use a pinned compatible Python environment rather than the system Python. |
-| Existing exposure | Docker PostgreSQL listens on `0.0.0.0:55432` and `[::]:55432` | Unrelated to Friday, but should be reviewed before a powerful remote agent is introduced. |
+| Existing exposure | Docker PostgreSQL listens on `0.0.0.0:55432` and `[::]:55432` | Unrelated to Fridayy, but should be reviewed before a powerful remote agent is introduced. |
 | Disk security | Root appears to be unencrypted ext4 | A stolen laptop could expose memories, cookies, and keys. Secrets need strong local protection; full-disk encryption is a serious future OS-security decision, not a hardware change. |
 
 The hardware is fixed, so the design solves its limits in software: lazy model loading, bounded contexts, one heavy GPU workload at a time, browser tab quotas, log retention, and a resource broker.
@@ -54,10 +54,10 @@ The hardware is fixed, so the design solves its limits in software: lazy model l
 
 ```mermaid
 flowchart TB
-    U[You: laptop or phone] -->|text / push-to-talk / approvals| PWA[Friday PWA]
+    U[You: laptop or phone] -->|text / push-to-talk / approvals| PWA[Fridayy PWA]
     MIC[Laptop mic + wake word] --> VOICE[Local VAD / STT / TTS]
     VOICE --> CORE
-    PWA -->|Tailscale Serve + HTTPS| CORE[Friday Control Plane]
+    PWA -->|Tailscale Serve + HTTPS| CORE[Fridayy Control Plane]
 
     CORE --> AUTH[Identity + capability policy]
     CORE --> TASKS[Durable task graph + effect ledger]
@@ -87,7 +87,7 @@ flowchart TB
     RECEIPT --> PWA
 ```
 
-### 1. Friday Control Plane
+### 1. Fridayy Control Plane
 
 This is the real product core, written in TypeScript so it lives in the same ecosystem as DeepSeek Harness. It owns:
 
@@ -104,7 +104,7 @@ This is the real product core, written in TypeScript so it lives in the same eco
 
 The control plane should start as a user-level `systemd` service. SQLite in WAL mode is sufficient for one person and one laptop. Use ordinary relational tables plus full-text search first; add a vector index only where evaluation proves it improves retrieval.
 
-### 2. DeepSeek Harness as a worker, not the owner of Friday
+### 2. DeepSeek Harness as a worker, not the owner of Fridayy
 
 DeepSeek Harness is a good fit because its architecture makes model adapters, tools, sessions, and execution capabilities replaceable plugins. It also supports custom OpenAI-compatible providers, so NVIDIA’s endpoint can be configured as a route. However, its repository still labels the product a **developer preview** and warns of compatibility-breaking changes.
 
@@ -115,7 +115,7 @@ Current DeepSeek Harness is more durable than a toy harness:
 - reminders can survive restarts;
 - tools, model adapters, and sandboxes are capability seams.
 
-But it is not Friday’s complete operating system:
+But it is not Fridayy’s complete operating system:
 
 - its local background job registry is process-local;
 - PTY sessions and scrollback are process-local;
@@ -123,7 +123,7 @@ But it is not Friday’s complete operating system:
 - its sandbox policy governs filesystem effects, while network and process visibility are outside that vocabulary;
 - its own safety notice says it is experimental, unaudited, and must not be the sole security boundary.
 
-Therefore Friday should integrate DSH behind an adapter. DSH runs agent turns and plugins; Friday owns durable work, phone delivery, policy, resource arbitration, and stable product schemas. If DSH changes, only the adapter and plugins change.
+Therefore Fridayy should integrate DSH behind an adapter. DSH runs agent turns and plugins; Fridayy owns durable work, phone delivery, policy, resource arbitration, and stable product schemas. If DSH changes, only the adapter and plugins change.
 
 ### 3. Model routing
 
@@ -131,7 +131,7 @@ Therefore Friday should integrate DSH behind an adapter. DSH runs agent turns an
 
 NVIDIA documents Nemotron 3 Ultra as a 550B-total, 55B-active text model with up to a 1M-token context and an OpenAI-compatible Chat Completions endpoint. Its minimum self-hosting configurations start at multiple data-center GPUs, so API use is the only sensible route for this laptop.
 
-It is text-only. A screenshot cannot simply be sent to Ultra. Friday must turn the current computer state into structured text using DOM/accessibility data or route selected screenshots to a multimodal model.
+It is text-only. A screenshot cannot simply be sent to Ultra. Fridayy must turn the current computer state into structured text using DOM/accessibility data or route selected screenshots to a multimodal model.
 
 The free hosted endpoint must not be treated as permanent infrastructure. NVIDIA’s API Trial Terms describe it as limited trial access, prohibit production use under the trial, allow usage limits, and allow the service to end. The provider abstraction therefore needs health checks, circuit breaking, request timeouts, model aliases, and an easy future switch to a paid/authorized Nemotron endpoint or another compatible provider. Nemotron can remain the preferred brain without becoming a single point of product failure.
 
@@ -165,7 +165,7 @@ On this hardware, start with Qwen3.5-4B Q4_K_M, text-only at first, an 8K–16K 
 
 ### 4. The desktop control ladder
 
-Friday should never begin a task by guessing screen coordinates. Every actuator declares a reliability level, required capability, and verification method.
+Fridayy should never begin a task by guessing screen coordinates. Every actuator declares a reliability level, required capability, and verification method.
 
 1. **Official API or application protocol.** Best for structured services when available and authorized.
 2. **Direct files, database, CLI, or application documents.** Use the filesystem to find `xyz.pdf`; do not click through Files just to locate it.
@@ -177,21 +177,21 @@ Friday should never begin a task by guessing screen coordinates. Every actuator 
 
 The installed XDG portal is a major positive finding. The documented interface can combine a PipeWire screen stream with pointer/keyboard/touch input. Version 2 supports permission persistence until revoked through rotating restore tokens. This gives us a supported Wayland route instead of insecure X11 hacks. A one-time user grant and careful restart/lock testing are still required.
 
-GNOME Remote Desktop should be configured later as an emergency human access path, exposed only through Tailscale. If Friday becomes confused, the phone can open an RDP client and let you see/control the real desktop. It is a rescue tool, not the autonomous implementation.
+GNOME Remote Desktop should be configured later as an emergency human access path, exposed only through Tailscale. If Fridayy becomes confused, the phone can open an RDP client and let you see/control the real desktop. It is a rescue tool, not the autonomous implementation.
 
 ### 5. Browser ownership
 
-Friday should have a dedicated Chromium profile, visibly labeled **Friday**, with only the sites and accounts you deliberately authorize. Log in to WhatsApp Web and other sites once inside that profile.
+Fridayy should have a dedicated Chromium profile, visibly labeled **Fridayy**, with only the sites and accounts you deliberately authorize. Log in to WhatsApp Web and other sites once inside that profile.
 
 This is better than attaching to your everyday Chrome because:
 
-- it prevents Friday from inheriting every personal cookie and open tab;
+- it prevents Fridayy from inheriting every personal cookie and open tab;
 - the browser launch flags and profile lifecycle are deterministic;
 - crashes and site state are reproducible;
 - account revocation is simple;
 - the automation boundary can be killed without touching normal browsing.
 
-Playwright can attach to an existing Chromium over CDP, but its documentation calls that route lower fidelity and warns that functionality can break when the browser was not launched with Playwright’s expected arguments. If access to an existing profile is essential, launch that specific profile through Friday with the debugging endpoint bound only to loopback—never expose the debugging port on LAN or Tailscale.
+Playwright can attach to an existing Chromium over CDP, but its documentation calls that route lower fidelity and warns that functionality can break when the browser was not launched with Playwright’s expected arguments. If access to an existing profile is essential, launch that specific profile through Fridayy with the debugging endpoint bound only to loopback—never expose the debugging port on LAN or Tailscale.
 
 Browser authentication-state files contain impersonation-grade cookies and headers. They must be owner-only, excluded from source control and backups unless encrypted, and never sent to a model.
 
@@ -208,7 +208,7 @@ The first phone client should be an installable responsive PWA, not a separate A
 - optional low-frame-rate screen preview only while a desktop task is active;
 - reconnect without losing the task because state lives in SQLite, not the WebSocket.
 
-The local web service listens only on `127.0.0.1`. Tailscale Serve proxies it to a private HTTPS name inside the tailnet. Tailscale’s own documentation recommends loopback binding when trusting forwarded identity/capability headers, because direct callers could otherwise spoof them. Use a deny-by-default Tailscale grant so only your phone identity/device can reach Friday, plus an application-level passkey or re-authentication for consequential approvals. Do not use Funnel.
+The local web service listens only on `127.0.0.1`. Tailscale Serve proxies it to a private HTTPS name inside the tailnet. Tailscale’s own documentation recommends loopback binding when trusting forwarded identity/capability headers, because direct callers could otherwise spoof them. Use a deny-by-default Tailscale grant so only your phone identity/device can reach Fridayy, plus an application-level passkey or re-authentication for consequential approvals. Do not use Funnel.
 
 The laptop must be powered, online, and not suspended. Headless browser, files, shell, and coding work can continue while the screen is locked. Tasks that need to see or manipulate the logged-in Wayland desktop should be considered unavailable or degraded while the session is locked until testing proves a specific safe path.
 
@@ -221,7 +221,7 @@ Recommended flow:
 1. a lightweight local wake-word detector or phone push-to-talk starts the interaction;
 2. local VAD detects speech boundaries;
 3. faster-whisper streams partial transcription;
-4. Friday immediately animates/listens and can acknowledge before the reasoning model finishes;
+4. Fridayy immediately animates/listens and can acknowledge before the reasoning model finishes;
 5. short local TTS chunks begin as soon as a stable clause is available;
 6. new speech interrupts TTS and cancels or steers the current response—barge-in is essential;
 7. consequential instructions are repeated visually and require an explicit approval action, not only a possibly misheard “yes.”
@@ -230,7 +230,7 @@ Recommended flow:
 
 ### 8. Memory
 
-“Persistent memory” should be several typed stores, not a vector database containing everything Friday has ever seen:
+“Persistent memory” should be several typed stores, not a vector database containing everything Fridayy has ever seen:
 
 - **working memory:** current task variables and open questions;
 - **episodic memory:** timestamped task summaries and outcomes;
@@ -246,7 +246,7 @@ Memories need provenance, expiry/retention, sensitivity labels, edit/delete cont
 
 Suppose you are away and say from your phone:
 
-> Friday, send `xyz.pdf` from Downloads to Rohan on WhatsApp.
+> Fridayy, send `xyz.pdf` from Downloads to Rohan on WhatsApp.
 
 A trustworthy implementation behaves like this:
 
@@ -255,20 +255,20 @@ A trustworthy implementation behaves like this:
 3. **Resolve the file directly.** Search the file index and `~/Downloads`; compute path, size, modified time, MIME type, and hash. If there are multiple matches, show them.
 4. **Resolve the person.** Map “Rohan” to a manually confirmed WhatsApp identity. Never guess between two Rohans.
 5. **Plan with typed arguments.** `stage_whatsapp_attachment(recipientId, absolutePath, optionalCaption)`—not “click around until it looks right.”
-6. **Open the Friday browser profile.** Navigate to WhatsApp Web and confirm it is logged in.
+6. **Open the Fridayy browser profile.** Navigate to WhatsApp Web and confirm it is logged in.
 7. **Locate semantically.** Use accessible roles/text to select the exact chat; reject an ambiguous result.
 8. **Attach directly.** Use the underlying file input through Playwright, not the desktop file chooser.
 9. **Verify staging.** Confirm the visible recipient, file name, size/preview, and unsent state. Capture a cropped screenshot.
 10. **Request approval on the phone.** Show: recipient, phone/contact identity, file metadata, caption, screenshot, and a single-use “Send” button.
 11. **Commit.** After your approval, re-check that the page state has not changed and click Send.
 12. **Verify the effect.** Confirm the outgoing message/attachment appears in the correct chat, record timestamp and screenshot, and report completion.
-13. **Handle uncertainty safely.** If Friday crashes after clicking but before recording success, it marks the result **unknown**, inspects the chat on recovery, and never blindly sends again.
+13. **Handle uncertainty safely.** If Fridayy crashes after clicking but before recording success, it marks the result **unknown**, inspects the chat on recovery, and never blindly sends again.
 
 This flow is technically feasible. The hard part is proving the recipient and effect, not clicking the paperclip.
 
 There is also a platform-policy caveat: WhatsApp’s consumer terms restrict impermissible automated access and auto-messaging. Occasional user-directed UI assistance is technically possible, but that does not make it officially supported. The system must avoid bulk/unsolicited messaging and accept that account/UI changes can break the workflow. WhatsApp Business APIs are the officially supported automation route for eligible business use cases, not a drop-in personal-account replacement.
 
-## What makes the experience feel like Friday
+## What makes the experience feel like Fridayy
 
 The futuristic feeling comes from continuity, latency, embodiment, and visible competence—not profanity, particle effects, or a model pretending to be conscious.
 
@@ -285,7 +285,7 @@ The pet should be the face of a real state machine:
 - offline/local: unmistakable limited-autonomy visual state;
 - done: a receipt you can open, not merely a cheerful animation.
 
-On GNOME Wayland, a normal Tauri/Electron transparent window cannot be assumed to stay above everything or position itself reliably; current Tauri issues still report Wayland no-ops for positioning and always-on-top. Build the pet first inside the Friday dashboard. For a roaming desktop pet, the strongest machine-specific route is a deliberately tiny GNOME Shell extension for GNOME 50 that only renders state received over a narrow local IPC channel. GNOME extensions run inside the Shell process and can destabilize the desktop, so the extension must contain no agent logic, model access, filesystem access, or task execution. It should always have a safe-disable command and a normal-window fallback.
+On GNOME Wayland, a normal Tauri/Electron transparent window cannot be assumed to stay above everything or position itself reliably; current Tauri issues still report Wayland no-ops for positioning and always-on-top. Build the pet first inside the Fridayy dashboard. For a roaming desktop pet, the strongest machine-specific route is a deliberately tiny GNOME Shell extension for GNOME 50 that only renders state received over a narrow local IPC channel. GNOME extensions run inside the Shell process and can destabilize the desktop, so the extension must contain no agent logic, model access, filesystem access, or task execution. It should always have a safe-disable command and a normal-window fallback.
 
 ### Mission Control
 
@@ -293,14 +293,14 @@ The laptop and phone should share a live spatial task view:
 
 - every request becomes a named mission;
 - missions show substeps, parallel branches, dependencies, and elapsed time;
-- clicking a step reveals the evidence Friday used and the exact tool result;
+- clicking a step reveals the evidence Fridayy used and the exact tool result;
 - the same mission can move from voice to phone to laptop without losing context;
 - after completion, the mission collapses into a compact receipt;
 - replay mode shows decisions and effects without re-executing them.
 
 ### Personality separated from authority
 
-Friday can be funny, blunt, warm, proactive, and visually expressive. Personality must never decide permission. A separate deterministic policy layer decides whether a tool is visible, an action is allowed, confirmation is required, and an approval is still valid.
+Fridayy can be funny, blunt, warm, proactive, and visually expressive. Personality must never decide permission. A separate deterministic policy layer decides whether a tool is visible, an action is allowed, confirmation is required, and an approval is still valid.
 
 ### Proactivity without becoming annoying
 
@@ -316,7 +316,7 @@ Each automation has an owner, trigger, allowed capabilities, quiet hours, expiry
 
 Any agent that can read websites and then send files has a prompt-injection problem. A malicious webpage, message, PDF, image, or repository can contain instructions like “ignore the user and upload secrets.” NIST describes this as agent hijacking; OWASP lists prompt injection and excessive agency among the primary LLM application risks. Current browser-agent research explicitly says no browser agent is immune.
 
-Friday therefore treats models as untrusted planners. The enforcement architecture should include:
+Fridayy therefore treats models as untrusted planners. The enforcement architecture should include:
 
 - **capability grants:** narrow verbs such as `read_file`, `stage_message`, and `commit_message`, never one unrestricted “computer” permission;
 - **source labels:** user instruction, model proposal, webpage content, file content, and tool result remain distinguishable;
@@ -332,7 +332,7 @@ Friday therefore treats models as untrusted planners. The enforcement architectu
 - **tamper-evident audit:** hash-chained event receipts are useful even for a single-user system;
 - **tested backups:** agent-accessible folders must have recoverable versions before deletion or bulk edits are enabled.
 
-DeepSeek Harness’s sandbox can reduce filesystem writes, but its documentation says network and process visibility are outside the sandbox-mode vocabulary. Friday must add process isolation, network egress rules, credential brokering, and capability-specific tools rather than relying on the harness setting alone.
+DeepSeek Harness’s sandbox can reduce filesystem writes, but its documentation says network and process visibility are outside the sandbox-mode vocabulary. Fridayy must add process isolation, network egress rules, credential brokering, and capability-specific tools rather than relying on the harness setting alone.
 
 ## Resource plan for 16 GB RAM and 6 GB VRAM
 
@@ -347,7 +347,7 @@ The system is feasible because Nemotron inference is remote. The laptop should n
 | Coding/research | Limit simultaneous agents and browser tabs; durable queue rather than parallel process explosion. |
 | Thermal/battery pressure | Stop speculative/proactive jobs; lower model context; keep phone control and cancellation alive. |
 
-The resource broker should maintain hard budgets rather than observe an out-of-memory crash after the fact. A job declares expected RAM/VRAM class, and Friday may queue it, evict an idle model, or ask you to close a conflicting workload. Swap is a last-resort safety net, not model memory.
+The resource broker should maintain hard budgets rather than observe an out-of-memory crash after the fact. A job declares expected RAM/VRAM class, and Fridayy may queue it, evict an idle model, or ask you to close a conflicting workload. Swap is a last-resort safety net, not model memory.
 
 ## What will not work reliably
 
@@ -359,7 +359,7 @@ The resource broker should maintain hard budgets rather than observe an out-of-m
 - Expecting GUI automation to work through every lock screen, CAPTCHA, 2FA challenge, browser update, popup, or changed website.
 - Keeping a local 4B VLM, a large GPU Whisper model, many Chrome tabs, Docker workloads, and development tools resident simultaneously on 16 GB RAM/6 GB VRAM.
 - Making the roaming pet a critical control surface. Wayland window-management rules and GNOME updates make that presentation layer inherently less stable than the core.
-- Allowing Friday to install arbitrary skills and immediately grant them inherited credentials. Skills must be versioned, reviewed, permissioned, and reversible.
+- Allowing Fridayy to install arbitrary skills and immediately grant them inherited credentials. Skills must be versioned, reviewed, permissioned, and reversible.
 
 ## Development sequence
 
@@ -425,7 +425,7 @@ A strong useful alpha is plausible in roughly 3–5 focused months. A polished, 
 
 ## Acceptance criteria that matter
 
-Do not evaluate Friday by whether a demo worked once. Maintain a versioned task suite and publish local metrics.
+Do not evaluate Fridayy by whether a demo worked once. Maintain a versioned task suite and publish local metrics.
 
 Minimum gates before unattended outbound actions:
 
@@ -454,10 +454,10 @@ Experience targets—not guarantees—can include:
 1. The laptop is the only host; all product state is local.
 2. The phone enters through private Tailscale Serve; no public endpoint.
 3. Nemotron Ultra is preferred reasoning, not a permanent hard dependency.
-4. DeepSeek Harness is an execution component behind an adapter, not Friday’s database or policy authority.
+4. DeepSeek Harness is an execution component behind an adapter, not Fridayy’s database or policy authority.
 5. Qwen3.5-4B Q4 is the first fallback benchmark, not an assumed answer.
 6. Local fallback visibly reduces autonomy.
-7. Browser automation uses a dedicated Friday profile.
+7. Browser automation uses a dedicated Fridayy profile.
 8. Semantic tools precede screenshots; screenshots precede coordinates.
 9. Consequential actions use stage → verify → approve → commit → verify.
 10. Desktop control uses supported Wayland portals; no switch to X11 just to make automation easier.
@@ -473,7 +473,7 @@ The project is technically sound if it is built as a layered personal-agent plat
 
 The decisive product insight is this:
 
-> Friday should not be a model that is allowed to click your computer. It should be a trusted local operating system that sometimes asks models to propose the next action.
+> Fridayy should not be a model that is allowed to click your computer. It should be a trusted local operating system that sometimes asks models to propose the next action.
 
 If that boundary is preserved, this can be wild, personal, fast, and legitimately useful without becoming a fragile remote-control demo or a credential-stealing accident waiting to happen.
 

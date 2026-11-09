@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Friday voice worker: Whisper speech-to-text (faster-whisper) + text-to-speech.
+"""Fridayy voice worker: Whisper speech-to-text (faster-whisper) + text-to-speech.
 TTS engines: "expressive" = Chatterbox Nano (ONNX, CPU): performs inline tags like [laugh] [sigh] [whispering] in a
 voice cloned from a Kokoro-made reference (synthetic, no real person); "kokoro" = Kokoro (flat, fast) and the fallback.
 JSON-lines protocol on stdin/stdout, one request -> one response, models load lazily on first use.
@@ -221,7 +221,7 @@ def expressive():
     if _expressive is None: _expressive = Expressive()
     return _expressive
 
-# Chatterbox holds ~1.2 GB plus ONNX arenas. On the server it shares the core container's 2.5 GB with Friday herself:
+# Chatterbox holds ~1.2 GB plus ONNX arenas. On the server it shares the core container's 2.5 GB with Fridayy herself:
 # left loaded after a switch to Kokoro it pushed the container to 98% and the governor stopped every task (28 Oct).
 # Drop it as soon as a request uses the other engine; it reloads (~10 s) if expressive is picked again.
 def release_expressive():

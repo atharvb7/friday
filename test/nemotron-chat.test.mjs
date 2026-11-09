@@ -82,9 +82,9 @@ test('answerLocal: remember/recall/files/chitchat/guardrails', async () => {
     const recalled = await answerLocal({ intent: 'memory', needsApproval: false }, 'what do you remember about my dog?', { memory });
     assert.match(recalled.text, /Bruno/);
     const chit = await answerLocal({ intent: 'chitchat' }, 'hello', {});
-    assert.match(chit.text, /Hey|Friday/);
+    assert.match(chit.text, /Hey|Fridayy/);
     const who = await answerLocal({ intent: 'chitchat' }, 'who are you', {});
-    assert.match(who.text, /Friday/);
+    assert.match(who.text, /Fridayy/);
     const guard = await answerLocal({ intent: 'browser', needsApproval: true, riskScore: 4 }, 'send it', {});
     assert.match(guard.text, /approval/);
     const unknown = await answerLocal({ intent: 'unknown' }, 'blarg', {});

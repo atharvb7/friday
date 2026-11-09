@@ -75,7 +75,7 @@ test('wa chat: never types when WhatsApp is not the window in front; wrong chat 
   const r = rig();
   try {
     await r.wa.start({ contact: 'Gauri', minutes: 10 });
-    r.world.front = 'Friday - Google Chrome';
+    r.world.front = 'Fridayy - Google Chrome';
     await r.wa.tick();
     assert.equal(r.world.typed.length, 0);
     assert.match(r.wa.list()[0].last_note, /not the window in front/);
@@ -92,12 +92,12 @@ test('wa chat: never types when WhatsApp is not the window in front; wrong chat 
 test('wa chat: finds the WhatsApp tab by the window title (Ctrl+Tab), never types into another tab', async () => {
   const r = rig();
   try {
-    r.world.front = 'Friday - Google Chrome';
+    r.world.front = 'Fridayy - Google Chrome';
     let tabs = 0; const dispatch = r.wa.nodes.dispatch;
     r.wa.nodes.dispatch = async (m) => { if (m.action === 'key_press' && m.args.keys === 'ctrl+Tab' && ++tabs === 2) r.world.front = '(3) WhatsApp - Google Chrome'; return dispatch(m); };
     const out = await r.wa.start({ contact: 'Gauri', minutes: 10 });
     assert.ok(out.chatting_until, JSON.stringify(out)); assert.equal(tabs, 2);
-    const none = rig(); none.world.front = 'Friday - Google Chrome';
+    const none = rig(); none.world.front = 'Fridayy - Google Chrome';
     try { assert.match((await none.wa.start({ contact: 'Gauri' })).error, /no WhatsApp Web tab/); assert.deepEqual(none.world.typed, [], 'nothing typed anywhere'); } finally { none.done(); }
   } finally { r.done(); }
 });
@@ -134,7 +134,7 @@ test('stop_everything: tasks, watches and live chats all stop in one call; count
 test('wa chat via the Chrome extension: no screenshots or mouse; answers her newest message by id, once', async () => {
   const r = rig();
   try {
-    const sent = []; let msgs = [{ id: 'true_1', from: 'me', text: 'Hey Siddhi, Friday here' }, { id: 'false_2', from: 'them', text: 'the delusion is kinda cute' }];
+    const sent = []; let msgs = [{ id: 'true_1', from: 'me', text: 'Hey Siddhi, Fridayy here' }, { id: 'false_2', from: 'them', text: 'the delusion is kinda cute' }];
     r.wa.nodes.list = () => [{ caps: ['wa_status', 'wa_read', 'wa_open', 'wa_send', 'screen_region'] }];
     r.wa.nodes.dispatch = async ({ action, args }) => {
       r.world.calls.push(action);
@@ -156,7 +156,7 @@ test('wa chat via the Chrome extension: no screenshots or mouse; answers her new
   } finally { r.done(); }
 });
 
-test('Friday speaks as a woman in Hinglish: masculine first-person forms are fixed before sending; third person untouched', async () => {
+test('Fridayy speaks as a woman in Hinglish: masculine first-person forms are fixed before sending; third person untouched', async () => {
   const { feminize, buildSystemPrompt, normalizePersonality } = await import('../src/personality.mjs');
   assert.equal(feminize('tumhe block karwa dunga main'), 'tumhe block karwa dungi main');
   assert.equal(feminize('Main abhi aa raha hoon'), 'Main abhi aa rahi hoon');

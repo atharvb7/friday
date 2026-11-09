@@ -1,21 +1,21 @@
-# Friday laptop node
+# Fridayy laptop node
 
-Runs on **your laptop**. It connects *out* to your Friday server (so the server never needs inbound
-access to your laptop) and executes browser/desktop commands that Friday's computer agent issues.
-Friday only acts here when the node is running; computer tasks wait in the queue while it's offline.
+Runs on **your laptop**. It connects *out* to your Fridayy server (so the server never needs inbound
+access to your laptop) and executes browser/desktop commands that Fridayy's computer agent issues.
+Fridayy only acts here when the node is running; computer tasks wait in the queue while it's offline.
 
 ## Setup
 ```bash
 cd node && npm install                      # playwright-core only; uses your installed Google Chrome
-# On the Friday server/laptop running Friday (owner):
+# On the Fridayy server/laptop running Fridayy (owner):
 node ../bin/friday.mjs device add laptop read,node      # prints a token ONCE
 # On the laptop:
 FRIDAY_NODE_TOKEN=fdv_... node friday-node.mjs pair --server https://<friday-host> --name laptop
 node friday-node.mjs run
 ```
 A dedicated Chrome profile lives in `~/.friday-node/chrome-profile`. **Log in to sites there yourself, once**
-(e.g. open WhatsApp Web and scan the QR). Friday never sees passwords/cookies; it only drives the page.
-Edit `~/.friday-node/config.json` to change `allowedDirs` (files Friday may find/attach; defaults:
+(e.g. open WhatsApp Web and scan the QR). Fridayy never sees passwords/cookies; it only drives the page.
+Edit `~/.friday-node/config.json` to change `allowedDirs` (files Fridayy may find/attach; defaults:
 Downloads, Documents, Desktop, Pictures; dot-folders are always blocked) or set `"headless": true`.
 
 ## What it can do
@@ -33,7 +33,7 @@ Private/loopback URLs are refused.
   so multi-monitor and HiDPI layouts need no special handling (sizes come from Mutter's DisplayConfig). Typing is US
   layout key by key; emoji / non-English / long text is pasted through the clipboard (and your clipboard restored).
 - **Screen**: `captureScreen({ maxWidth })` in `desktop.mjs` takes a non-interactive xdg-portal screenshot (~0.7 s),
-  downscales it to a JPEG and deletes the portal's file in `~/Pictures`. Friday's server sends it to a vision model
+  downscales it to a JPEG and deletes the portal's file in `~/Pictures`. Fridayy's server sends it to a vision model
   only when the cheaper accessibility tree can't see what it needs. Lock-screen state is detected (nothing runs while
   locked).
 - **Clipboard** read/write (through XWayland; Mutter bridges it to Wayland apps).
@@ -43,9 +43,9 @@ Private/loopback URLs are refused.
   `*.pem`, keyrings, this node's own config) are never read or written by file actions.
 
 ## Permission model (what asks first)
-The owner gave Friday **full routine use of the laptop without being asked**: opening apps, reading the screen,
+The owner gave Fridayy **full routine use of the laptop without being asked**: opening apps, reading the screen,
 typing, clicking, running commands and reading/writing files just happen. Approval is kept **only** for what is
-irreversible or reaches other people / money. Friday decides the category itself, from the command text or the label
+irreversible or reaches other people / money. Fridayy decides the category itself, from the command text or the label
 of the thing being clicked (the vision model's label for a screen element), never from the model's say-so:
 
 | Asks first | Examples |
@@ -58,10 +58,10 @@ of the thing being clicked (the vision model's label for a screen element), neve
 One approval per laptop task covers its sends (e.g. the site's "Confirm" and then WhatsApp's "Confirm booking");
 payments and deletions ask each time. The final-submit guards stay: a submit click must name the button it means
 (`expect`), and the page must show the business the user named (`mustShow`). Raise or lower any category in
-Friday's autonomy settings; setting **computer** to "ask" brings back an approval before every laptop task.
+Fridayy's autonomy settings; setting **computer** to "ask" brings back an approval before every laptop task.
 
-While **you** use the keyboard/mouse, Friday steps aside: the server pauses input actions while the idle monitor shows
-activity (Friday's own injected input is not counted as yours) and the node re-checks right before each keystroke.
+While **you** use the keyboard/mouse, Fridayy steps aside: the server pauses input actions while the idle monitor shows
+activity (Fridayy's own injected input is not counted as yours) and the node re-checks right before each keystroke.
 
 ## Notes
 - Automating WhatsApp Web can violate WhatsApp's terms and risk an account ban: use sparingly, with approvals on.
@@ -76,7 +76,7 @@ It is wanted by `graphical-session.target` (not `default.target`) so it always s
 published `DISPLAY`/`WAYLAND_DISPLAY`/`XAUTHORITY`; without them the visible browser cannot open.
 
 ## Push-to-talk voice key (`voice-key.mjs`)
-Press a key anywhere (any app focused): beep, talk, beep. Friday transcribes, answers and speaks the reply on the laptop;
+Press a key anywhere (any app focused): beep, talk, beep. Fridayy transcribes, answers and speaks the reply on the laptop;
 a notification shows what she heard and her answer (it stays in the notification list).
 - **Stops** after ~2.2 s of silence (energy VAD, noise floor learned per recording; quieter words still count once you are talking), at 30 s, or when you press the key
   again. Nothing said / a click / under 0.35 s of speech: nothing is sent.
@@ -94,7 +94,7 @@ a notification shows what she heard and her answer (it stays in the notification
 ### Install
 ```bash
 # 1. a device token that may chat (the node's own read,node token cannot):
-#    Friday web UI -> Settings -> Devices -> add "laptop-voice" with scopes read,chat
+#    Fridayy web UI -> Settings -> Devices -> add "laptop-voice" with scopes read,chat
 #    (or on the server: node bin/friday.mjs device add laptop-voice read,chat)
 # 2. optional but recommended: the laptop's own Whisper + voice (~550 MB, no sudo; audio then stays on the laptop)
 ./voice-setup.sh

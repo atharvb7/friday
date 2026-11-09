@@ -70,10 +70,10 @@ export function render({ app, api, toast }) {
   let convoId = null, busy = false, abort = null, speak = false, listening = false, rec = null, lastInputWasVoice = false;
   const convos = h('aside', { class: 'convos', id: 'convos' });
   const msgs = h('div', { class: 'msgs', id: 'msgs', 'aria-live': 'polite' });
-  const input = h('textarea', { rows: 1, placeholder: 'Message Friday…', 'aria-label': 'Message Friday', maxlength: 20000 });
+  const input = h('textarea', { rows: 1, placeholder: 'Message Fridayy…', 'aria-label': 'Message Fridayy', maxlength: 20000 });
   // One round action button: mic when the box is empty, send when there is something to send.
   const send = h('button', { class: 'act send', type: 'submit', 'aria-label': 'Send', title: 'Send' }, svgIcon('send', 20));
-  const mic = h('button', { class: 'act mic', type: 'button', title: 'Talk to Friday', 'aria-label': 'Voice input', onclick: toggleMic }, svgIcon('mic', 20));
+  const mic = h('button', { class: 'act mic', type: 'button', title: 'Talk to Fridayy', 'aria-label': 'Voice input', onclick: toggleMic }, svgIcon('mic', 20));
   const spk = h('button', { class: 'btn quiet icon', type: 'button', title: 'Read replies aloud', 'aria-label': 'Toggle spoken replies', 'aria-pressed': 'false', onclick: () => { speak = !speak; spk.replaceChildren(svgIcon(speak ? 'volume' : 'mute', 20)); spk.setAttribute('aria-pressed', String(speak)); spk.classList.toggle('on', speak); if (!speak) { speechSynthesis?.cancel(); speaking?.cancel(); } else if (voiceCaps.tts) fetch('/v1/voice/warm', { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {}); toast(speak ? 'I’ll read my replies out loud 🔊' : 'Quiet mode 🤫'); } }, svgIcon('mute', 20));
   const fileInput = h('input', { type: 'file', multiple: true, hidden: true, accept: '.docx,.xlsx,.pptx,.pdf,.md,.txt,.csv,.tsv,.html,.json,.xml,.png,.jpg,.jpeg,.gif,.webp,.doc,.xls,.ppt,.odt,.rtf,.zip' });
   const pending = []; // files uploaded and waiting to be sent with the next message
@@ -126,7 +126,7 @@ export function render({ app, api, toast }) {
     if (extra.tools?.length) body.append(h('div', { class: 'tools' }, extra.tools.map((t) => h('span', { class: `chip ${t.ok === false ? 'bad' : 'accent'}` }, `🔧 ${t.name}`))));
     if (content) body.append(role === 'assistant' ? md(noTags(content)) : h('div', {}, content));
     if (extra.files?.length) body.append(h('div', { class: 'files' }, extra.files.map((f) => fileView(f, toast))));
-    return h('div', { class: `msg ${role}` }, role === 'user' ? h('div', { class: 'av' }, 'You') : h('div', { class: 'av friday', role: 'img', 'aria-label': 'Friday' }), body);
+    return h('div', { class: `msg ${role}` }, role === 'user' ? h('div', { class: 'av' }, 'You') : h('div', { class: 'av friday', role: 'img', 'aria-label': 'Fridayy' }), body);
   }
   function hello() {
     clear(msgs);
@@ -188,7 +188,7 @@ export function render({ app, api, toast }) {
     const viaVoice = lastInputWasVoice; lastInputWasVoice = false;
     const toolsEl = h('div', { class: 'tools' });
     const live = h('div', { class: 'bubble' }, toolsEl, h('div', { class: 'typing' }, h('i'), h('i'), h('i')));
-    const wrap = h('div', { class: 'msg assistant' }, h('div', { class: 'av friday', role: 'img', 'aria-label': 'Friday' }), live);
+    const wrap = h('div', { class: 'msg assistant' }, h('div', { class: 'av friday', role: 'img', 'aria-label': 'Fridayy' }), live);
     msgs.append(wrap); scroll();
     abort = new AbortController();
     const paintReply = () => { live.lastChild?.remove(); live.append(md(noActions(noTags(acc)))); scroll(); };
@@ -227,16 +227,16 @@ export function render({ app, api, toast }) {
       recording = startRecording({ onLevel: (l) => mic.style.setProperty('--lvl', String(Math.min(1, l * 12))) });
       mic.classList.add('primary', 'rec'); input.placeholder = 'Listening… (stops when you pause)';
       const wav = await recording.done; recording = null;
-      mic.classList.remove('primary', 'rec'); mic.style.removeProperty('--lvl'); input.placeholder = 'Message Friday…';
+      mic.classList.remove('primary', 'rec'); mic.style.removeProperty('--lvl'); input.placeholder = 'Message Fridayy…';
       if (!wav) { toast('Didn’t catch anything — try again.'); return; }
       input.placeholder = 'Transcribing…';
       const res = await fetch('/v1/voice/transcribe', { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'audio/wav' }, body: wav });
-      input.placeholder = 'Message Friday…';
+      input.placeholder = 'Message Fridayy…';
       const j = await res.json().catch(() => ({}));
       if (!res.ok) { toast(`Voice: ${j.error || res.status}`); return; }
       if (j.text) { input.value = j.text; lastInputWasVoice = true; submit(); } else toast('I couldn’t make out any words.');
     } catch (e) {
-      recording = null; mic.classList.remove('primary', 'rec'); input.placeholder = 'Message Friday…';
+      recording = null; mic.classList.remove('primary', 'rec'); input.placeholder = 'Message Fridayy…';
       toast(e.name === 'NotAllowedError' ? 'Microphone permission is blocked for this site.' : `Mic error: ${e.message}`);
     }
   }
@@ -244,7 +244,7 @@ export function render({ app, api, toast }) {
   function toggleMic() {
     if (voiceCaps.stt) return serverMic(); // Whisper on the server (accurate, handles Hinglish/accents)
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { toast('Voice input needs a browser with speech recognition, or install Friday’s voice engine.'); return; }
+    if (!SR) { toast('Voice input needs a browser with speech recognition, or install Fridayy’s voice engine.'); return; }
     if (listening) { rec?.stop(); return; }
     speechSynthesis?.cancel(); unlockAudio();
     rec = new SR(); rec.interimResults = true; rec.lang = navigator.language || 'en-US';

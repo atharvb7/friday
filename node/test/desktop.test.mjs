@@ -92,7 +92,7 @@ function fakeSpawn(log, { fail = false } = {}) {
   };
 }
 
-test('input device: lazy start, JSON-lines round trip, errors surface, lastInjectAt tracks Friday\'s own input', async () => {
+test('input device: lazy start, JSON-lines round trip, errors surface, lastInjectAt tracks Fridayy\'s own input', async () => {
   const log = [];
   const dev = new InputDevice({ spawnImpl: fakeSpawn(log) });
   assert.equal(dev.lastInjectAt, 0);
@@ -135,14 +135,14 @@ test('desktop input: ASCII typed in chunks, unicode pasted via clipboard (and th
   assert.equal(log.at(-1).dy, 50, 'scroll is clamped');
 });
 
-test('desktop input: refused while the screen is locked or the HUMAN is typing; Friday\'s own input does not count as the human', async () => {
+test('desktop input: refused while the screen is locked or the HUMAN is typing; Fridayy\'s own input does not count as the human', async () => {
   const { d, st, input } = rig();
   st.locked = true;
   await assert.rejects(d.key_press({ keys: 'ctrl+l' }), /screen_locked/);
   st.locked = false; st.idle = 200; // someone touched the machine 200 ms ago...
   input.lastInjectAt = 0;
   await assert.rejects(d.key_press({ keys: 'ctrl+l' }), /user_active/);
-  input.lastInjectAt = Date.now(); // ...but it was Friday's own keystroke
+  input.lastInjectAt = Date.now(); // ...but it was Fridayy's own keystroke
   assert.deepEqual(await d.key_press({ keys: 'ctrl+l' }), { pressed: 'ctrl+l' });
 });
 
@@ -192,8 +192,8 @@ test('restricted mode (fullAccess=false) keeps only the old browser-era desktop 
   assert.equal(d.shell_run, undefined); assert.equal(d.key_press, undefined); assert.equal(d.screen_capture, undefined);
 });
 
-test('desktop: never clicks or types into Friday\'s own app, or types Friday\'s address; other pages and subdomains are fine', async () => {
-  const friday = [{ app: 'google-chrome', index: 1, windows: [{ ref: '1.0', name: '(2) Friday - Google Chrome', active: true }] }];
+test('desktop: never clicks or types into Fridayy\'s own app, or types Fridayy\'s address; other pages and subdomains are fine', async () => {
+  const friday = [{ app: 'google-chrome', index: 1, windows: [{ ref: '1.0', name: '(2) Fridayy - Google Chrome', active: true }] }];
   for (const act of [(d) => d.mouse_click({ x: 10, y: 10 }), (d) => d.key_press({ keys: 'Return' }), (d) => d.type_text({ text: 'yes' }), (d) => d.ui_act({ ref: '1.0.4', action: 'click' })]) {
     const { d, st, log } = rig(); st.windows = friday;
     await assert.rejects(act(d), (e) => e.code === 'friday_own_ui');
@@ -205,7 +205,7 @@ test('desktop: never clicks or types into Friday\'s own app, or types Friday\'s 
   await assert.rejects(d.type_text({ text: 'go to app.fridayy.site' }), (e) => e.code === 'friday_own_ui');
   await assert.rejects(d.open_target({ target: 'https://www.fridayy.site/' }), /friday_own_ui/);
   assert.equal((await d.type_text({ text: 'see atharv.fridayy.site for my work' })).method, 'keys');
-  st.windows = [{ app: 'google-chrome', index: 1, windows: [{ ref: '1.0', name: 'Friday night plans - Google Docs - Google Chrome', active: true }] }];
+  st.windows = [{ app: 'google-chrome', index: 1, windows: [{ ref: '1.0', name: 'Fridayy night plans - Google Docs - Google Chrome', active: true }] }];
   await new Promise((r) => setTimeout(r, 2100)); // past the cached answer
   await d.mouse_click({ x: 10, y: 10 });
 });

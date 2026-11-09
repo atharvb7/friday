@@ -8,7 +8,7 @@ export function platformRoutes(router, ctx) {
 
   router.get('/v1/skills', () => [200, { skills: skills.list().map(({ name, description, source }) => ({ name, description, source })) }]);
   router.get('/v1/skills/:name([a-z0-9-]+)', ({ params }) => { const s = skills.load(params.name); return s ? [200, { skill: s }] : [404, { error: 'not_found' }]; });
-  // Install from a folder inside Friday's own skills inbox only (no arbitrary paths, no git clone).
+  // Install from a folder inside Fridayy's own skills inbox only (no arbitrary paths, no git clone).
   router.post('/v1/skills/install', async ({ body }) => {
     const b = await body();
     if (typeof b.folder !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(b.folder)) return [400, { error: 'invalid_folder' }];

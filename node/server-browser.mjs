@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Friday's SERVER browser: a headless Chromium in its own container (compose service `browser`) so research and
+// Fridayy's SERVER browser: a headless Chromium in its own container (compose service `browser`) so research and
 // web tasks work while his laptop is off. It joins the node hub like the laptop node does (SSE command stream +
 // HTTP results) but offers ONLY browser and research actions: no shell, no files, no desktop, no WhatsApp.
-// Network: internal docker network only; every request goes out through Friday's egress proxy (no LAN/tailnet/metadata).
+// Network: internal docker network only; every request goes out through Fridayy's egress proxy (no LAN/tailnet/metadata).
 //   env FRIDAY_SERVER_URL (http://friday:4317), FRIDAY_BROWSER_SECRET, FRIDAY_BROWSER_PROXY (http://proxy:3128),
 //       FRIDAY_BROWSER_HOME (persistent profiles), CHROMIUM (/usr/bin/chromium)
 import { mkdirSync } from 'node:fs';

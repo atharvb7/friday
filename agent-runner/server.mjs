@@ -1,5 +1,5 @@
-// Agent runner: runs inside its OWN container (no Friday data, no host mounts, egress only via the
-// filtering proxy). Friday core sends it tasks over an internal network; the container boundary is
+// Agent runner: runs inside its OWN container (no Fridayy data, no host mounts, egress only via the
+// filtering proxy). Fridayy core sends it tasks over an internal network; the container boundary is
 // the sandbox, so DSH runs with full permissions *inside* it as an unprivileged user.
 //   POST /run   (Bearer secret)  -> NDJSON stream: {t:'trace'|'result', ...}
 //   GET  /health (Bearer secret) -> {ready, active, max}

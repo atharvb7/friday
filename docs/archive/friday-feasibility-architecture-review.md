@@ -1,4 +1,4 @@
-# Friday: feasibility and architecture review
+# Fridayy: feasibility and architecture review
 
 > **Superseded:** the requirements were later locked to a laptop-only, fixed-hardware system. Use the [laptop-only master design](./friday-laptop-only-master-design.md) for the current architecture and recommendations.
 
@@ -7,7 +7,7 @@
 
 ## Executive verdict
 
-Friday is feasible as a serious personal system, but not as the 17-feature “MVP” in the brief. The laptop is strong enough to be Friday’s control plane, state store, browser/coding host, voice host, and a modest local-model host. It is not strong enough to run Nemotron 3 Ultra locally, and a 6 GB laptop GPU cannot make a weak local model a safe drop-in replacement for a frontier model during consequential autonomous work.
+Fridayy is feasible as a serious personal system, but not as the 17-feature “MVP” in the brief. The laptop is strong enough to be Fridayy’s control plane, state store, browser/coding host, voice host, and a modest local-model host. It is not strong enough to run Nemotron 3 Ultra locally, and a 6 GB laptop GPU cannot make a weak local model a safe drop-in replacement for a frontier model during consequential autonomous work.
 
 The right product is a **hybrid, capability-based personal agent**:
 
@@ -17,7 +17,7 @@ The right product is a **hybrid, capability-based personal agent**:
 - a separate vision/perception route for screenshots and GUI work;
 - deterministic tools and policy gates that—not the personality or the model—own authority;
 - phone access over the already-installed Tailscale network, with the app itself listening only on localhost;
-- DeepSeek Harness used behind a boundary as an execution engine, not allowed to become Friday’s database or irreplaceable product core.
+- DeepSeek Harness used behind a boundary as an execution engine, not allowed to become Fridayy’s database or irreplaceable product core.
 
 A useful personal alpha is realistic. A reliable “take care of this” agent operating real accounts and arbitrary desktop applications is a longer safety/reliability program, not a normal app feature.
 
@@ -25,7 +25,7 @@ A useful personal alpha is realistic. A reliable “take care of this” agent o
 
 ### What is present
 
-| Area | Observed state | Consequence for Friday |
+| Area | Observed state | Consequence for Fridayy |
 |---|---|---|
 | Laptop | HP Victus 15-fa2xxx | Adequate thermals for bursts; unattended 24/7 use still needs power/heat planning. |
 | CPU | Intel Core i5-13420H, 8 cores / 12 threads, up to 4.6 GHz | Strong enough for orchestration, databases, indexing, browser automation, local STT/TTS, and modest CPU inference. |
@@ -41,11 +41,11 @@ A useful personal alpha is realistic. A reliable “take care of this” agent o
 
 ### Security findings to address before autonomy
 
-1. The root filesystem appears to be a plain ext4 partition rather than full-disk encrypted. Local-first memory is not private if the laptop is lost. Enable full-disk encryption during a planned reinstall or use a separately encrypted Friday data volume now.
+1. The root filesystem appears to be a plain ext4 partition rather than full-disk encrypted. Local-first memory is not private if the laptop is lost. Enable full-disk encryption during a planned reinstall or use a separately encrypted Fridayy data volume now.
 2. Secure Boot is disabled. This is not automatically fatal, but it weakens the boot trust chain for a machine that may hold broad credentials.
 3. An existing PostgreSQL 16 Docker container publishes port `55432` on `0.0.0.0` and IPv6, not merely localhost. Firewall reachability was not proven, but this binding should be reviewed and normally changed to `127.0.0.1:55432:5432` unless LAN exposure is intentional.
 4. No NVIDIA container runtime was detected. Do not assume `docker run --gpus all` works yet.
-5. The system reports one failed crash-reporting unit. It is unrelated to Friday and not a capacity blocker.
+5. The system reports one failed crash-reporting unit. It is unrelated to Fridayy and not a capacity blocker.
 
 ### Sensible hardware changes
 
@@ -76,7 +76,7 @@ NVIDIA documents Nemotron 3 Nano Omni as accepting image, video, audio, and text
 
 ### 2. The NVIDIA hosted API is not an indefinite free production dependency
 
-NVIDIA offers the Ultra endpoint for prototyping, and its API Trial Terms say trial access is limited, non-production, may be rate-limited, and can end. Friday therefore needs:
+NVIDIA offers the Ultra endpoint for prototyping, and its API Trial Terms say trial access is limited, non-production, may be rate-limited, and can end. Fridayy therefore needs:
 
 - a provider-health circuit breaker;
 - a second remote provider route for real continuity;
@@ -90,7 +90,7 @@ NVIDIA offers the Ultra endpoint for prototyping, and its API Trial Terms say tr
 
 The current Edge0 repository supports Apple Silicon through MLX. CUDA is only a reserved/roadmap backend. Its attractive 1.0/2.9 GiB active-memory figures were measured on an M4 Pro and do not establish RTX 3050 performance. Keep an automated quarterly compatibility check, but remove Edge0 from the initial implementation path.
 
-Benchmark current practical candidates instead. Qwen3.5-4B is Apache-2.0, multimodal, and sized appropriately for a 6 GB GPU in a Q4-class quantization. Phi-4-mini-instruct is another small, function-calling-capable baseline. The winner should be selected by Friday-specific tests, not general leaderboards.
+Benchmark current practical candidates instead. Qwen3.5-4B is Apache-2.0, multimodal, and sized appropriately for a 6 GB GPU in a Q4-class quantization. Phi-4-mini-instruct is another small, function-calling-capable baseline. The winner should be selected by Fridayy-specific tests, not general leaderboards.
 
 ### 4. DeepSeek Harness is promising but pre-stable
 
@@ -102,7 +102,7 @@ Therefore:
 
 - pin an exact DSH version/commit;
 - put all DSH integration behind a `HarnessAdapter`;
-- keep Friday’s projects, tasks, memory, policy, notifications, and durable jobs in Friday-owned storage;
+- keep Fridayy’s projects, tasks, memory, policy, notifications, and durable jobs in Fridayy-owned storage;
 - use DSH sessions as execution transcripts, not as the product’s only state;
 - maintain contract tests that run against every proposed DSH upgrade;
 - prefer plugins/adapters and small upstream contributions over a large fork.
@@ -144,7 +144,7 @@ Do not make unattended WhatsApp sending an MVP success criterion.
 Laptop UI / Phone PWA / Voice / Pet
                  │
                  ▼
-        Friday API + realtime gateway
+        Fridayy API + realtime gateway
         (localhost; Tailscale Serve)
                  │
        ┌─────────┴──────────┐
@@ -176,7 +176,7 @@ projects/current task   leases/retry/resume
 
 ### Boundaries that matter
 
-**Friday Core owns:** identity, current-task resolution, projects, tasks, durable job state, memory, permission grants, consent, model policy, notifications, and product API.
+**Fridayy Core owns:** identity, current-task resolution, projects, tasks, durable job state, memory, permission grants, consent, model policy, notifications, and product API.
 
 **DSH owns:** one execution loop, session transcript, tool invocation mechanics, subagent execution, and scoped runtime plugins.
 
@@ -188,7 +188,7 @@ projects/current task   leases/retry/resume
 
 ### Backend language
 
-Because DSH is Node/TypeScript, use TypeScript for the Friday control plane and plugin/BFF layer. Use Python sidecars only for workloads where its ecosystem is materially better—speech, embeddings, OCR, or model evaluation. Starting with a separate FastAPI product backend would create two orchestration centers and more failure modes.
+Because DSH is Node/TypeScript, use TypeScript for the Fridayy control plane and plugin/BFF layer. Use Python sidecars only for workloads where its ecosystem is materially better—speech, embeddings, OCR, or model evaluation. Starting with a separate FastAPI product backend would create two orchestration centers and more failure modes.
 
 ### Database
 
@@ -204,7 +204,7 @@ Keep schema/repository interfaces clean so PostgreSQL can replace it when multi-
 
 ### Durable work
 
-Do not equate a background subprocess with a durable task. Implement a Friday-owned job table with:
+Do not equate a background subprocess with a durable task. Implement a Fridayy-owned job table with:
 
 - status and attempt number;
 - lease owner and lease expiry;
@@ -227,7 +227,7 @@ Expose only `127.0.0.1` and proxy it using **Tailscale Serve**, which provides t
 
 ### Browser
 
-Use Playwright as the deterministic base. Give Friday separate browser profiles such as research and personal-actions. Playwright warns that stored authentication state can impersonate the user; keep state encrypted/permission-restricted and out of repositories.
+Use Playwright as the deterministic base. Give Fridayy separate browser profiles such as research and personal-actions. Playwright warns that stored authentication state can impersonate the user; keep state encrypted/permission-restricted and out of repositories.
 
 Use `browser-use` only if comparative evaluations show it adds value over DSH + Playwright. Avoid attaching Chrome DevTools to the everyday profile. Run a dedicated Chrome instance and bind its debugging port to localhost only.
 
@@ -242,7 +242,7 @@ For the overlay, compare Tauri/XWayland with a Linux-native GTK/layer-shell impl
 
 ### UI reuse
 
-Use DSH’s web UI as an early diagnostic/prototype surface, then build Friday’s focused interface against the Friday API. Borrow design ideas, not an entire chat product. Current Open WebUI releases include branding restrictions and are not OSI-approved according to its own documentation; current LobeChat licensing also adds conditions. Either creates avoidable product/licensing coupling for a strongly branded Friday UI.
+Use DSH’s web UI as an early diagnostic/prototype surface, then build Fridayy’s focused interface against the Fridayy API. Borrow design ideas, not an entire chat product. Current Open WebUI releases include branding restrictions and are not OSI-approved according to its own documentation; current LobeChat licensing also adds conditions. Either creates avoidable product/licensing coupling for a strongly branded Fridayy UI.
 
 ## Model routing and fallback behavior
 
@@ -270,7 +270,7 @@ When Ultra is unavailable:
 
 ### Local fallback evaluation
 
-Benchmark at least Qwen3.5-4B Q4, Phi-4-mini-instruct Q4, and one other current small model through the same OpenAI-compatible local server. Use Friday-specific cases:
+Benchmark at least Qwen3.5-4B Q4, Phi-4-mini-instruct Q4, and one other current small model through the same OpenAI-compatible local server. Use Fridayy-specific cases:
 
 - valid tool selection and exact JSON arguments;
 - refusal to invent tool success;
@@ -305,9 +305,9 @@ Use a write pipeline:
 6. store text, provenance, and embedding;
 7. later retrieval records why the item was selected.
 
-Use a retrieval pipeline combining current task/project, permissions, lexical search, semantic search, recency, confidence, and sensitivity. The context builder should return a small evidence bundle, not the database. Display “Why Friday remembers this,” provide Edit/Forget controls, and ensure deletion removes raw text, index rows, embeddings, caches, and derived summaries.
+Use a retrieval pipeline combining current task/project, permissions, lexical search, semantic search, recency, confidence, and sensitivity. The context builder should return a small evidence bundle, not the database. Display “Why Fridayy remembers this,” provide Edit/Forget controls, and ensure deletion removes raw text, index rows, embeddings, caches, and derived summaries.
 
-Keep “identity” separate from memory. One Friday means a stable assistant instance and shared control-plane state; sessions are still separate execution histories. The phrase “that research” should resolve using the active task/project and recent task graph, with a clarification when two candidates are plausible.
+Keep “identity” separate from memory. One Fridayy means a stable assistant instance and shared control-plane state; sessions are still separate execution histories. The phrase “that research” should resolve using the active task/project and recent task graph, with a clarification when two candidates are plausible.
 
 ## Security and permission architecture
 
@@ -330,7 +330,7 @@ MCP is a tool transport, not a security boundary. Dynamically discovering every 
 
 ## Research, subagents, and skills
 
-The `hec-ovi/research-skill` now has a thoughtful decompose/gather/validate/contrarian/store workflow and Codex compatibility, but it is young. Adapt its workflow and output schema; do not make Friday’s research database depend on a single SKILL.md implementation.
+The `hec-ovi/research-skill` now has a thoughtful decompose/gather/validate/contrarian/store workflow and Codex compatibility, but it is young. Adapt its workflow and output schema; do not make Fridayy’s research database depend on a single SKILL.md implementation.
 
 SerpApi has an official open-source MCP server and is reasonable as one search provider. Research still needs direct-page retrieval, primary-source preference, source timestamps, claim-to-source mapping, contradictions, and evidence snapshots. Search snippets are leads, not evidence.
 
@@ -365,7 +365,7 @@ No polished UI. Prove or reject the foundations:
 
 ### Phase 1 — useful personal alpha (3–6 weeks after Phase 0)
 
-- one Friday identity with projects, tasks, and resumable conversations;
+- one Fridayy identity with projects, tasks, and resumable conversations;
 - PWA for laptop and phone;
 - model router with Ultra + local degraded mode;
 - explicit memory with provenance/Edit/Forget;
@@ -412,7 +412,7 @@ Email/calendar/CRM, scheduled workflows, and proactive recommendations should ar
 | Coding agent | Strong | Isolated git workspaces; DSH useful. |
 | Multi-source research | Strong | Remote model + browser/search; durable evidence store. |
 | Phone control | Strong | PWA + Tailscale Serve; laptop must be awake. |
-| Background headless work | Strong | Durable Friday worker; survives app closure/restart. |
+| Background headless work | Strong | Durable Fridayy worker; survives app closure/restart. |
 | Local offline assistant | Moderate | Small model, explicitly reduced autonomy. |
 | Voice | Strong | Local STT/TTS after core. |
 | Browser automation | Strong | Playwright first, dedicated profiles. |
@@ -424,7 +424,7 @@ Email/calendar/CRM, scheduled workflows, and proactive recommendations should ar
 
 ## Evaluation plan
 
-Friday should not graduate based on demos. Maintain versioned task suites:
+Fridayy should not graduate based on demos. Maintain versioned task suites:
 
 - 30 tool-selection/schema cases;
 - 20 memory retrieval/contradiction/deletion cases;
@@ -447,7 +447,7 @@ Do **not** start with the dashboard, pet art, PostgreSQL schema, or arbitrary GU
 4. safe Tailscale phone access;
 5. whether GNOME Wayland permits an acceptable semantic/vision computer-use path without privileged global input.
 
-If those five work, the vision is worth building. If the Wayland spike fails, Friday remains highly useful through browser/API/CLI tools while desktop control moves to a dedicated X11/virtual session or a different host architecture.
+If those five work, the vision is worth building. If the Wayland spike fails, Fridayy remains highly useful through browser/API/CLI tools while desktop control moves to a dedicated X11/virtual session or a different host architecture.
 
 ## Primary sources consulted
 

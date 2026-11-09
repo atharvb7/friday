@@ -1,4 +1,4 @@
-// Friday decides what to remember. After each exchange with the owner a small model call extracts
+// Fridayy decides what to remember. After each exchange with the owner a small model call extracts
 // durable facts/preferences/plans/important moments and saves them silently (the Memory tab shows
 // them with source "auto:chat"; he can edit or delete anything). Never stores secrets, never runs
 // for guests, is capped per day, and de-duplicates against what is already known.

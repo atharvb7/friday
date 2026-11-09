@@ -17,9 +17,9 @@ test('cli lifecycle: offline -> start -> status -> stop', () => {
     assert.equal(run(dir, port, 'status').status, 1);
     const up = run(dir, port, 'start');
     assert.equal(up.status, 0, up.stdout + up.stderr);
-    assert.match(up.stdout, /Friday online\./);
+    assert.match(up.stdout, /Fridayy online\./);
     assert.match(run(dir, port, 'status').stdout, /Local model:\s+off/);
-    assert.match(run(dir, port, 'stop').stdout, /Friday stopped/);
+    assert.match(run(dir, port, 'stop').stdout, /Fridayy stopped/);
     assert.equal(run(dir, port, 'status').status, 1);
   } finally { run(dir, port, 'stop'); rmSync(dir, { recursive: true, force: true }); }
 });

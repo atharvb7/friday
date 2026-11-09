@@ -1,5 +1,5 @@
 // A background agent can ask the user for something it must not guess (a phone number, which option, ...).
-// The task pauses; the question lands in chat + inbox; the user's answer (typed in the inbox or told to Friday in
+// The task pauses; the question lands in chat + inbox; the user's answer (typed in the inbox or told to Fridayy in
 // chat) resumes it. Answers for profile fields are saved so she never asks twice.
 import { randomUUID } from 'node:crypto';
 

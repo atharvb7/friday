@@ -1,4 +1,4 @@
-// Prospector: Friday's 24/7 client-hunting pipeline. Runs on the server on its own schedule (no chat turn needed):
+// Prospector: Fridayy's 24/7 client-hunting pipeline. Runs on the server on its own schedule (no chat turn needed):
 //   source (Google Maps via SerpApi, within a monthly search budget) -> audit each company's own website (+ its
 //   lowest-rated Google reviews when budget allows) -> keep only evidence that is literally on those pages ->
 //   qualify (JEV judgments, code decides) -> decision maker + a published, mail-accepting address -> draft in the
@@ -38,7 +38,7 @@ const SHORT = {
   time: () => 'reached the time limit for one run',
   model_down: () => 'the audit model kept failing',
 };
-const OFFERS = { automation: 'Forward-deployed AI engineering: production agentic systems that run an operational workflow end to end', freelance: 'Product engineering: building or fixing their web/mobile product end to end', friday: 'Friday, a custom autonomous AI agent set up for their business (early access)' };
+const OFFERS = { automation: 'Forward-deployed AI engineering: production agentic systems that run an operational workflow end to end', freelance: 'Product engineering: building or fixing their web/mobile product end to end', friday: 'Fridayy, a custom autonomous AI agent set up for their business (early access)' };
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const JUNK_EMAIL = /\.(png|jpe?g|gif|webp|svg|css|js)$|^(example|test|user|name|email|your|yourname|someone)@|@(example|sentry|wixpress|domain|email|sentry-next)\./i;
 const ROLE_LOCAL = /^(info|contact|hello|hi|office|admin|enquir(y|ies)|inquir(y|ies)|sales|support|mail|team|bookings?|reservations?|accounts|hr|careers|jobs|reception|care)$/i;

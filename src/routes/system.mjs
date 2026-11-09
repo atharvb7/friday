@@ -9,7 +9,7 @@ export function systemRoutes(router, ctx) {
       ? { ready: false, reason: 'emergency_stopped', consecutiveFailures: dshAdapter.consecutiveFailures ?? 0 }
       : dshAdapter.status();
     return [200, {
-      name: 'Friday',
+      name: 'Fridayy',
       phase: 'phase1',
       resources: governor.getSnapshot(),
       tasks: store.countTasks(),

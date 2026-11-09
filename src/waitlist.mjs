@@ -4,7 +4,7 @@
 // gets a notification per new signup (capped per day so a flood cannot bury the inbox).
 //
 // Optional Google Sheet mirror: the owner's own sheet carries a tiny Apps Script web app (docs: WAITLIST_SHEET_SCRIPT)
-// that only appends rows. Friday posts new signups to it with a shared secret. Every row remembers whether it reached
+// that only appends rows. Fridayy posts new signups to it with a shared secret. Every row remembers whether it reached
 // the sheet, so a failed post is retried later and signups from before the sheet existed are backfilled.
 import { randomUUID } from 'node:crypto';
 

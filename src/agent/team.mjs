@@ -1,4 +1,4 @@
-// Multi-agent teamwork (kind 'team'). Friday splits a big goal into subtasks, each for the runtime that fits
+// Multi-agent teamwork (kind 'team'). Fridayy splits a big goal into subtasks, each for the runtime that fits
 // (DSH research/coding/agent, Hermes, the laptop computer agent), runs independent ones in parallel, feeds
 // finished results into the subtasks that depend on them, then merges everything into one report.
 // Subtasks are real task rows (kind 'sub:<runtime>', never claimed by the worker) so their traces are visible,

@@ -2,7 +2,7 @@
 name: receiving-code-review
 description: Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative agreement or blind implementation
 ---
-> **Friday note:** never post comments, replies or reviews to GitHub (or anywhere outside the workspace) yourself — report the replies you would send and let Friday/the user decide.
+> **Fridayy note:** never post comments, replies or reviews to GitHub (or anywhere outside the workspace) yourself — report the replies you would send and let Fridayy/the user decide.
 
 
 # Code Review Reception

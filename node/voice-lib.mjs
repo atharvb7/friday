@@ -173,14 +173,14 @@ export const notifyText = (t, max = 300) => { const s = String(t ?? '').replace(
 // Human message for a failure (what the notification says).
 export function explainError(e) {
   const m = String(e?.message ?? e ?? '');
-  if (e?.name === 'TimeoutError' || /due to timeout|timed? ?out/i.test(m)) return 'Friday’s server took too long to answer. Try again in a moment.';
+  if (e?.name === 'TimeoutError' || /due to timeout|timed? ?out/i.test(m)) return 'Fridayy’s server took too long to answer. Try again in a moment.';
   if (e?.name === 'AbortError' || /aborted|cancel/i.test(m)) return null;
   const cause = String(e?.cause?.code ?? e?.cause?.message ?? '');
-  if (/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|ECONNRESET|EAI_AGAIN|fetch failed|UND_ERR|socket/i.test(`${m} ${cause}`)) return 'Can’t reach Friday’s server (offline, or Tailscale is down).';
-  if (/\b401\b|unauthorized/i.test(m)) return 'Friday rejected the voice token. Run node/voice-key-install.sh again with a new token.';
+  if (/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|ECONNRESET|EAI_AGAIN|fetch failed|UND_ERR|socket/i.test(`${m} ${cause}`)) return 'Can’t reach Fridayy’s server (offline, or Tailscale is down).';
+  if (/\b401\b|unauthorized/i.test(m)) return 'Fridayy rejected the voice token. Run node/voice-key-install.sh again with a new token.';
   if (/\b403\b|forbidden/i.test(m)) return 'This token can’t chat. Create a device with scopes read,chat and put its token in ~/.friday-node/voice.json.';
   if (/\b501\b|not_installed/i.test(m)) return 'Speech-to-text isn’t installed on the server (and not on this laptop).';
-  if (/\b50[23]\b|busy/i.test(m)) return 'Friday is busy right now, try again in a moment.';
+  if (/\b50[23]\b|busy/i.test(m)) return 'Fridayy is busy right now, try again in a moment.';
   if (/mic|pw-record|audio source/i.test(m)) return 'Microphone unavailable (busy, muted or missing).';
   return `Something went wrong: ${m.slice(0, 120)}`;
 }

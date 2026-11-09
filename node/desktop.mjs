@@ -1,4 +1,4 @@
-// Desktop helpers for the laptop node: the whole GNOME desktop, not just Friday's browser.
+// Desktop helpers for the laptop node: the whole GNOME desktop, not just Fridayy's browser.
 //   apps     find/launch any installed app (.desktop entries incl. snap + flatpak exports), fuzzy names
 //   windows  list (AT-SPI), focus, close — verified, never "press Alt+F4 and hope"
 //   input    keyboard + absolute pointer through a uinput virtual device (input-helper.py, no root, works on Wayland)
@@ -37,7 +37,7 @@ const helper = (cmd, args, timeout = 20_000) => new Promise((res, rej) => {
   p.stdin.end(JSON.stringify(args ?? {}));
 });
 
-// ms since the last keyboard/mouse event (GNOME Mutter idle monitor), or null. NOTE: Friday's own injected input counts too.
+// ms since the last keyboard/mouse event (GNOME Mutter idle monitor), or null. NOTE: Fridayy's own injected input counts too.
 export async function idleMs() {
   try {
     const o = await run('gdbus', ['call', '--session', '--dest', 'org.gnome.Mutter.IdleMonitor', '--object-path', '/org/gnome/Mutter/IdleMonitor/Core', '--method', 'org.gnome.Mutter.IdleMonitor.GetIdletime'], 2000);
@@ -144,7 +144,7 @@ export function findApps(apps, query, limit = 5) {
 // One long-lived helper process owns the virtual devices; commands are JSON lines.
 export class InputDevice {
   #proc = null; #ready = null; #seq = 0; #waiting = new Map(); #idleTimer = null;
-  lastInjectAt = 0; // when Friday last injected input: the idle monitor can't tell her events from the user's
+  lastInjectAt = 0; // when Fridayy last injected input: the idle monitor can't tell her events from the user's
   constructor({ script = join(HERE, 'input-helper.py'), spawnImpl = spawn, idleExitMs = 10 * 60_000 } = {}) { Object.assign(this, { script, spawnImpl, idleExitMs }); }
 
   #start() {
@@ -225,7 +225,7 @@ export function homePath(p, { mustExist = true } = {}) {
   if (mustExist) real = realpathSync(abs);
   else { let d = dirname(abs); while (!existsSync(d) && d !== '/') d = dirname(d); real = join(realpathSync(d), abs.slice(d.length)); }
   if (real !== HOME && !real.startsWith(`${HOME}/`)) throw err('path_not_allowed', 'path_not_allowed: only files inside your home folder');
-  if (SECRET_PATH.test(real.slice(HOME.length))) throw err('sensitive_file_blocked', 'sensitive_file_blocked: keys/credentials are never read or written by Friday');
+  if (SECRET_PATH.test(real.slice(HOME.length))) throw err('sensitive_file_blocked', 'sensitive_file_blocked: keys/credentials are never read or written by Fridayy');
   return real;
 }
 
@@ -268,14 +268,14 @@ export function makeDesktop({ allowedDirs = defaultAllowedDirs(), fullAccess = t
     }
     return top.a;
   };
-  // Input goes to whatever has focus: refuse while the screen is locked or the HUMAN (not Friday) just used the machine.
+  // Input goes to whatever has focus: refuse while the screen is locked or the HUMAN (not Fridayy) just used the machine.
   const userActive = async (withinMs = 1500) => { const ms = await idle(); return ms !== null && ms < withinMs && Date.now() - ms > input.lastInjectAt + 400; };
   const guardInput = async () => {
-    if (await locked()) throw err('screen_locked', 'screen_locked: the laptop is locked; Friday cannot type or click until it is unlocked');
+    if (await locked()) throw err('screen_locked', 'screen_locked: the laptop is locked; Fridayy cannot type or click until it is unlocked');
     if (await userActive()) throw err('user_active', 'user_active: the user is using the keyboard/mouse right now; retry in a few seconds');
     await guardSelf();
   };
-  // Never click/type into Friday's own app (where approvals are decided). If the window list is unavailable the
+  // Never click/type into Fridayy's own app (where approvals are decided). If the window list is unavailable the
   // other guards still apply; this one is defence in depth.
   // The window list costs a helper process, so one answer is reused for 2 s (typing checks every 40 chars).
   let selfSeen = { at: 0, self: false };
@@ -356,7 +356,7 @@ export function makeDesktop({ allowedDirs = defaultAllowedDirs(), fullAccess = t
     // ASCII is typed key by key (US layout); anything else (emoji, accents, Hindi) is pasted through the clipboard.
     async type_text({ text, method = 'auto', pasteKeys = 'ctrl+v' }) {
       const s = String(text ?? ''); if (!s || s.length > 20_000) throw new Error('text must be 1-20000 chars');
-      if (mentionsSelf(s)) throw err('friday_own_ui', SELF_ERROR); // e.g. typing Friday's address into the address bar
+      if (mentionsSelf(s)) throw err('friday_own_ui', SELF_ERROR); // e.g. typing Fridayy's address into the address bar
       await guardInput();
       if (method === 'paste' || (method === 'auto' && (!ASCII.test(s) || s.length > 400))) {
         let old = null; try { old = (await clip('clip_get', {}, 5000)).text; } catch { /* nothing to restore */ }
@@ -367,7 +367,7 @@ export function makeDesktop({ allowedDirs = defaultAllowedDirs(), fullAccess = t
         if (old) clip('clip_set', { text: old }, 8000).catch(() => {});
         return { typed: s.length, method: 'paste' };
       }
-      // Chunks, so a human grabbing the keyboard mid-way stops Friday within ~1 s.
+      // Chunks, so a human grabbing the keyboard mid-way stops Fridayy within ~1 s.
       for (let i = 0; i < s.length; i += 40) { if (i) await guardInput(); await input.send({ op: 'type', text: s.slice(i, i + 40) }); }
       return { typed: s.length, method: 'keys' };
     },

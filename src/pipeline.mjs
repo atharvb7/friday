@@ -1,11 +1,11 @@
-// Business development: Friday's own small CRM for finding and working clients.
+// Business development: Fridayy's own small CRM for finding and working clients.
 //  - leads + their history (lead_events), a do-not-contact list (suppressions) and the business profile
 //    (what we sell, to whom, proof, voice) that every sales skill reads first.
 //  - Outreach goes out only through the gated outreach_send tool (one approval per batch); suppressed
 //    addresses/domains are refused in code, a daily cap protects the Gmail account, and every cold email
 //    carries an opt-out line.
 //  - tick(): replies from contacted leads stop their follow-ups (unsubscribe -> do-not-contact, out-of-office
-//    -> pause, bounce -> lost), and once a day due follow-ups become one nudge. Friday drafts; the user approves.
+//    -> pause, bounce -> lost), and once a day due follow-ups become one nudge. Fridayy drafts; the user approves.
 //  - With JEV configured (sales-judge.mjs), batches are quality-reviewed before approval and replies are classified
 //    (interest, question, objection, not now, referral, stop, out of office); fixed rules still run first.
 import { randomUUID } from 'node:crypto';
@@ -328,7 +328,7 @@ export class Pipeline {
   }
   // 'designed' (header bar, sections; the user's approved look) or 'plain' (Gmail-compose look: what cold-email data favours).
   style() { return this.settings.get('outreach_style', 'designed') === 'plain' ? 'plain' : 'designed'; }
-  // Friday sometimes signs off itself ("Best,\nAtharv ..."); the template adds the real signature, so drop hers.
+  // Fridayy sometimes signs off itself ("Best,\nAtharv ..."); the template adds the real signature, so drop hers.
   stripSignoff(body) {
     const brand = { ...DEFAULT_BRAND, ...(this.settings.get('outreach_brand', null) ?? {}) };
     const first = brand.name.toLowerCase().split(' ')[0];

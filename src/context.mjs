@@ -1,4 +1,4 @@
-// Composition root: builds every Friday service once and owns their lifecycle.
+// Composition root: builds every Fridayy service once and owns their lifecycle.
 // Route modules receive this object and never construct services themselves.
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, realpathSync } from 'node:fs';
@@ -127,7 +127,7 @@ export function createContext({ appRoot, env = process.env }) {
   };
   let dshInner;
   if (env.FRIDAY_AGENT_URL) {
-    // Containerised deployment: agents run in a separate, isolated container (no Friday data, filtered egress).
+    // Containerised deployment: agents run in a separate, isolated container (no Fridayy data, filtered egress).
     dshInner = new RemoteDshAdapter({
       url: env.FRIDAY_AGENT_URL, secret: env.FRIDAY_AGENT_SECRET ?? '',
       prepare: (opts) => {
@@ -271,7 +271,7 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.composio = new Composio({ apiKey: env.COMPOSIO_API_KEY, settings });
   ctx.files = new Files({ store, dir: resolve(dataDir, 'files'), bus });
   { // Gmail: 'main' = the owner's personal inbox, 'outreach' = the address that sends cold outreach and gets the replies.
-    const onReauth = ({ account, email }) => ctx.notifications?.create({ level: 'warning', title: `Gmail (${account === 'main' ? 'personal' : account}) disconnected`, body: `Google stopped accepting Friday's access${email ? ` to ${email}` : ''} (expired or revoked). Connect it again in Settings → Connected apps.` });
+    const onReauth = ({ account, email }) => ctx.notifications?.create({ level: 'warning', title: `Gmail (${account === 'main' ? 'personal' : account}) disconnected`, body: `Google stopped accepting Fridayy's access${email ? ` to ${email}` : ''} (expired or revoked). Connect it again in Settings → Connected apps.` });
     const g = { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, publicUrl: env.FRIDAY_PUBLIC_URL, dataDir, onReauth };
     ctx.google = new GoogleAuth(g);
     ctx.googleOutreach = new GoogleAuth({ ...g, account: 'outreach' });

@@ -85,7 +85,7 @@ export class NodeHub {
   }
 
   // Send a command and await its result. `interactive` actions (input/focus) are
-  // refused while the user is active so Friday never fights them for the mouse.
+  // refused while the user is active so Fridayy never fights them for the mouse.
   dispatch({ action, args = {}, nodeId = null, timeoutMs = DEFAULT_TIMEOUT_MS, interactive = false, where = 'laptop' }) {
     const node = this.pick(nodeId, { where, action });
     if (!node) return Promise.reject(Object.assign(new Error('node_offline'), { code: 'node_offline' }));

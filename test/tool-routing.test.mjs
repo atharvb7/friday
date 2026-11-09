@@ -37,7 +37,7 @@ test('tool routing: core always; words pick groups; previous message and recent 
   assert.equal(groupOf('computer_task'), 'laptop'); assert.equal(groupOf('memory_save'), 'core');
 });
 
-test('tool routing: every Friday tool belongs to core or a group; unknown tools are never hidden', () => {
+test('tool routing: every Fridayy tool belongs to core or a group; unknown tools are never hidden', () => {
   const dir = mkdtempSync(join(tmpdir(), 'friday-tr-'));
   return import('../src/context.mjs').then(({ createContext }) => {
     const ctx = createContext({ appRoot: new URL('..', import.meta.url).pathname, env: { FRIDAY_DATA_DIR: dir } });

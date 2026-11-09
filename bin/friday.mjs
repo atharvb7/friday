@@ -46,7 +46,7 @@ async function device(args) {
     const r = await call('GET', '/v1/devices');
     for (const d of r.body.devices ?? []) console.log(`${d.id}  ${d.name.padEnd(16)} ${d.scopes.join(',').padEnd(28)} ${d.revoked_at ? 'REVOKED' : `seen ${d.last_seen_at ?? 'never'}`}`);
     return 0;
-  } catch { console.error('Friday is not reachable. Run: friday start'); return 1; }
+  } catch { console.error('Fridayy is not reachable. Run: friday start'); return 1; }
 }
 
 async function totpCmd(args) {
@@ -56,7 +56,7 @@ async function totpCmd(args) {
     if (r.status !== 201) { console.error(`failed: ${r.body.error}`); return 1; }
     console.log(`Add this to your authenticator app:\n  secret: ${r.body.secret}\n  uri:    ${r.body.uri}\nThen run: friday totp confirm <6-digit code>`);
     return 0;
-  } catch { console.error('Friday is not reachable. Run: friday start'); return 1; }
+  } catch { console.error('Fridayy is not reachable. Run: friday start'); return 1; }
 }
 
 async function status({ quiet = false } = {}) {
@@ -64,8 +64,8 @@ async function status({ quiet = false } = {}) {
   let s = null;
   try { const r = await api('/v1/status'); if (r.status === 200) s = r.body; } catch {}
   const line = (k, v) => console.log(`${k.padEnd(14)} ${v}`);
-  if (!pid && !s) { if (!quiet) console.log('Friday is offline.'); return 1; }
-  console.log(s ? 'Friday online.' : 'Friday process is up but the API is not answering.');
+  if (!pid && !s) { if (!quiet) console.log('Fridayy is offline.'); return 1; }
+  console.log(s ? 'Fridayy online.' : 'Fridayy process is up but the API is not answering.');
   if (!s) return 2;
   const rs = s.resources ?? {};
   line('Brain:', `${s.brain}${s.nemotronConfigured ? '' : ' (no Nemotron key)'}`);
@@ -87,7 +87,7 @@ async function start() {
   writeFileSync(pidFile, `${child.pid}\n`, { mode: 0o600 });
   for (let i = 0; i < 40; i++) {
     await sleep(250);
-    if (!alive(child.pid)) { rmSync(pidFile, { force: true }); console.error(`Friday exited during startup. See: friday logs`); return 1; }
+    if (!alive(child.pid)) { rmSync(pidFile, { force: true }); console.error(`Fridayy exited during startup. See: friday logs`); return 1; }
     try { const r = await api('/v1/status'); if (r.status === 200) return status(); } catch {}
   }
   console.error('Started, but the API did not answer within 10s. See: friday logs');
@@ -96,10 +96,10 @@ async function start() {
 
 async function stop() {
   const pid = readPid();
-  if (!pid) { console.log('Friday is not running.'); rmSync(pidFile, { force: true }); return 0; }
+  if (!pid) { console.log('Fridayy is not running.'); rmSync(pidFile, { force: true }); return 0; }
   process.kill(pid, 'SIGTERM');
   for (let i = 0; i < 40 && alive(pid); i++) await sleep(250);
-  if (alive(pid)) { process.kill(pid, 'SIGKILL'); console.log('Force-killed after 10s.'); } else console.log('Friday stopped.');
+  if (alive(pid)) { process.kill(pid, 'SIGKILL'); console.log('Force-killed after 10s.'); } else console.log('Fridayy stopped.');
   rmSync(pidFile, { force: true });
   return 0;
 }
@@ -130,7 +130,7 @@ async function backup(args) {
 
 async function restore(args) {
   const { restoreBackup } = await import('../src/backup.mjs');
-  if (readPid()) { console.error('Stop Friday first: friday stop'); return 1; }
+  if (readPid()) { console.error('Stop Fridayy first: friday stop'); return 1; }
   const file = args.find((a) => !a.startsWith('--'));
   if (!file) { console.error('usage: friday restore <file.tgz> [--force]'); return 64; }
   try { console.log(`Restored from ${restoreBackup({ file, dataDir, force: args.includes('--force') }).restoredFrom}. Run: friday start`); return 0; }
@@ -148,7 +148,7 @@ async function voiceCmd(args) {
   if (!prebuilt && spawnSync(py, ['-m', 'pip', 'install', '--disable-pip-version-check', 'faster-whisper', 'kokoro-onnx', 'soundfile', 'numpy', 'tokenizers'], { stdio: 'inherit' }).status !== 0) return 1;
   console.log('Downloading models (Whisper small ~250 MB, Kokoro ~330 MB, expressive voice ~1.2 GB; skip it with FRIDAY_VOICE_EXPRESSIVE=0)…');
   const r = spawnSync(py, [resolve(appRoot, 'voice', 'setup.py')], { stdio: 'inherit', env: { ...process.env, FRIDAY_VOICE_HOME: home } });
-  if (r.status === 0) console.log('Voice ready. Restart Friday: friday restart');
+  if (r.status === 0) console.log('Voice ready. Restart Fridayy: friday restart');
   return r.status ?? 1;
 }
 
@@ -176,7 +176,7 @@ async function doctor() {
   const envPath = resolve(appRoot, '.env');
   if (existsSync(envPath)) row((statSync(envPath).mode & 0o077) === 0, '.env perms', (statSync(envPath).mode & 0o777).toString(8));
   let up = false; try { up = (await api('/v1/status')).status === 200; } catch {}
-  row(up, 'API reachable', up ? base : 'Friday not running', true);
+  row(up, 'API reachable', up ? base : 'Fridayy not running', true);
   console.log(bad ? `\n${bad} problem(s).` : '\nNo blocking problems.');
   return bad ? 1 : 0;
 }

@@ -1,6 +1,6 @@
 // Unified diffs (git diff output) for open-source contributions: parse, check against the contribution policy, and
 // apply to the real upstream files. Applying is strict: every context and removed line must match the original exactly
-// at the stated line, so the change Friday commits is exactly the diff the owner approved. No fuzz, no offsets.
+// at the stated line, so the change Fridayy commits is exactly the diff the owner approved. No fuzz, no offsets.
 import { createHash } from 'node:crypto';
 
 export const PATCH_LIMITS = Object.freeze({ maxFiles: 8, maxChangedLines: 400, maxPatchBytes: 200_000 });

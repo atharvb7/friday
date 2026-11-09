@@ -1,4 +1,4 @@
-// Bridge between the laptop node and the "Friday for WhatsApp Web" Chrome extension in his own Chrome.
+// Bridge between the laptop node and the "Fridayy for WhatsApp Web" Chrome extension in his own Chrome.
 // The extension long-polls 127.0.0.1:<port>/wa/next for a command and posts the result to /wa/result; every request
 // must carry the per-install token (x-friday-wa). Nothing listens beyond loopback. ensureExtension() keeps a ready-to-load
 // copy of the extension (with its config.js) in ~/.friday-node/wa-extension.
@@ -45,7 +45,7 @@ export class WaBridge {
 
   // Run one op in his WhatsApp tab (status | read | open | send).
   command(op, args = {}, timeoutMs = 25_000) {
-    if (!this.connected) return Promise.reject(new Error('wa_extension_offline: the Friday extension is not connected (Chrome closed, no WhatsApp Web tab, or the extension is not loaded)'));
+    if (!this.connected) return Promise.reject(new Error('wa_extension_offline: the Fridayy extension is not connected (Chrome closed, no WhatsApp Web tab, or the extension is not loaded)'));
     const cmd = { id: randomUUID(), op, args };
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.#pending.delete(cmd.id); reject(new Error('wa_timeout: the WhatsApp tab did not answer')); }, timeoutMs);

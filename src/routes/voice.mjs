@@ -1,5 +1,5 @@
 // POST audio/wav -> text, text -> audio/wav, and a one-call "ask" for devices:
-// wav in -> transcribe -> Friday answers -> wav out (headers carry the texts).
+// wav in -> transcribe -> Fridayy answers -> wav out (headers carry the texts).
 import { DEFAULT_VOICE, ENGINES } from '../voice-server.mjs';
 import { voiceTurn } from '../voice-turn.mjs';
 
@@ -11,7 +11,7 @@ export function voiceRoutes(router, ctx) {
   const { voiceServer, bus, settings } = ctx;
   const cfg = () => ({ ...DEFAULT_VOICE, ...settings.get('voice', {}) });
   // Biases Whisper toward the names/vocabulary it will hear (and Hinglish-style English).
-  const sttPrompt = () => `Friday, play Starboy on Brave. Pause the music. Open YouTube, WhatsApp on my laptop. What is on my screen? Remind me tomorrow. ${settings.get('user_name', 'Atharv')}, yaar, accha, haan, bro.`;
+  const sttPrompt = () => `Fridayy, play Starboy on Brave. Pause the music. Open YouTube, WhatsApp on my laptop. What is on my screen? Remind me tomorrow. ${settings.get('user_name', 'Atharv')}, yaar, accha, haan, bro.`;
   const fail = (e) => (e.code === 'unavailable' ? [501, { error: e.message }] : e.code === 'busy' ? [503, { error: e.message }] : [e instanceof TypeError ? 400 : 502, { error: e.message }]);
   const wav = (res, buf, headers = {}) => { res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': buf.length, 'Cache-Control': 'no-store', ...headers }); res.end(buf); };
   const enc = (t) => encodeURIComponent(String(t).slice(0, 400));
@@ -57,7 +57,7 @@ export function voiceRoutes(router, ctx) {
       const out = await ctx.quickTurn(heard, null, 'voice');
       bus.publish('voice.speaking', {});
       const audio = await voiceServer.speak(out.reply, cfg());
-      return { raw: (res) => wav(res, audio, { 'X-Friday-Heard': enc(heard), 'X-Friday-Reply': enc(stripVoiceTags(out.reply)) }) };
+      return { raw: (res) => wav(res, audio, { 'X-Fridayy-Heard': enc(heard), 'X-Fridayy-Reply': enc(stripVoiceTags(out.reply)) }) };
     } catch (e) { return fail(e); } finally { bus.publish('voice.ended', {}); }
   });
 }

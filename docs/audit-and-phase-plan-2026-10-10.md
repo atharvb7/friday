@@ -1,4 +1,4 @@
-# Friday — repo audit and phase plan (10 Oct 2026)
+# Fridayy — repo audit and phase plan (10 Oct 2026)
 
 Basis: read of `src/server.mjs`, `nemotron.mjs`, `memory.mjs`, `intent.mjs`, `chat-reply.mjs`, `dsh.mjs`,
 `browser-live.mjs`, `research.mjs`, `voice.mjs`, plus all docs; `npm test` run (146/146 pass); tool/binary
@@ -6,7 +6,7 @@ probe on this laptop. Live Nemotron/JEV/SerpApi calls were NOT exercised.
 
 ## 1. Headline
 
-Friday today is a **well-guarded local task/approval control plane with a chat endpoint**, not yet a
+Fridayy today is a **well-guarded local task/approval control plane with a chat endpoint**, not yet a
 Jarvis. Roughly 9.6k lines, zero npm dependencies, strong safety discipline (effect ledger, exact-arg
 approvals, kill switch, traversal guards, audit hash chain). But most "phase complete" claims in
 `docs/all-phases-complete-2026-10-05.md` mean *a stub with tests*, not a working capability.
@@ -39,7 +39,7 @@ approvals, kill switch, traversal guards, audit hash chain). But most "phase com
   websocket/SSE, model router (`ai.chat/reason/plan/execute`), local Qwen, STT/TTS, personality config.**
   (grep confirms zero hits.)
 - Chat persona: hard-coded one-line system prompt ("concise personal computer agent") — none of the
-  witty/chaotic Friday personality in the spec. Local-fallback replies say "laptop companion".
+  witty/chaotic Fridayy personality in the spec. Local-fallback replies say "laptop companion".
 - Voice = browser Web Speech API in the PWA only; `voice.mjs` is chunking logic. Pet "talk" = head bob.
 - Desktop control: `wtype`/`ydotool` not installed -> fail-closed. No screenshot, no vision, no AT-SPI
   (stubs).
@@ -108,7 +108,7 @@ approvals, kill switch, traversal guards, audit hash chain). But most "phase com
 
 ## 7. Decisions recorded 10 Oct 2026 (from user)
 
-- Final host: Linux server, **6 GB RAM, no GPU**. Friday + DSH both live there. **No local model** (Qwen dropped;
+- Final host: Linux server, **6 GB RAM, no GPU**. Fridayy + DSH both live there. **No local model** (Qwen dropped;
   fallback = other remote providers via the model router, then honest degraded mode).
 - Clients: laptop, phone, hardware devices (ESP32) all connect to the server.
 - Build and prove everything on the laptop first; deploy to the server after it works. Therefore everything
@@ -116,14 +116,14 @@ approvals, kill switch, traversal guards, audit hash chain). But most "phase com
 - Target: always-on (24/7), remembers tasks, reminds, researches, does work, fully autonomous.
 - Autonomy model: per-category tiers (ASK / TRUSTED / AUTONOMOUS / HIGH). Default irreversible actions (money,
   deletion, messages to other people, security changes) stay approval-gated until the user raises a tier.
-- Open: computer-use target. Proposed: virtual desktop on the server for Friday's own work + a thin
+- Open: computer-use target. Proposed: virtual desktop on the server for Fridayy's own work + a thin
   "laptop node" agent (outbound connection to server) when it must touch the laptop.
 
 ## 8. Computer-use decision (10 Oct 2026)
 
 Computer use and logged-in browser control run **on the user's laptop**, not the server.
 - Server (24/7): brain, DSH, memory, tasks, reminders, research via search/fetch, coding in server workspaces.
-- Laptop "node": small Friday client that dials OUT to the server (WebSocket over Tailscale/TLS), runs
+- Laptop "node": small Fridayy client that dials OUT to the server (WebSocket over Tailscale/TLS), runs
   screenshot/click/type/AT-SPI/Playwright against the real Chrome profile, honours the control lease and
   pauses on user activity. Server never gets inbound access to the laptop.
 - Consequence: computer/WhatsApp-type tasks only execute while the laptop is on and the node is connected;

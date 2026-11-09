@@ -1,6 +1,6 @@
-// Files shared in chat: uploads from the user and documents Friday makes. Stored under <data>/files/<id> with
+// Files shared in chat: uploads from the user and documents Fridayy makes. Stored under <data>/files/<id> with
 // metadata in SQLite. Downloads are always served as attachments (never rendered inline), so a hostile upload can't
-// run as a page on Friday's origin.
+// run as a page on Fridayy's origin.
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync, copyFileSync } from 'node:fs';
 import { join, extname } from 'node:path';

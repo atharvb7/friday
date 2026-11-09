@@ -1,4 +1,4 @@
-// Friday's mood: a small persistent state that drifts with time of day, how long it's been since
+// Fridayy's mood: a small persistent state that drifts with time of day, how long it's been since
 // the owner talked to her, and recent outcomes — so she feels like someone with moods, not a
 // fixed tone. Mood is STYLE ONLY (it is injected into the prompt); it never changes permissions,
 // and serious work always overrides it (see personality.mjs).

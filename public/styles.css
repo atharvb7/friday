@@ -1,4 +1,4 @@
-/* Friday — design system. Dark-first, calm, slightly playful. No inline styles anywhere (CSP). */
+/* Fridayy — design system. Dark-first, calm, slightly playful. No inline styles anywhere (CSP). */
 :root {
   --bg: #0a0c12; --bg2: #0f121a; --surface: #131722; --surface2: #181d2a; --line: #232a3b; --line2: #2e3750;
   --text: #e8ecf6; --muted: #8b95ad; --faint: #5d6780;
@@ -63,7 +63,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px
 .login .card { width: min(420px, 100%); box-shadow: var(--shadow); }
 .login h1 { font-size: 26px; margin: 14px 0 6px; }
 
-/* orb (Friday's state) */
+/* orb (Fridayy's state) */
 .orb { width: 28px; height: 28px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #fff8, transparent 40%), var(--grad); box-shadow: 0 0 18px rgba(124,108,255,.55); flex: none; transition: filter .3s; }
 .orb.idle { animation: breathe 4s ease-in-out infinite; }
 .orb.thinking { animation: pulse .9s ease-in-out infinite; filter: hue-rotate(40deg) saturate(1.3); }
@@ -476,7 +476,7 @@ input[type=email] { width: 100%; background: var(--glass-strong); border: 1px so
 /* Chat delete: armed state after the first click (second click deletes). */
 .convo-del.armed { opacity: 1 !important; color: var(--bad); background: rgba(255,107,129,.15); font-weight: 600; font-size: 12px; white-space: nowrap; }
 
-/* Friday's face: the orb and her chat avatar are her portrait. State shows in the glow and ring,
+/* Fridayy's face: the orb and her chat avatar are her portrait. State shows in the glow and ring,
    never by recolouring her (hue-rotate on a face looks wrong). */
 .orb, .msg .av.friday { background: url(/assets/friday-face.webp) center / cover no-repeat, var(--grad); }
 .orb { position: relative; border: 1.5px solid rgba(255,255,255,.7); }

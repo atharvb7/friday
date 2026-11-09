@@ -1,6 +1,6 @@
-// Recommendations ledger: every suggestion Friday makes that the owner could act on ("pitch freight forwarders in
+// Recommendations ledger: every suggestion Fridayy makes that the owner could act on ("pitch freight forwarders in
 // Pune next", "move the follow-up to day 4") is filed with its evidence, what it should lead to, and a date to
-// check. When that date comes it is scored worked / mixed / failed, so Friday's advice gets a track record instead
+// check. When that date comes it is scored worked / mixed / failed, so Fridayy's advice gets a track record instead
 // of vanishing into chat. A suggestion that costs money must cite evidence the owner can check.
 import { randomUUID } from 'node:crypto';
 import { parseWhen } from './time.mjs';
@@ -89,7 +89,7 @@ export class Recs {
     return this.db.prepare("SELECT id FROM recs WHERE outcome IS NULL AND status IN ('accepted','open','expired') AND review_on <= ? ORDER BY review_on ASC LIMIT ?").all(this.#iso(), max).map((r) => this.get(r.id));
   }
 
-  // The track record: how often he takes Friday's advice, and how often it works.
+  // The track record: how often he takes Fridayy's advice, and how often it works.
   stats({ sinceDays = 90 } = {}) {
     const since = new Date(this.now().getTime() - sinceDays * DAY).toISOString();
     const rows = this.db.prepare('SELECT category, status, outcome FROM recs WHERE created_at >= ?').all(since);

@@ -28,7 +28,7 @@
   body.compact #pet-state { font-size: 12px; padding: 4px 8px; }
   body.compact #attrib { font-size: 11px; padding: 4px; }
 
-/* Friday's 2D portrait pet: her colours (plum hair, pink accents), canvas fills the window. */
+/* Fridayy's 2D portrait pet: her colours (plum hair, pink accents), canvas fills the window. */
 body.portrait { background: radial-gradient(900px 600px at 50% 30%, #3a1f33, #1a0f16 70%); color: #fbe9f1; }
 #stage2d { position: fixed; inset: 0; }
 #stage2d canvas { display: block; cursor: pointer; }

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Friday brain benchmark. Runs the real brain (prompt, tool loading, guards, router) against real models on a
+// Fridayy brain benchmark. Runs the real brain (prompt, tool loading, guards, router) against real models on a
 // scratch data dir with external services stubbed, grades each case, and prints/saves the scores.
 //
 //   node scripts/bench/brain-bench.mjs --label "Super" --models nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b
 //   options: --app <friday root, default this repo>  --env-file <.env with keys, default <app>/.env>
 //            --routing 0|1 (tool loading, default 1)  --rpm N (throttle Gemini calls)  --only id,id  --out file.json
 //            --suite base|hard|all (default all: 25 everyday cases + 14 hard ones)
-// --models applies one chain to chat, execute, reason and plan; omit it to use Friday's default chains.
+// --models applies one chain to chat, execute, reason and plan; omit it to use Fridayy's default chains.
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';

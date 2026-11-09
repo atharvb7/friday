@@ -1,4 +1,4 @@
-// Remembers which "caring check-ins" Friday made recently so she doesn't nag
+// Remembers which "caring check-ins" Fridayy made recently so she doesn't nag
 // (water/food/sleep/breaks) every message, like a real person wouldn't.
 const TOPICS = {
   water: { re: /\b(water|hydrat\w*|chug)\b/i, cooldownMin: 90 },

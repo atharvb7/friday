@@ -1,4 +1,4 @@
-# Friday deployer: builds/runs ONLY Friday's own apps (label friday.app) and publishes them on the tailnet.
+# Fridayy deployer: builds/runs ONLY Fridayy's own apps (label friday.app) and publishes them on the tailnet.
 FROM tailscale/tailscale:v1.98.10 AS ts
 FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*

@@ -1,8 +1,8 @@
-// Friday's deployer: builds and runs ONLY Friday's own apps on the server and publishes each one on the owner's
+// Fridayy's deployer: builds and runs ONLY Fridayy's own apps on the server and publishes each one on the owner's
 // tailnet (https://<host>.ts.net:<port>, tailnet-only). It talks to the Docker Engine API over the mounted socket
 // and to tailscaled over its socket, so it is powerful — which is why its API is tiny and fixed:
 //   - sources come only from the coding agent's project folders (read-only mount), never from arbitrary paths;
-//   - it only ever touches containers/images labelled friday.app (never sorch, supabase, hermes, Friday itself...);
+//   - it only ever touches containers/images labelled friday.app (never sorch, supabase, hermes, Fridayy itself...);
 //   - every app runs unprivileged: no capabilities, no new privileges, memory/CPU/pid limits, no host mounts,
 //     ports bound to 127.0.0.1 only and exposed solely through `tailscale serve` (never Funnel / public internet).
 // Zero dependencies; Node 22.

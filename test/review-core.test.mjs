@@ -127,7 +127,7 @@ test('questions: waiting with an already-aborted signal rejects at once', async 
   } finally { b.done(); }
 });
 
-test('context: the proactive briefing gets Friday\'s mood', async () => {
+test('context: the proactive briefing gets Fridayy\'s mood', async () => {
   const { createContext } = await import('../src/context.mjs');
   const dir = mkdtempSync(join(tmpdir(), 'friday-review-ctx-'));
   const ctx = createContext({ appRoot: new URL('..', import.meta.url).pathname, env: { FRIDAY_DATA_DIR: dir } });

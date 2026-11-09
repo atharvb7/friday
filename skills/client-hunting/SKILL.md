@@ -1,6 +1,6 @@
 ---
 name: client-hunting
-description: Find, study and shortlist the right companies to pitch (automation, freelance dev, Friday) - pick non-tech businesses that cannot build it themselves, audit each one for a real operational gap, score fit, find the decision maker and a real email, and decide who gets what message. Use for "find me clients", "find candidates", "who should I email", "shortlist companies", "prospect for me".
+description: Find, study and shortlist the right companies to pitch (automation, freelance dev, Fridayy) - pick non-tech businesses that cannot build it themselves, audit each one for a real operational gap, score fit, find the decision maker and a real email, and decide who gets what message. Use for "find me clients", "find candidates", "who should I email", "shortlist companies", "prospect for me".
 ---
 
 # Client hunting
@@ -77,7 +77,7 @@ fact from their site, claim no problem, invent no facts or numbers, ask whether 
 Score 1-5 each, with one line of evidence:
 - **Gap clarity** - is the manual pain visible and specific?
 - **Value** - does fixing it save real money/time or win customers? (volume x value)
-- **Fit** - is it squarely our offer (automation / dev / Friday) and not something they'd build themselves?
+- **Fit** - is it squarely our offer (automation / dev / Fridayy) and not something they'd build themselves?
 - **Ability to pay** - real business with revenue (team, locations, years, clients)?
 - **Reachability** - can we identify the decision maker and a working email?
 
@@ -108,7 +108,7 @@ this company's page, review or post. Never set stage contacted yourself (it is s
 
 ## Rule 6: decide what to say (match message to gap)
 
-- Pick the offer that fixes THEIR gap (usually FDE automation; freelance dev for build needs; Friday for owner-run
+- Pick the offer that fixes THEIR gap (usually FDE automation; freelance dev for build needs; Fridayy for owner-run
   firms drowning in admin).
 - Use the matching template in the profile's Messaging section. Line one is the gap evidence, in their world's words.
 - The give must be about their gap: "a one-page plan for automating your quote requests", not a generic call.

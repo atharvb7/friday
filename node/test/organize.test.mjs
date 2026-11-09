@@ -28,14 +28,14 @@ test('categories by extension, incl. .tar.gz and upper case', () => {
   assert.equal(categoryOf('a.PDF'), 'document'); assert.equal(categoryOf('x.tar.gz'), 'archive'); assert.equal(categoryOf('k.AppImage'), 'installer'); assert.equal(categoryOf('noext'), 'other');
 });
 
-test('scan: duplicates, pins (hidden, partial, launcher target, Friday folder), dir kinds, peeks skip sensitive names', async () => {
+test('scan: duplicates, pins (hidden, partial, launcher target, Fridayy folder), dir kinds, peeks skip sensitive names', async () => {
   const { h } = home();
   try {
     const r = await scanFolder({ dir: '~/Downloads', home: h, deps: noProc(h) });
     const by = Object.fromEntries(r.entries.map((e) => [e.name, e]));
     assert.equal(by['Resume (1).pdf'].dupOf, 'Resume.pdf'); assert.equal(by['Resume (1).pdf'].suggest, 'Duplicates');
     assert.match(by['.hidden'].pinned, /hidden/); assert.match(by['movie.mp4.crdownload'].pinned, /in progress/);
-    assert.match(by.MyApp.pinned, /launcher/); assert.match(by['friday-media'].pinned, /Friday/);
+    assert.match(by.MyApp.pinned, /launcher/); assert.match(by['friday-media'].pinned, /Fridayy/);
     assert.equal(by.proj.dir.kind, 'project'); assert.equal(by.proj.suggest, 'Projects');
     assert.match(by['Lab_Experiment_5.txt'].peek, /LAB EXPERIMENT/);
     assert.equal(by['aadhaar.txt'].peek, undefined, 'sensitive names are never peeked');

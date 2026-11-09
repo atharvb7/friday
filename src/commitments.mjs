@@ -1,6 +1,6 @@
 // Commitments: things the owner said he has to get done ("lab manual today", "hackathon prototype by the 30th").
 // They used to land only in memory, so the briefing (which reads tasks + reminders) said "nothing pending".
-// Now they are first-class to-dos with a due date: auto-captured from chat, listed in the briefing and in Friday's
+// Now they are first-class to-dos with a due date: auto-captured from chat, listed in the briefing and in Fridayy's
 // context while open, nudged once when due soon, and closed when he says they're done.
 import { randomUUID } from 'node:crypto';
 import { parseWhen } from './time.mjs';
@@ -21,7 +21,7 @@ export class Commitments {
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL, done_at TEXT, nudged_at TEXT
     )`);
     this.db.exec('CREATE INDEX IF NOT EXISTS commitments_open_idx ON commitments (status, due_at)');
-    // waiting_on: someone else owes the next step ("waiting for Rohan's reply by Friday"); checked once on its date.
+    // waiting_on: someone else owes the next step ("waiting for Rohan's reply by Fridayy"); checked once on its date.
     if (!this.db.prepare('PRAGMA table_info(commitments)').all().some((c) => c.name === 'waiting_on')) this.db.exec('ALTER TABLE commitments ADD COLUMN waiting_on TEXT');
   }
 
@@ -121,7 +121,7 @@ export function commitmentTools(commitments) {
   return [
     {
       name: 'todo_add', risk: 'safe',
-      description: "Track something HE has to get done (assignment, submission, prototype, call, payment) so it shows in briefings until done. due: local date 2026-10-30 (end of that day) or datetime 2026-10-30T17:00; omit if no deadline. Add each item separately. waiting_on: when someone else owes the next step (\"waiting for Rohan's reply by Friday\": title 'Rohan's reply about the quote', waiting_on 'Rohan', due Friday) and he gets one check on that date. Not for Friday's own background jobs (task_create) or timed pings (reminder_create).",
+      description: "Track something HE has to get done (assignment, submission, prototype, call, payment) so it shows in briefings until done. due: local date 2026-10-30 (end of that day) or datetime 2026-10-30T17:00; omit if no deadline. Add each item separately. waiting_on: when someone else owes the next step (\"waiting for Rohan's reply by Fridayy\": title 'Rohan's reply about the quote', waiting_on 'Rohan', due Fridayy) and he gets one check on that date. Not for Fridayy's own background jobs (task_create) or timed pings (reminder_create).",
       parameters: { type: 'object', properties: { title: { type: 'string' }, due: { type: 'string' }, priority: { type: 'string', enum: ['low', 'normal', 'high'] }, notes: { type: 'string' }, waiting_on: { type: 'string' } }, required: ['title'], additionalProperties: false },
       run: (a, { conversationId } = {}) => view(commitments.add({ title: a.title, due: a.due ?? null, priority: a.priority, notes: a.notes, waitingOn: a.waiting_on, conversationId, source: 'chat:model' })),
     },

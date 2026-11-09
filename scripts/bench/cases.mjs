@@ -1,4 +1,4 @@
-// Friday brain benchmark: realistic owner requests with automatic graders.
+// Fridayy brain benchmark: realistic owner requests with automatic graders.
 // Each case: { id, cat, text, history?, grade({ calls, staged, reply, tz, now, P }) -> true | 'reason it failed' }.
 //   calls  = tools that RAN this turn: [{ name, args }]
 //   staged = gated tools put up for approval this turn: [{ tool, payload }]

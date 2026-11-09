@@ -1,5 +1,5 @@
 [Unit]
-Description=Friday core (personal AI control plane)
+Description=Fridayy core (personal AI control plane)
 After=network-online.target
 Wants=network-online.target
 
@@ -11,7 +11,7 @@ Environment=FRIDAY_DATA_DIR=@DATA_DIR@
 Environment=FRIDAY_PORT=@PORT@
 Restart=on-failure
 RestartSec=5
-# Whole Friday tree (core + DSH + browser/worker children) shares this cgroup.
+# Whole Fridayy tree (core + DSH + browser/worker children) shares this cgroup.
 # Budget: hard ceiling @MEM_MAX@, throttle at @MEM_HIGH@. Swap is not model memory.
 MemoryHigh=@MEM_HIGH@
 MemoryMax=@MEM_MAX@

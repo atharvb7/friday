@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Virtual keyboard + absolute pointer for the Friday node, in pure Python over /dev/uinput.
+"""Virtual keyboard + absolute pointer for the Fridayy node, in pure Python over /dev/uinput.
 
 Works on GNOME Wayland (no xdotool/ydotool needed): the kernel device is picked up by the
 compositor like a real one. Needs rw on /dev/uinput (an ACL for the user is enough; no sudo).
@@ -58,7 +58,7 @@ class Devices:
         self.kb = os.open('/dev/uinput', os.O_WRONLY | os.O_NONBLOCK)
         fcntl.ioctl(self.kb, UI_SET_EVBIT, EV_KEY)
         for code in set(KEYS.values()) | {c for c, _ in CHARS.values()}: fcntl.ioctl(self.kb, UI_SET_KEYBIT, code)
-        setup(self.kb, 'Friday virtual keyboard', 1)
+        setup(self.kb, 'Fridayy virtual keyboard', 1)
         # Pointer modelled on a VM tablet: ABS_X/ABS_Y + mouse buttons + wheel, no BTN_TOUCH (udev/libinput: absolute mouse).
         self.ptr = os.open('/dev/uinput', os.O_WRONLY | os.O_NONBLOCK)
         for ev in (EV_KEY, EV_ABS, EV_REL): fcntl.ioctl(self.ptr, UI_SET_EVBIT, ev)
@@ -68,7 +68,7 @@ class Devices:
             fcntl.ioctl(self.ptr, UI_SET_ABSBIT, a)
             # struct uinput_abs_setup { u16 code; struct input_absinfo { s32 value, min, max, fuzz, flat, resolution } }
             fcntl.ioctl(self.ptr, UI_ABS_SETUP, struct.pack('Hxxiiiiii', a, 0, 0, ABS_MAX, 0, 0, 0))
-        setup(self.ptr, 'Friday virtual pointer', 2)
+        setup(self.ptr, 'Fridayy virtual pointer', 2)
         time.sleep(0.6)  # let udev + the compositor adopt the new devices before the first event
 
     def emit(self, fd, typ, code, value):

@@ -10,7 +10,7 @@ import { EventBus } from '../src/events.mjs';
 import { Approvals } from '../src/approvals.mjs';
 import { parsePatch, applyFilePatch, checkPatchPolicy, sha256 } from '../src/patch.mjs';
 import { runVerify, validateVerifyRequest, normalizeCmd } from '../src/contrib-verify.mjs';
-import { Contrib, workspaceFor, AI_BAN, DISCLOSURE } from '../src/contrib.mjs';
+import { Contrib, workspaceFor, AI_BAN, DISCLOSURE, ISSUE_DISCLOSURE, reproSteps } from '../src/contrib.mjs';
 import { ossTools } from '../src/agent/friday-tools.mjs';
 import { GROUPS } from '../src/agent/toolsets.mjs';
 
@@ -404,6 +404,7 @@ test('hunt: one proven bug -> issue card with code link, real output, expected -
   const card = w.digestCard();
   const c = card.payload.items[0];
   assert.equal(c.action, 'open_issue');
+  assert.ok(c.body.includes(ISSUE_DISCLOSURE) && !c.body.includes(DISCLOSURE), 'issues carry the issue disclosure');
   assert.match(c.body, new RegExp(`https://github.com/acme/calc/blob/${SHA}/calc.py#L1-L2`));
   assert.match(c.body, /AssertionError: -1/);
   assert.match(c.body, /## What I expected\nadd\(2, 3\) == 5/);
@@ -557,4 +558,12 @@ test('vetting: a repo whose code is largely in a language the container cannot r
   assert.match(r.skipped[0], /PHP/);
   const ok = new FakeGitHub(); ok.langs = { Python: 1000, PHP: 50, HTML: 300 };
   assert.equal((await world({ gh: ok }).contrib.startOne({ repo: 'acme/calc', issue: 7 })).started, true);
+});
+
+test('issue text: maintainers get standard repro steps, not the agent workspace venv, and an issue disclosure', () => {
+  const steps = reproSteps(['python3 -m venv friday-contrib/venv', 'source friday-contrib/venv/bin/activate && pip install -e .[tests]'], 'python3 -c "assert f()"');
+  assert.equal(steps, 'python3 -m venv .venv && . .venv/bin/activate\npip install -e .[tests]\npython3 -c "assert f()"');
+  assert.doesNotMatch(steps, /friday-contrib/);
+  assert.equal(reproSteps(['npm ci'], 'node -e "x()"'), 'npm ci\nnode -e "x()"');
+  assert.doesNotMatch(ISSUE_DISCLOSURE, /change/);
 });

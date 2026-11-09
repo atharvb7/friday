@@ -20,7 +20,7 @@ const str = (v, name, max = 2000) => {
 };
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 // computer_task routing: his laptop when he says so or the goal needs what only the laptop has (his logins, apps,
-// files, WhatsApp); otherwise Friday's own server browser when it is connected (works with the laptop off).
+// files, WhatsApp); otherwise Fridayy's own server browser when it is connected (works with the laptop off).
 const NEEDS_LAPTOP = /\b(my|his) (laptop|computer|pc|desktop|screen|chrome|browser|files?|folder|downloads?|accounts?|gmail|inbox|bank)\b|\b(on|from|using) (my|the) (laptop|computer|pc)\b|\b(whats ?app|instagram|insta|gmail|telegram|slack|discord|spotify|vs ?code|terminal|desktop app|file manager|open the app)\b|\b(log ?in|sign ?in|logged in)\b|~\/|\/home\//i;
 export function pickWhere(a, nodes) {
   if (a?.where === 'laptop' || a?.where === 'server') return a.where;
@@ -62,7 +62,7 @@ function businessTools(pipeline) {
     },
     {
       name: 'outreach_pause', risk: 'safe',
-      description: 'Pause or resume all outreach sending (queued emails are held while paused). Friday pauses automatically when bounces pass 2%; resume only after the user says the cause is fixed.',
+      description: 'Pause or resume all outreach sending (queued emails are held while paused). Fridayy pauses automatically when bounces pass 2%; resume only after the user says the cause is fixed.',
       parameters: obj({ paused: { type: 'boolean' }, reason: { type: 'string' } }, ['paused']),
       run: (a) => (a.paused ? { paused: pipeline.pause(a.reason ?? 'paused by the user') } : pipeline.resume()),
     },
@@ -88,7 +88,7 @@ function businessTools(pipeline) {
       parameters: obj({ emails: { type: 'array', items: obj({ lead_id: { type: 'string' }, to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' }, follow_up: { type: 'boolean' } }, ['body']) },
         skip_review: { type: 'boolean', description: 'ONLY when the user explicitly told you to send despite the quality review' } }, ['emails']),
       // Before the approval card: a quality review (JEV) refuses batches that pitch competitors, lack an evidenced gap,
-      // or read generic; Friday fixes them (or drops the lead) and calls again.
+      // or read generic; Fridayy fixes them (or drops the lead) and calls again.
       validate: async (a) => { const r = await pipeline.review(a.emails, { skipJudge: a.skip_review === true }); return r.ok ? null : { error: 'outreach_needs_work', note: 'Nothing was staged. Fix each email (or drop leads marked drop_lead and tell the user why), then call outreach_send again.', emails: r.emails }; },
       summarize: (a) => `${pipeline.summarize(a.emails)}${a.skip_review ? ' (quality review skipped at your request)' : ''}`,
       run: (a) => pipeline.send(a.emails),
@@ -172,7 +172,7 @@ export function ossTools(contrib) {
   return [
     {
       name: 'oss_setup', risk: 'gated', category: 'system', riskClass: 'routine',
-      description: 'Configure Friday\'s daily open-source contributions: enabled, run_at (HH:MM, his time), days (1-7, Mon=1), languages (Python, JavaScript, TypeScript), labels (issue labels to search, default "good first issue" and "help wanted"), mode (issues = fix existing issues; hunt = look for unreported bugs and propose issues, the fix follows once maintainers confirm; mixed = alternate, default), min_stars, max_open_prs (PRs waiting on him or maintainers before she stops starting new ones), daily_starts (1-3), max_rounds (fix attempts per issue, 1-3), skip_repos (owner/repo), continuous (work around the clock, default true), max_attempts_day (jobs per day, default 24), pr_cap (PRs posted per day, max 5), issue_cap (bug reports per day, max 3), digest_at (HH:MM: the ONE daily approval card with everything that passed; approved items are posted ~45 min apart, max one per repo per day). Nothing reaches GitHub without his approval of the digest. Needs approval.',
+      description: 'Configure Fridayy\'s daily open-source contributions: enabled, run_at (HH:MM, his time), days (1-7, Mon=1), languages (Python, JavaScript, TypeScript), labels (issue labels to search, default "good first issue" and "help wanted"), mode (issues = fix existing issues; hunt = look for unreported bugs and propose issues, the fix follows once maintainers confirm; mixed = alternate, default), min_stars, max_open_prs (PRs waiting on him or maintainers before she stops starting new ones), daily_starts (1-3), max_rounds (fix attempts per issue, 1-3), skip_repos (owner/repo), continuous (work around the clock, default true), max_attempts_day (jobs per day, default 24), pr_cap (PRs posted per day, max 5), issue_cap (bug reports per day, max 3), digest_at (HH:MM: the ONE daily approval card with everything that passed; approved items are posted ~45 min apart, max one per repo per day). Nothing reaches GitHub without his approval of the digest. Needs approval.',
       parameters: obj({ enabled: { type: 'boolean' }, mode: { type: 'string', enum: ['issues', 'hunt', 'mixed'] }, run_at: { type: 'string' }, days: { type: 'array', items: { type: 'integer' } }, languages: { type: 'array', items: { type: 'string', enum: ['Python', 'JavaScript', 'TypeScript'] } },
         labels: { type: 'array', items: { type: 'string' } }, min_stars: { type: 'integer' }, max_open_prs: { type: 'integer' }, daily_starts: { type: 'integer' }, max_rounds: { type: 'integer' }, skip_repos: { type: 'array', items: { type: 'string' } }, continuous: { type: 'boolean' }, max_attempts_day: { type: 'integer' }, pr_cap: { type: 'integer' }, issue_cap: { type: 'integer' }, digest_at: { type: 'string' } }, []),
       summarize: (a) => `Open-source contributions: ${a.enabled === false ? 'OFF' : a.enabled ? 'ON' : 'settings'}${a.mode ? ` · mode ${a.mode}` : ''}${a.languages ? ` · ${a.languages.join('/')}` : ''}${a.run_at ? ` · at ${a.run_at}` : ''}${a.daily_starts ? ` · ${a.daily_starts}/day` : ''}${a.max_open_prs ? ` · max ${a.max_open_prs} open` : ''}${a.continuous !== undefined ? ` · ${a.continuous ? '24/7' : 'once a day'}` : ''}${a.pr_cap ? ` · ≤${a.pr_cap} PRs/day` : ''}${a.digest_at ? ` · digest at ${a.digest_at}` : ''}`,
@@ -198,7 +198,7 @@ export function ossTools(contrib) {
     },
     {
       name: 'oss_revise', risk: 'safe',
-      description: 'Prepare changes for an open pull request: addresses the maintainer comments and failing CI Friday recorded (plus his note, if any). The result comes back as an approval card (push + reply comment). id = the contribution id from oss_status.',
+      description: 'Prepare changes for an open pull request: addresses the maintainer comments and failing CI Fridayy recorded (plus his note, if any). The result comes back as an approval card (push + reply comment). id = the contribution id from oss_status.',
       parameters: obj({ id: { type: 'string' }, note: { type: 'string', description: 'what he wants changed, in his words' } }, ['id']),
       run: (a) => run(() => contrib.revise(str(a.id, 'id', 40), a.note ?? '')),
     },
@@ -303,13 +303,13 @@ export function buildFridayTools(ctx) {
     },
     {
       name: 'file_search', risk: 'safe',
-      description: "Find files by name in Friday's own workspace (not the user's whole disk).",
+      description: "Find files by name in Fridayy's own workspace (not the user's whole disk).",
       parameters: obj({ query: { type: 'string' } }, ['query']),
       run: async (a) => ({ files: (await tools.run({ taskId: 'ad-hoc-local', tool: 'file.search', args: { query: str(a.query, 'query', 200), root: '.', limit: 10 } })).result }),
     },
     {
       name: 'file_read', risk: 'safe',
-      description: "Read a text file from Friday's workspace (first 8KB).",
+      description: "Read a text file from Fridayy's workspace (first 8KB).",
       parameters: obj({ path: { type: 'string' } }, ['path']),
       run: async (a) => { const r = (await tools.run({ taskId: 'ad-hoc-local', tool: 'file.read', args: { path: str(a.path, 'path', 500), maxBytes: 8192 } })).result; return { path: r.path, truncated: r.truncated, text: clip(r.bytes, 6000) }; },
     },
@@ -333,18 +333,18 @@ export function buildFridayTools(ctx) {
         can: [n.caps.includes('browser_open') && 'browser', n.caps.includes('key_press') && 'full desktop (apps, keyboard/mouse, screen, shell, files)', n.caps.includes('windows_list') && 'accessibility'].filter(Boolean) })) }),
     },
     {
-      // Routine laptop work runs without asking (the owner gave Friday full access); inside the task, sends, purchases,
+      // Routine laptop work runs without asking (the owner gave Fridayy full access); inside the task, sends, purchases,
       // deletions and system changes stop for approval at that step. At autonomy level "ask" for computer it asks up front.
       name: 'computer_task', risk: 'gated', category: 'computer', riskClass: 'routine',
-      description: "Operate the user's laptop for a multi-step goal: his browser (any site, his logged-in profile, forms, bookings, WhatsApp Web) AND the whole desktop (any app, keyboard, mouse, screen, shell, files). NOT for Instagram DMs (use instagram_action or the dm_chat tools). Runs in the background, verifying results. Routine work needs no approval; sending/posting, buying, deleting and system changes ask him at that step. Give the complete goal incl. exact names. One-shot things are instant with laptop_open / laptop_screen / laptop_shell. WHERE: 'server' = Friday's own headless browser on the server (works with his laptop OFF; for web-only work that needs none of his logins: looking things up on sites, filling public forms, checking pages, comparing prices); 'laptop' = his laptop (when he says laptop/my computer, or the task needs his logged-in accounts like WhatsApp/Gmail/Instagram/his bank, desktop apps or his files; queues until the laptop is online); 'auto' (default) picks by these rules.",
-      parameters: obj({ title: { type: 'string', description: 'Short title for the task list, 3-6 words (e.g. "Server disk usage")' }, goal: { type: 'string', description: 'COMPLETE, self-contained goal including how it finishes (e.g. "…then if it says to confirm on WhatsApp, open WhatsApp Web, open the newest message from Salex Now and press Confirm booking"): the whole flow in ONE task, with business/site name, service, date, time and every detail from the conversation. Never write "the currently open tab" or assume the laptop is already on the right page; a continuation must repeat all earlier details.' }, mustShow: { type: 'array', items: { type: 'string' }, description: 'Texts the page MUST show before the final submit (e.g. ["Demo Salon"]). Strongly recommended for bookings/orders/forms: blocks submitting on the wrong business.' }, autoSubmit: { type: 'boolean', description: 'Default true: his approval of the first send/submit in this task also covers its follow-up confirmations (e.g. the WhatsApp "Confirm booking"). false = ask at every send. Payments and deletions always ask.' }, where: { type: 'string', enum: ['auto', 'server', 'laptop'], description: 'server = Friday\'s own browser (laptop may be off), laptop = his machine; auto by default' } }, ['goal']),
+      description: "Operate the user's laptop for a multi-step goal: his browser (any site, his logged-in profile, forms, bookings, WhatsApp Web) AND the whole desktop (any app, keyboard, mouse, screen, shell, files). NOT for Instagram DMs (use instagram_action or the dm_chat tools). Runs in the background, verifying results. Routine work needs no approval; sending/posting, buying, deleting and system changes ask him at that step. Give the complete goal incl. exact names. One-shot things are instant with laptop_open / laptop_screen / laptop_shell. WHERE: 'server' = Fridayy's own headless browser on the server (works with his laptop OFF; for web-only work that needs none of his logins: looking things up on sites, filling public forms, checking pages, comparing prices); 'laptop' = his laptop (when he says laptop/my computer, or the task needs his logged-in accounts like WhatsApp/Gmail/Instagram/his bank, desktop apps or his files; queues until the laptop is online); 'auto' (default) picks by these rules.",
+      parameters: obj({ title: { type: 'string', description: 'Short title for the task list, 3-6 words (e.g. "Server disk usage")' }, goal: { type: 'string', description: 'COMPLETE, self-contained goal including how it finishes (e.g. "…then if it says to confirm on WhatsApp, open WhatsApp Web, open the newest message from Salex Now and press Confirm booking"): the whole flow in ONE task, with business/site name, service, date, time and every detail from the conversation. Never write "the currently open tab" or assume the laptop is already on the right page; a continuation must repeat all earlier details.' }, mustShow: { type: 'array', items: { type: 'string' }, description: 'Texts the page MUST show before the final submit (e.g. ["Demo Salon"]). Strongly recommended for bookings/orders/forms: blocks submitting on the wrong business.' }, autoSubmit: { type: 'boolean', description: 'Default true: his approval of the first send/submit in this task also covers its follow-up confirmations (e.g. the WhatsApp "Confirm booking"). false = ask at every send. Payments and deletions always ask.' }, where: { type: 'string', enum: ['auto', 'server', 'laptop'], description: 'server = Fridayy\'s own browser (laptop may be off), laptop = his machine; auto by default' } }, ['goal']),
       summarize: (a) => `${pickWhere(a, nodes) === 'server' ? 'Use my own browser on the server to' : 'Control your laptop to'}: ${clip(a.goal, 1200)}${a.autoSubmit !== false ? ' — including the final submit/confirm (this is the only approval)' : ' — will stop and ask before the final submit'}${a.mustShow?.length ? ` — only if the page shows: ${a.mustShow.join(', ')}` : ''}`,
       run: (a, { conversationId, approvalId } = {}) => {
         // Approved up front (autonomy "ask"): that approval covers the final submit, as before. Otherwise the first send asks.
         const where = pickWhere(a, nodes);
         if (where === 'server') {
           const t = store.createTask({ title: `Web: ${a.title ? clip(a.title, 60) : clip(a.goal, 60)}`, kind: 'browser', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: Boolean(approvalId) && a.autoSubmit !== false, sendOnce: a.autoSubmit !== false, where: 'server', mustShow: Array.isArray(a.mustShow) ? a.mustShow.slice(0, 6).map((x) => String(x).slice(0, 80)) : [] } });
-          return { queued: true, id: t.id.slice(0, 8), where: 'server browser', starts: nodes.server() ? 'now' : 'when the server browser reconnects', note: 'Runs in Friday\'s own browser on the server (his laptop is not used). It has none of his logins: if a site needs his account, redo it with where=laptop. The result arrives as a notification; say in one line that it is under way.' };
+          return { queued: true, id: t.id.slice(0, 8), where: 'server browser', starts: nodes.server() ? 'now' : 'when the server browser reconnects', note: 'Runs in Fridayy\'s own browser on the server (his laptop is not used). It has none of his logins: if a site needs his account, redo it with where=laptop. The result arrives as a notification; say in one line that it is under way.' };
         }
         const t = store.createTask({ title: `Laptop: ${a.title ? clip(a.title, 60) : clip(a.goal, 60)}`, kind: 'computer', instruction: str(a.goal, 'goal', 4000), conversationId: conversationId ?? null, meta: { grant: true, autoSubmit: Boolean(approvalId) && a.autoSubmit !== false, sendOnce: a.autoSubmit !== false, mustShow: Array.isArray(a.mustShow) ? a.mustShow.slice(0, 6).map((x) => String(x).slice(0, 80)) : [] } });
         // Tell her the truth about when it starts: on 28 Oct the governor held it (memory emergency) and, with no reason
@@ -369,7 +369,7 @@ export function buildFridayTools(ctx) {
       },
     },
     {
-      // 28 Oct: "play Starboy" went to computer_task, which opened Friday's own browser and then waited on an approval,
+      // 28 Oct: "play Starboy" went to computer_task, which opened Fridayy's own browser and then waited on an approval,
       // while his Brave kept playing another song. Playing something is one fast, fixed sequence instead.
       name: 'laptop_play', risk: 'safe',
       description: 'Play a song, video or playlist on his laptop NOW: finds it on YouTube, pauses whatever is already playing, and opens it in his Brave (default browser if Brave is missing). Use for any "play X" request instead of computer_task; say what is playing from the result.',
@@ -420,7 +420,7 @@ export function buildFridayTools(ctx) {
     {
       // Sorting a folder used to be dozens of shell `mv`s she had to invent; this scans, plans by topic and moves safely.
       name: 'folder_organize', risk: 'safe',
-      description: "Sort a messy folder on his laptop (Downloads by default) into a clean folder tree: groups files by what they are about (college labs, a company, an event, IDs, wallpapers, resumes...) or by kind (Images, Installers, Archives...), creates the folders, puts exact duplicates in Duplicates (nothing is deleted), never moves apps in use, launchers' targets, downloads in progress or Friday's own folders, never touches anything outside that folder. action=plan scans and proposes (fast, moves nothing); action=apply does the planId's moves (optionally with his corrections) ON HIS SCREEN in the Files app by default (he watches each group get selected, cut and pasted; via=direct = instant renames, e.g. when he is busy on the laptop); action=undo puts everything back. Use this for ANY organize/sort/tidy/clean-up-files request instead of computer_task or laptop_shell. Only folders inside his home, never the home folder itself.",
+      description: "Sort a messy folder on his laptop (Downloads by default) into a clean folder tree: groups files by what they are about (college labs, a company, an event, IDs, wallpapers, resumes...) or by kind (Images, Installers, Archives...), creates the folders, puts exact duplicates in Duplicates (nothing is deleted), never moves apps in use, launchers' targets, downloads in progress or Fridayy's own folders, never touches anything outside that folder. action=plan scans and proposes (fast, moves nothing); action=apply does the planId's moves (optionally with his corrections) ON HIS SCREEN in the Files app by default (he watches each group get selected, cut and pasted; via=direct = instant renames, e.g. when he is busy on the laptop); action=undo puts everything back. Use this for ANY organize/sort/tidy/clean-up-files request instead of computer_task or laptop_shell. Only folders inside his home, never the home folder itself.",
       parameters: obj({ action: { type: 'string', enum: ['plan', 'apply', 'undo'] }, dir: { type: 'string', description: 'folder to sort, default ~/Downloads' }, instructions: { type: 'string', description: 'his wishes for the plan, e.g. "keep wallpapers separate", "college stuff by subject"' }, planId: { type: 'string', description: 'for apply' }, changes: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, to: { type: 'string', description: 'folder path inside dir, or "stay"' } }, required: ['name', 'to'], additionalProperties: false }, description: 'for apply: corrections to the plan' }, undoId: { type: 'string', description: 'for undo (from the apply result)' }, via: { type: 'string', enum: ['screen', 'direct'], description: 'for apply: screen (default) = visibly in the Files app; direct = instant' } }, ['action']),
       run: async (a, { signal } = {}) => {
         if (!nodes.online) return { error: 'laptop_offline', note: 'His laptop node is not connected; nothing was touched.' };
@@ -509,7 +509,7 @@ export function buildFridayTools(ctx) {
     },
     {
       name: 'research_login', risk: 'safe',
-      description: "Open a Chrome window on his laptop (Friday's research profile) at the LinkedIn, X or Reddit sign-in page so HE can sign in once; afterwards research reads logged-in pages there. Friday never types the password. Only when he asks, or when research keeps hitting a login wall and he agrees.",
+      description: "Open a Chrome window on his laptop (Fridayy's research profile) at the LinkedIn, X or Reddit sign-in page so HE can sign in once; afterwards research reads logged-in pages there. Fridayy never types the password. Only when he asks, or when research keeps hitting a login wall and he agrees.",
       parameters: obj({ site: { type: 'string', enum: ['linkedin', 'x', 'reddit'] } }, ['site']),
       run: async (a) => {
         if (!ctx.researchSources?.laptopReady()) return { error: 'laptop_offline_or_outdated' };
@@ -577,7 +577,7 @@ export function buildFridayTools(ctx) {
     },
     {
       name: 'watch_list', risk: 'safe',
-      description: 'List active watches (what Friday is keeping an eye on) with their last observation.',
+      description: 'List active watches (what Fridayy is keeping an eye on) with their last observation.',
       parameters: obj({}),
       run: () => ({ watches: ctx.watches.list().map((w) => ({ id: w.id.slice(0, 8), title: w.title, kind: w.kind, every_min: w.every_min, last_note: w.last_note, fired: w.fired, until: w.expires_at })) }),
     },
@@ -589,7 +589,7 @@ export function buildFridayTools(ctx) {
     },
     {
       name: 'connect_app', risk: 'safe',
-      description: 'Get the link the user must open to connect one of their apps to Friday through Composio (instagram; Gmail is connected separately in Settings). Also tells whether it is already connected.',
+      description: 'Get the link the user must open to connect one of their apps to Fridayy through Composio (instagram; Gmail is connected separately in Settings). Also tells whether it is already connected.',
       parameters: obj({ app: { type: 'string', enum: ['instagram'] } }, ['app']),
       run: async (a) => {
         const st = await ctx.composio.status();
@@ -788,7 +788,7 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
     },
     {
       name: 'dm_chat_start', risk: 'gated', category: 'messaging', riskClass: 'consequential',
-      description: 'Let Friday chat with specific people for a limited time, replying on her own within seconds whenever they message — the user approves ONCE for the whole session. platform "whatsapp": in his WhatsApp Web tab already open in Chrome, usernames = [the contact name exactly as shown in WhatsApp] (one person); platform "instagram" (default): Instagram usernames. Use this for ANY "chat with X", "keep talking to them", "reply to her whenever she texts" — never watches or repeated computer_task for an ongoing chat. Asked again while a chat runs (e.g. "reply faster"), do NOT start another; it already answers each new message in seconds. Optionally send an intro first. Friday stays an openly-AI, friendly assistant, never shares his private info, and tells him if someone needs him. Find exact usernames with instagram_read LIST_ALL_CONVERSATIONS (fields participants) first.',
+      description: 'Let Fridayy chat with specific people for a limited time, replying on her own within seconds whenever they message — the user approves ONCE for the whole session. platform "whatsapp": in his WhatsApp Web tab already open in Chrome, usernames = [the contact name exactly as shown in WhatsApp] (one person); platform "instagram" (default): Instagram usernames. Use this for ANY "chat with X", "keep talking to them", "reply to her whenever she texts" — never watches or repeated computer_task for an ongoing chat. Asked again while a chat runs (e.g. "reply faster"), do NOT start another; it already answers each new message in seconds. Optionally send an intro first. Fridayy stays an openly-AI, friendly assistant, never shares his private info, and tells him if someone needs him. Find exact usernames with instagram_read LIST_ALL_CONVERSATIONS (fields participants) first.',
       parameters: obj({ platform: { type: 'string', enum: ['instagram', 'whatsapp'] }, usernames: { type: 'array', items: { type: 'string' } }, minutes: { type: 'integer', description: 'How long to keep chatting (default 60, max 180)' }, goal: { type: 'string', description: 'What he wants, e.g. "introduce yourself, keep it playful"' }, intro: { type: 'string', description: 'Optional first message to send now (same for everyone)' } }, ['usernames']),
       summarize: (a) => `Chat on ${a.platform === 'whatsapp' ? 'WhatsApp' : 'Instagram'} with ${(a.usernames ?? []).map((u) => (a.platform === 'whatsapp' ? String(u) : `@${String(u).replace(/^@/, '')}`)).join(', ')} for ${Math.min(180, a.minutes ?? 60)} min, replying on my own${a.goal ? ` (${clip(a.goal, 200)})` : ''}${a.intro ? ` — first message: “${clip(a.intro, 400)}”` : ''}`,
       run: async (a, { conversationId } = {}) => (a.platform === 'whatsapp'
@@ -797,7 +797,7 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
     },
     {
       name: 'dm_chat_status', risk: 'safe',
-      description: 'Which chats (Instagram DM and WhatsApp) Friday is currently running, until when, and how many replies she sent.',
+      description: 'Which chats (Instagram DM and WhatsApp) Fridayy is currently running, until when, and how many replies she sent.',
       parameters: obj({}),
       run: () => ({ chats: [...ctx.dmChats.list().map((s) => ({ platform: 'instagram', username: s.username, until: s.until, replies: s.replies, last: s.last_note })),
         ...(ctx.waChats?.list() ?? []).map((s) => ({ platform: 'whatsapp', contact: s.contact, until: s.until, replies: s.replies, last: s.last_note }))] }),
@@ -812,7 +812,7 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
     },
     {
       name: 'dm_chat_stop', risk: 'safe',
-      description: 'Stop Friday chatting (Instagram and WhatsApp) with one person (username / contact name) or everyone (omit it). Also use when he says stop everything.',
+      description: 'Stop Fridayy chatting (Instagram and WhatsApp) with one person (username / contact name) or everyone (omit it). Also use when he says stop everything.',
       parameters: obj({ username: { type: 'string' } }),
       run: (a) => ({ stopped: ctx.dmChats.stop(a.username ?? null) + (ctx.waChats?.stop(a.username ?? null) ?? 0) }),
     },
@@ -863,7 +863,7 @@ ${clips.map((c, i) => `\nClip ${i + 1}\n- image prompt: ${c.image}\n- motion pro
     },
     {
       name: 'learned_skills', risk: 'safe',
-      description: 'List the playbooks Friday has learned from her own successful laptop/Hermes runs (she uses them automatically to go faster).',
+      description: 'List the playbooks Fridayy has learned from her own successful laptop/Hermes runs (she uses them automatically to go faster).',
       parameters: obj({}),
       run: () => ({ playbooks: ctx.learner.playbooks().map((p) => ({ name: p.name, description: p.description, hosts: p.hosts })) }),
     },

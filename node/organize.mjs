@@ -1,7 +1,7 @@
 // Folder organizer for the laptop node ("sort my Downloads").
 //   scan   what each item in ONE folder is (type, size, date, a short text peek of documents, exact duplicates, what a
 //          sub-folder holds: project / installed app / photos...) and what must NOT move (hidden files, downloads still
-//          in progress, things an app launcher or a running program points at, Friday's own folders)
+//          in progress, things an app launcher or a running program points at, Fridayy's own folders)
 //   apply  move items into sub-folders of that same folder: never outside it, never overwriting, never deleting;
 //          every move is recorded in an undo manifest
 //   undo   put everything back from a manifest
@@ -40,7 +40,7 @@ export const TYPE_FOLDER = { document: 'Documents', presentation: 'Presentations
 const PEEKABLE = new Set(['document', 'presentation', 'spreadsheet', 'code', 'data']);
 // Never sent to the model even as a 160-char peek: IDs, money, health, passwords.
 const SENSITIVE_NAME = /aadha?ar|\bpan\b|pan.?card|passport|licen[cs]e|voter|bank|statement|salary|payslip|tax|itr|invoice|medical|prescription|password|secret|credential|private|confidential|signed/i;
-const PROTECTED = new Set(['friday-media']); // Friday saves downloads/reels here (node/browser.mjs, reel tools)
+const PROTECTED = new Set(['friday-media']); // Fridayy saves downloads/reels here (node/browser.mjs, reel tools)
 const PARTIAL = /\.(crdownload|part|partial|download|tmp|opdownload)$|^\.~lock\.|^~\$/i;
 const COPY_MARK = /\s\(\d+\)(?=\.[^.]+$|$)| - copy(?=\.[^.]+$|$)|_copy(?=\.[^.]+$|$)/i;
 
@@ -168,7 +168,7 @@ export async function scanFolder({ dir, keep = [], home = HOME, deps = null, now
     if (type === 'file') { it.ext = extOf(e.name); it.category = categoryOf(e.name); }
     if (e.name.startsWith('.') && !PARTIAL.test(e.name)) it.pinned = 'hidden file';
     else if (PARTIAL.test(e.name)) it.pinned = 'download in progress or an open document lock';
-    else if (keepSet.has(e.name)) it.pinned = 'Friday uses this folder';
+    else if (keepSet.has(e.name)) it.pinned = 'Fridayy uses this folder';
     else if (type === 'special') it.pinned = 'not a regular file';
     else if (now - st.mtimeMs < SETTLE_MS) it.pinned = 'changed in the last 2 minutes';
     else { const why = dependedOn(full, d); if (why) it.pinned = why; }

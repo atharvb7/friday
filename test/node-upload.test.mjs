@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const PORT = 43431;
 const serverPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'server.mjs');
 
-test('node upload: the laptop node can hand a .zip bundle to Friday (node scope only, .zip only), and it downloads intact', async () => {
+test('node upload: the laptop node can hand a .zip bundle to Fridayy (node scope only, .zip only), and it downloads intact', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'friday-up-'));
   const child = spawn(process.execPath, [serverPath], { env: { ...process.env, FRIDAY_DATA_DIR: dir, FRIDAY_NO_DOTENV: '1', FRIDAY_PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.resume(); child.stderr.resume();

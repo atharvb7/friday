@@ -30,7 +30,7 @@ function world({ now } = {}) {
   const settings = new Settings(store);
   settings.set('timezone', 'Asia/Kolkata');
   settings.set('outreach_signature', 'Atharv Bhosale\nAI Engineer');
-  settings.set('business_profile', { text: '# Profile\n## Proof and credibility\n- Friday: our own production agent.\n- Worked on Sorch.\n## Messaging\nWrite like the reference.\n## Gives\n- plan' });
+  settings.set('business_profile', { text: '# Profile\n## Proof and credibility\n- Fridayy: our own production agent.\n- Worked on Sorch.\n## Messaging\nWrite like the reference.\n## Gives\n- plan' });
   const serpCalls = [];
   const fetchImpl = async (url) => {
     const u = new URL(url); serpCalls.push(Object.fromEntries(u.searchParams));

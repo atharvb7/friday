@@ -12,7 +12,7 @@ export function nodeRoutes(router, ctx) {
     try { nodes.hello(principal.id, b); return [200, { ok: true }]; } catch (e) { return [409, { error: e.message }]; }
   });
 
-  // The laptop node uploads a bundle it made (e.g. a reel's zip of generated photos/videos) into Friday's files.
+  // The laptop node uploads a bundle it made (e.g. a reel's zip of generated photos/videos) into Fridayy's files.
   router.post('/v1/node/upload', async ({ url, rawBody }) => {
     const name = url.searchParams.get('name') ?? '';
     if (!/\.zip$/i.test(name)) return [400, { error: 'only .zip bundles' }];

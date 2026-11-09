@@ -1,6 +1,6 @@
 // Owner sign-in for the public site: email + password (scrypt) and "Sign in with Google" (OpenID, allow-listed
 // address only). Both end in the same revocable browser session as token sign-in. Owner email sign-in takes the
-// password OR the authenticator code; Google sign-in skips Friday's code when the owner trusts Google's 2-step.
+// password OR the authenticator code; Google sign-in skips Fridayy's code when the owner trusts Google's 2-step.
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 
 const KEY = 'owner_login';

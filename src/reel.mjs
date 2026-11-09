@@ -1,4 +1,4 @@
-// Reel pipeline glue: when a reel_create job (Gemini clips on the laptop) finishes, Friday continues on her own —
+// Reel pipeline glue: when a reel_create job (Gemini clips on the laptop) finishes, Fridayy continues on her own —
 // a headless Claude Code + SynthCut edit on the laptop (node action reel_edit), then delivery of final.mp4 to the
 // owner's own WhatsApp (a reel_send laptop task). The reel_create approval covers the whole chain.
 export class ReelPipeline {

@@ -1,4 +1,4 @@
-// Direct Gmail via the user's own Google Cloud OAuth client (free; no Composio). Friday runs the OAuth web flow
+// Direct Gmail via the user's own Google Cloud OAuth client (free; no Composio). Fridayy runs the OAuth web flow
 // itself: /oauth/google/callback on its tailnet HTTPS address. The refresh token lives in <data>/secrets/google.json
 // (0600) and never reaches the model, the UI or logs. A second account ('outreach', <data>/secrets/google-outreach.json)
 // sends cold outreach and is watched for replies, so the personal inbox stays separate. Scope: gmail.modify — read, label, draft, send, trash;
@@ -44,7 +44,7 @@ export class GoogleAuth {
     if (!p || p.expires < this.now()) throw new Error('invalid_or_expired_state');
     if (error) throw new Error(`google_denied: ${String(error).slice(0, 80)}`);
     const tok = await this.#token({ grant_type: 'authorization_code', code: String(code ?? ''), redirect_uri: this.redirectUri, code_verifier: p.verifier });
-    if (!tok.refresh_token) throw new Error('no_refresh_token: remove Friday from https://myaccount.google.com/permissions and connect again');
+    if (!tok.refresh_token) throw new Error('no_refresh_token: remove Fridayy from https://myaccount.google.com/permissions and connect again');
     this.cache = { access_token: tok.access_token, expires_at: this.now() + (tok.expires_in - 60) * 1000 };
     let email = null; try { email = (await this.api('GET', `${GMAIL}/profile`)).emailAddress ?? null; } catch { /* optional */ }
     this.#write({ refresh_token: tok.refresh_token, scope: tok.scope, email, connected_at: new Date(this.now()).toISOString() });

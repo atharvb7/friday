@@ -38,7 +38,7 @@ export class VoiceSession {
     const msg = explainError(e);
     this.d.log?.('error', e?.message ?? e);
     if (!msg) return; // cancelled by the user
-    await this.d.cue('error'); await this.#notify('Friday', msg, { transient: false });
+    await this.d.cue('error'); await this.#notify('Fridayy', msg, { transient: false });
   }
 
   async #run({ screen }) {
@@ -46,18 +46,18 @@ export class VoiceSession {
     const ctrl = new AbortController(); this.ctrl = ctrl;
     try {
       await this.d.cue('start');
-      await this.#notify('Friday is listening…', 'Speak now. Press the key again when you are done.');
+      await this.#notify('Fridayy is listening…', 'Speak now. Press the key again when you are done.');
       this.rec = this.d.record({ signal: ctrl.signal });
       const r = await this.rec.done; this.rec = null;
       await this.d.cue('stop');
       if (r.error) throw new Error(`mic: ${r.error}`);
       if (r.micSilent) throw new Error('mic: the microphone is sending pure silence (muted?)');
-      if (!r.heard) { await this.#notify('Friday', 'I didn’t catch anything. Press the key and talk after the beep.'); return; }
+      if (!r.heard) { await this.#notify('Fridayy', 'I didn’t catch anything. Press the key and talk after the beep.'); return; }
 
       this.state = 'thinking';
-      await this.#notify('Friday', 'Thinking…');
+      await this.#notify('Fridayy', 'Thinking…');
       const text = (await this.d.transcribe(r.wav, { signal: ctrl.signal }))?.trim();
-      if (!text) { await this.#notify('Friday', 'I couldn’t make out any words. Try again?'); return; }
+      if (!text) { await this.#notify('Fridayy', 'I couldn’t make out any words. Try again?'); return; }
       const mode = screen ?? this.cfg.screen;
       let image = null;
       if (mode === 'always' || (mode === 'auto' && needsScreen(text))) {

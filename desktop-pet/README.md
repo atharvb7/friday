@@ -1,6 +1,6 @@
-# Friday desktop pet (Tauri shell)
+# Fridayy desktop pet (Tauri shell)
 
-The 3D pet already runs in any browser at `/pet.html` (compact: `/pet.html?compact=1`) and follows Friday's real state
+The 3D pet already runs in any browser at `/pet.html` (compact: `/pet.html?compact=1`) and follows Fridayy's real state
 (`/v1/presence`). This folder wraps it in a transparent, always-on-top, click-through-optional window with Tauri.
 Status: **config provided, not built here (no Rust toolchain on the dev laptop).**
 

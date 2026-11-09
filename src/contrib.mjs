@@ -1,4 +1,4 @@
-// Open-source contributions, done properly. Friday finds a well-scoped issue in a repository that welcomes
+// Open-source contributions, done properly. Fridayy finds a well-scoped issue in a repository that welcomes
 // contributors, her coding agent fixes it in its isolated container, and then three things she does NOT take on the
 // agent's word decide whether it goes anywhere:
 //   1. policy   — the diff is small, focused, has a test, touches no CI/lockfile/licence, carries no secrets (src/patch.mjs)
@@ -7,15 +7,16 @@
 //   3. review   — a separate model pass reads the issue, the diff and the proof as a strict maintainer would
 // Anything that fails goes back to the agent with the exact failure (at most max_rounds), or is dropped. What passes
 // becomes ONE approval card with the exact diff, the PR text and the test proof. Only an approved card touches GitHub,
-// with the owner's token, which lives in Friday core and never in the agent's container.
+// with the owner's token, which lives in Fridayy core and never in the agent's container.
 // After the PR is open she watches it: CI, reviews, comments, merge/close. Maintainer feedback is kept as lessons that
 // go into every later job. Repositories that ban AI-assisted contributions, need a CLA/DCO signature, or want contributors
-// to claim issues first are skipped. Friday never emails maintainers.
+// to claim issues first are skipped. Fridayy never emails maintainers.
 import { randomUUID, createHash } from 'node:crypto';
 import { parsePatch, checkPatchPolicy, applyFilePatch, patchStats, sha256 } from './patch.mjs';
 import { partsInTz } from './time.mjs';
 import { isAway } from './away.mjs';
 import { loop } from './loops.mjs';
+import { normalizeCmd } from './contrib-verify.mjs';
 
 export const CONTRIB_DEFAULTS = Object.freeze({ v: 1, enabled: false, run_at: '10:00', days: [1, 2, 3, 4, 5, 6, 7], languages: ['Python', 'JavaScript', 'TypeScript'],
   labels: ['good first issue', 'help wanted'], min_stars: 30, max_open_prs: 10, daily_starts: 1, max_rounds: 2, skip_repos: [], mode: 'mixed',
@@ -55,6 +56,14 @@ const jsonIn = (s) => { try { return JSON.parse(/\{[\s\S]*\}/.exec(String(s ?? '
 const slug = (s, n) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, n).replace(/-+$/, '');
 export const workspaceFor = (repo) => `oss-${slug(repo.replace('/', '-'), 28)}-${createHash('sha256').update(repo.toLowerCase()).digest('hex').slice(0, 6)}`;
 export const DISCLOSURE = 'Prepared with help from an AI coding agent. I reviewed the change and the test results before opening this.';
+// An issue has no change: say what was actually checked.
+export const ISSUE_DISCLOSURE = 'Found with help from an AI coding agent. The steps above were re-run on a clean clone of that commit, and I reviewed this report before opening it.';
+// The commands a maintainer runs: the agent's own venv/activate steps (its workspace paths) become one standard line.
+export function reproSteps(setup, repro) {
+  const cmds = [...(setup ?? []).map(normalizeCmd).filter(Boolean), repro];
+  const py = cmds.some((c) => /\b(pip|pip3|python3?|pytest)\b/.test(c)) && !cmds.some((c) => /^\s*uv\s/.test(c));
+  return [...(py ? ['python3 -m venv .venv && . .venv/bin/activate'] : []), ...cmds].join('\n');
+}
 export const REVIEWERS = Object.freeze([{ role: 'reason', maxTokens: 6000, timeoutMs: 180_000 }, { role: 'chat', thinking: false, maxTokens: 2500, timeoutMs: 90_000 }]);
 
 export class Contrib {
@@ -128,7 +137,7 @@ export class Contrib {
 
   async connection() {
     if (this.#agentSafe()) return { connected: false, error: 'agent_has_github_token', tell_user: this.#agentSafe() };
-    if (!this.gh?.configured) return { connected: false, tell_user: 'Create a GitHub classic personal access token with ONLY the public_repo scope and put it in the server .env as FRIDAY_GITHUB_CONTRIB_TOKEN, then restart Friday.' };
+    if (!this.gh?.configured) return { connected: false, tell_user: 'Create a GitHub classic personal access token with ONLY the public_repo scope and put it in the server .env as FRIDAY_GITHUB_CONTRIB_TOKEN, then restart Fridayy.' };
     try {
       const w = await this.gh.whoami();
       if (w.too_broad.length) return { connected: false, login: w.login, error: `token_too_broad: remove the ${w.too_broad.join(', ')} scope(s); only public_repo is needed` };
@@ -139,7 +148,7 @@ export class Contrib {
   // its GitHub MCP tools) a prompt injection in an issue could act on GitHub without an approval. Contributions wait.
   #agentSafe() {
     if (!this.agentGithubToken) return null;
-    return 'GITHUB_TOKEN is set in the server .env, which gives the coding agent its own GitHub access. Remove that line (contributions use FRIDAY_GITHUB_CONTRIB_TOKEN in core only) and restart Friday.';
+    return 'GITHUB_TOKEN is set in the server .env, which gives the coding agent its own GitHub access. Remove that line (contributions use FRIDAY_GITHUB_CONTRIB_TOKEN in core only) and restart Fridayy.';
   }
   async #ready() {
     const unsafe = this.#agentSafe();
@@ -154,7 +163,7 @@ export class Contrib {
     const shown = [...OPEN, 'issue_open'];
     const active = this.db.prepare(`SELECT * FROM oss_attempts WHERE status IN (${shown.map(() => '?').join(',')}) ORDER BY created_at`).all(...shown).map((r) => this.#row(r));
     const totals = Object.fromEntries(this.db.prepare('SELECT status, COUNT(*) n FROM oss_attempts GROUP BY status').all().map((r) => [r.status, r.n]));
-    return { enabled: c.enabled, config: c, github_login: this.gh?.login ?? null, token_configured: Boolean(this.gh?.configured), open: active.map((a) => ({ id: a.id.slice(0, 8), repo: a.repo, issue: a.issue_number, status: a.status, round: a.round, pr: a.pr_url, kind: a.kind, waiting_on: a.status === 'ready' ? `the next digest (${this.config().digest_at})` : a.status === 'in_digest' ? 'your approval (daily digest)' : a.status === 'scheduled' ? `posting at ${a.post_at}` : a.status === 'issue_open' ? (a.feedback?.confirmed_at ? 'confirmed; fix started' : 'maintainers to confirm the bug') : a.status === 'awaiting_approval' ? 'your approval' : a.status === 'pr_open' ? (a.feedback?.pending ? 'your go-ahead to address maintainer feedback' : 'maintainers') : 'Friday' })),
+    return { enabled: c.enabled, config: c, github_login: this.gh?.login ?? null, token_configured: Boolean(this.gh?.configured), open: active.map((a) => ({ id: a.id.slice(0, 8), repo: a.repo, issue: a.issue_number, status: a.status, round: a.round, pr: a.pr_url, kind: a.kind, waiting_on: a.status === 'ready' ? `the next digest (${this.config().digest_at})` : a.status === 'in_digest' ? 'your approval (daily digest)' : a.status === 'scheduled' ? `posting at ${a.post_at}` : a.status === 'issue_open' ? (a.feedback?.confirmed_at ? 'confirmed; fix started' : 'maintainers to confirm the bug') : a.status === 'awaiting_approval' ? 'your approval' : a.status === 'pr_open' ? (a.feedback?.pending ? 'your go-ahead to address maintainer feedback' : 'maintainers') : 'Fridayy' })),
       totals, started_today: this.#startedToday(), recent: this.list({ limit: 8 }) };
   }
 
@@ -548,7 +557,7 @@ ${link}
 At commit ${a.base_sha.slice(0, 12)}:
 
 \`\`\`sh
-${[...(a.result?.setup ?? []), bug.repro].join('\n')}
+${reproSteps(a.result?.setup, bug.repro)}
 \`\`\`
 
 ## What happens
@@ -559,7 +568,7 @@ ${clip(repro?.tail, 1500).trim()}
 ## What I expected
 ${expected}
 
-_${DISCLOSURE}_
+_${ISSUE_DISCLOSURE}_
 `;
     this.#set(a.id, { kind: 'issue', issue_title: title });
     const contribution = { action: 'open_issue', repo: a.repo, title, body: issueBody, location: link,

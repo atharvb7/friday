@@ -1,4 +1,4 @@
-// Boots the screen pet: Friday's 2D portrait (pet-2d.js).
+// Boots the screen pet: Fridayy's 2D portrait (pet-2d.js).
 const attrib = document.getElementById('attrib');
 const fail = (err) => {
   const fb = document.getElementById('fallback');

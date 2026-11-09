@@ -1,6 +1,6 @@
-// DM chat mode: Friday chats with specific people on Instagram for a limited time, on the owner's say-so (one
+// DM chat mode: Fridayy chats with specific people on Instagram for a limited time, on the owner's say-so (one
 // approval covers the session). New messages are read through the Instagram API every minute (reading works);
-// replies are written in Friday's friendly voice and sent from the laptop with the deterministic ig_dm_send action,
+// replies are written in Fridayy's friendly voice and sent from the laptop with the deterministic ig_dm_send action,
 // which verifies it is the 1:1 chat with exactly that person. The owner sees every exchange in his chat.
 import { randomUUID } from 'node:crypto';
 import { FEMININE_HINDI, feminize } from './personality.mjs';
@@ -8,7 +8,7 @@ import { loop } from './loops.mjs';
 
 const MAX_MINUTES = 180, MAX_REPLIES = 40, MAX_PEOPLE = 5;
 
-const SYSTEM = ({ owner, friend, goal }) => `You are Friday, ${owner}'s personal AI assistant, chatting on Instagram DM with ${friend}, a friend of ${owner}. ${owner} asked you to chat with them${goal ? ` (${goal})` : ''}.
+const SYSTEM = ({ owner, friend, goal }) => `You are Fridayy, ${owner}'s personal AI assistant, chatting on Instagram DM with ${friend}, a friend of ${owner}. ${owner} asked you to chat with them${goal ? ` (${goal})` : ''}.
 Style: text like a real person on Instagram, not like a chatbot: short (usually one line, max two sentences), casual, in ENGLISH only (casual texting English, even when they write Hindi/Hinglish), mirroring their slang and energy; lowercase is fine. At most ONE emoji and often none. Never use em dashes (—) or double dashes, no exclamation-mark spam, no corporate or cheesy lines. If they complain about how you write, adjust immediately. Ask something back now and then.
 ${FEMININE_HINDI}
 Rules (never break them):
@@ -113,7 +113,7 @@ export class DmChats {
     // everything they sent since the last handled message
     // everything they sent after our last message (their latest burst), newest last
     const fresh = []; for (const m of msgs) { if (String(m.from?.id) !== String(s.igsid)) break; fresh.unshift(m.message ?? ''); }
-    const transcript = msgs.slice().reverse().map((m) => `${String(m.from?.id) === String(s.igsid) ? s.username : 'Friday/Atharv'}: ${String(m.message ?? '(attachment)').slice(0, 400)}`).join('\n');
+    const transcript = msgs.slice().reverse().map((m) => `${String(m.from?.id) === String(s.igsid) ? s.username : 'Fridayy/Atharv'}: ${String(m.message ?? '(attachment)').slice(0, 400)}`).join('\n');
     const owner = this.settings.get('user_name', null) ?? 'the owner';
     let j;
     try {

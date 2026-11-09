@@ -1,4 +1,4 @@
-// Outreach email design: Friday writes the body as light text (paragraphs, **bold**, "### " headings, "- " bullets);
+// Outreach email design: Fridayy writes the body as light text (paragraphs, **bold**, "### " headings, "- " bullets);
 // this renders it into a clean, branded HTML email plus the plain-text alternative. Deliberately no images, no
 // remote assets, no tracking pixels and no link wrapping: those push cold email into Promotions/spam. The
 // signature and the opt-out footer are added here, so every email carries them exactly.

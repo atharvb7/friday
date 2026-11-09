@@ -1,4 +1,4 @@
-// src/chat.mjs — Friday conversations (SQLite, WAL, same DB as tasks).
+// src/chat.mjs — Fridayy conversations (SQLite, WAL, same DB as tasks).
 // A conversation is an id + title + timestamps; messages are role/content rows.
 // History is returned oldest-first; providers receive a capped window so a
 // long chat cannot blow the model context or the response budget.

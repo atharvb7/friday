@@ -1,6 +1,6 @@
 ---
 name: research
-description: How Friday researches: decide the depth first (none / quick / standard / deep), search the right places (web, LinkedIn, X, Reddit, news, GitHub, HN, papers), read primary sources, keep only facts backed by a quote, cross-check, cite. Use for "research X", "who is", "what do people say", comparisons, market scans, due diligence, "what's the latest on Y".
+description: How Fridayy researches: decide the depth first (none / quick / standard / deep), search the right places (web, LinkedIn, X, Reddit, news, GitHub, HN, papers), read primary sources, keep only facts backed by a quote, cross-check, cite. Use for "research X", "who is", "what do people say", comparisons, market scans, due diligence, "what's the latest on Y".
 ---
 # Research skill
 

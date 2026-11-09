@@ -46,7 +46,7 @@ test('chat api: local brain answers, persists, validates', async () => {
     const r1 = await (await api('/v1/chat', J({ message: 'hello friday' }))).json();
     assert.ok(r1.conversation.id);
     assert.equal(r1.brain, 'local-fallback');
-    assert.match(r1.reply, /Hey|Friday/);
+    assert.match(r1.reply, /Hey|Fridayy/);
 
     // Remember + recall across turns in the same conversation.
     const cid = r1.conversation.id;

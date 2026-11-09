@@ -1,6 +1,6 @@
 # Open-source contributions
 
-Friday fixes one well-scoped issue a day in someone else's public repository and opens the pull request in your name,
+Fridayy fixes one well-scoped issue a day in someone else's public repository and opens the pull request in your name,
 only after you approve it. Code: `src/contrib.mjs` (pipeline), `src/patch.mjs` (diff policy + strict apply),
 `src/contrib-verify.mjs` (test proof, no model), `src/github.mjs` (GitHub API, core only),
 `skills/oss-contribution` (how the coding agent works), tools `oss_*` in `src/agent/friday-tools.mjs`.
@@ -25,7 +25,7 @@ only after you approve it. Code: `src/contrib.mjs` (pipeline), `src/patch.mjs` (
 7. Steps 4-6 failing send the exact failure back to the agent (max `max_rounds`, default 2), then the attempt is dropped
    and you get a one-line note. Nothing is posted.
 8. **Approval card** (Inbox): PR title, body, the independent test results, the review score and the exact diff.
-   Friday core applies the diff to the real upstream files itself (no fuzz), so what is committed is what you saw.
+   Fridayy core applies the diff to the real upstream files itself (no fuzz), so what is committed is what you saw.
    The PR body says it was prepared with an AI coding agent and reviewed by you.
 9. **Approve** -> fork (if needed) -> commit on a branch of your fork -> pull request. **Deny** with a note -> the note
    becomes a lesson for later jobs.
@@ -55,10 +55,10 @@ that welcomes contributors (or the one you name), reads what its docs promise, p
 bug. Before any card: the code location it cites must exist at that commit, the one-line reproduction must fail in a
 clean clone with the error text it quoted (no model), the issue must not already be reported, and a triage review must
 call it a real bug with confidence >= 0.8 (not intended behaviour). The card is an **issue**, not a PR. When maintainers
-confirm it (a label like `bug`/`confirmed`, or a maintainer comment saying so), Friday starts the fix automatically; the
+confirm it (a label like `bug`/`confirmed`, or a maintainer comment saying so), Fridayy starts the fix automatically; the
 PR still comes to you as a card. Declined reports become lessons. At most 3 of our bug reports wait on maintainers at once.
 
-Friday never emails maintainers and never comments, pushes or opens anything without an approved card.
+Fridayy never emails maintainers and never comments, pushes or opens anything without an approved card.
 
 ## Setup (server)
 
@@ -66,10 +66,10 @@ Friday never emails maintainers and never comments, pushes or opens anything wit
    settings -> Personal access tokens -> Tokens (classic)). Broader scopes (`repo`, `workflow`, `delete_repo`, `admin:*` ...)
    are refused.
 2. In `~/friday/.env` on the server: add `FRIDAY_GITHUB_CONTRIB_TOKEN=<token>` and **remove** `GITHUB_TOKEN`. While
-   `GITHUB_TOKEN` is set the coding agent has its own GitHub access, and Friday refuses to contribute (a prompt injection
+   `GITHUB_TOKEN` is set the coding agent has its own GitHub access, and Fridayy refuses to contribute (a prompt injection
    in an issue could otherwise act on GitHub without your approval).
 3. Optional: `FRIDAY_DSH_TIMEOUT_MS=2700000` (45 min) so the agent has time to set up unfamiliar projects.
-4. Restart, then tell Friday e.g. "turn on open-source contributions, Python and TypeScript, at 10:00" (`oss_setup`, needs
+4. Restart, then tell Fridayy e.g. "turn on open-source contributions, Python and TypeScript, at 10:00" (`oss_setup`, needs
    approval). "Contribute to owner/repo issue 123" starts a specific one; "how are my contributions going?" = `oss_status`.
 
 ## Limits worth knowing

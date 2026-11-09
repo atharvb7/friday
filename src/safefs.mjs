@@ -1,5 +1,5 @@
 // Filesystem helpers for directories an untrusted agent can write to. The agent may plant
-// symlinks, FIFOs or device files where Friday later reads/writes, so the host never follows
+// symlinks, FIFOs or device files where Fridayy later reads/writes, so the host never follows
 // links or blocks on special files there.
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, renameSync, unlinkSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { dirname, join } from 'node:path';

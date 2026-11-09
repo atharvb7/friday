@@ -1,6 +1,6 @@
-# Friday on a server. Three containers:
+# Fridayy on a server. Three containers:
 #   friday  - core (API/UI/brain/voice). Published ONLY on 127.0.0.1:4317; put `tailscale serve` (HTTPS, tailnet-only) in front.
-#   agent   - DeepSeek Harness runner. Internal network only (no inbound, no direct internet); no Friday data inside.
+#   agent   - DeepSeek Harness runner. Internal network only (no inbound, no direct internet); no Fridayy data inside.
 #   proxy   - the only way out for the agent: blocks private/LAN/tailnet/docker/metadata addresses.
 # Data (DB, token, voice models) lives in ${FRIDAY_DATA} on the host SSD.  Start: docker compose up -d --build
 name: friday
@@ -63,7 +63,7 @@ services:
     pids_limit: 512
     cpus: 4
 
-  # Friday's own headless browser, so research and web tasks work while his laptop is off. Joins the core like the
+  # Fridayy's own headless browser, so research and web tasks work while his laptop is off. Joins the core like the
   # laptop node (FRIDAY_BROWSER_SECRET; empty = stays off), browser/research actions only, out only via the proxy.
   browser:
     <<: *hardening
@@ -92,7 +92,7 @@ services:
     mem_limit: 128m
     pids_limit: 128
 
-  # Hosts Friday's own apps on the tailnet. Has the Docker + tailscaled sockets, so its API is tiny and fixed
+  # Hosts Fridayy's own apps on the tailnet. Has the Docker + tailscaled sockets, so its API is tiny and fixed
   # (deployer/server.mjs): only containers labelled friday.app, unprivileged apps, 127.0.0.1 ports, tailnet-only.
   deployer:
     <<: *hardening
@@ -127,7 +127,7 @@ services:
 
 networks:
   deploynet: { internal: true }  # core <-> deployer only
-  apps: { name: friday_apps }    # Friday's hosted apps (+ the deployer for health checks)
+  apps: { name: friday_apps }    # Fridayy's hosted apps (+ the deployer for health checks)
   agentnet: { internal: true }   # agent <-> core <-> proxy; nothing here can reach the internet or the host directly
   egress: {}
 

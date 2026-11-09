@@ -1,4 +1,4 @@
-// Friday's research engine. Three depths, chosen per question (assessDepth, or the brain decides):
+// Fridayy's research engine. Three depths, chosen per question (assessDepth, or the brain decides):
 //   quick     one or two searches, a couple of pages read; the brain answers from the excerpts (seconds)
 //   standard  a planned set of targeted queries, ~6 pages read, facts extracted WITH exact quotes; the brain writes the
 //             answer from that evidence pack (under ~1.5 min, inline in the chat turn)

@@ -25,7 +25,7 @@ export class WorkerLoop {
   stop() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    for (const r of this.running.values()) r.controller.abort(new Error('Friday shutting down'));
+    for (const r of this.running.values()) r.controller.abort(new Error('Fridayy shutting down'));
   }
 
   cancel(taskId) { this.running.get(taskId)?.controller.abort(new Error('Task cancelled')); }

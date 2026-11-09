@@ -70,7 +70,7 @@ test('text helpers: tags stripped for display, notification markup escaped and b
   assert.equal(stripTags('[sigh] Fine. [chuckle] You win.'), 'Fine. You win.');
   assert.equal(notifyText('<b>a & b</b>'), '&lt;b&gt;a &amp; b&lt;/b&gt;');
   assert.ok(notifyText('x'.repeat(500)).length <= 300);
-  assert.match(explainError(Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } })), /reach Friday/);
+  assert.match(explainError(Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } })), /reach Fridayy/);
   assert.match(explainError(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })), /too long/);
   assert.equal(explainError(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' })), null, 'user cancel is silent');
   assert.match(explainError(new Error('server 403: forbidden')), /read,chat/);
@@ -176,7 +176,7 @@ test('session: mic missing/muted and server unreachable -> error beep + a clear 
   h.s.press(); await h.s.round; assert.ok(h.calls.some((c) => c[0] === 'notify' && /Microphone/.test(c[1])));
   h = harness({ turn: async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }); } });
   h.s.press(); await h.s.round;
-  assert.ok(h.calls.some((c) => c[0] === 'notify' && /Can’t reach Friday/.test(c[1]))); assert.equal(h.s.state, 'idle');
+  assert.ok(h.calls.some((c) => c[0] === 'notify' && /Can’t reach Fridayy/.test(c[1]))); assert.equal(h.s.state, 'idle');
 });
 
 test('session: press again = stop recording early; press while thinking = cancel; double tap debounced', async () => {

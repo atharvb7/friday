@@ -15,7 +15,7 @@ systemctl --user daemon-reload
 echo "Installed $UNIT_DIR/friday.service (MemoryHigh=${MEM_HIGH:-4G} MemoryMax=${MEM_MAX:-5G})"
 if [[ "${1:-}" == "--enable" ]]; then
   systemctl --user enable --now friday
-  loginctl enable-linger "$USER" 2>/dev/null || echo "note: run 'sudo loginctl enable-linger $USER' so Friday survives logout"
+  loginctl enable-linger "$USER" 2>/dev/null || echo "note: run 'sudo loginctl enable-linger $USER' so Fridayy survives logout"
 else
   echo "Not enabled. Start with: systemctl --user start friday   (or re-run with --enable)"
 fi

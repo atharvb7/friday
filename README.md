@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="Friday — hand over the work, she does it" width="100%">
+<img src="docs/assets/banner.svg" alt="Fridayy — hand over the work, she does it" width="100%">
 
 <br>
 
-**Friday is an autonomous AI agent that does your computer work for you.**<br>
+**Fridayy is an autonomous AI agent that does your computer work for you.**<br>
 Hand her the job — the research, the emails, the forms, the clicking through websites on your laptop — and get the result back.
 
 <br>
@@ -18,18 +18,18 @@ Hand her the job — the research, the emails, the forms, the clicking through w
 ![Self-hosted](https://img.shields.io/badge/self--hosted-6%20GB%20RAM%2C%20no%20GPU-232a3b)
 [![License: MIT](https://img.shields.io/badge/license-MIT-f5c542)](LICENSE)
 
-[**Why Friday**](#why-friday) · [**Hand it over**](#hand-it-over) · [**Features**](#what-she-can-do) · [**Architecture**](#architecture) · [**Quick start**](#quick-start) · [**Deploy**](#deploy-to-a-server) · [**Status**](#honest-status)
+[**Why Fridayy**](#why-fridayy) · [**Hand it over**](#hand-it-over) · [**Features**](#what-she-can-do) · [**Architecture**](#architecture) · [**Quick start**](#quick-start) · [**Deploy**](#deploy-to-a-server) · [**Status**](#honest-status)
 
 </div>
 
 ---
 
-## Why Friday
+## Why Fridayy
 
 For decades, people have spent their days sitting in front of a computer doing the work themselves: opening
 tabs, copying things between apps, filling in forms, chasing emails, digging through search results.
 
-**Friday ends that.** You say what you want done — by chat, by voice, from your phone — and she does it:
+**Fridayy ends that.** You say what you want done — by chat, by voice, from your phone — and she does it:
 she plans it, uses the tools, opens your laptop's real browser and apps when the job needs them, works in the
 background for as long as it takes, and comes back with the result. Your computer works for you, not the other way round.
 
@@ -37,7 +37,7 @@ background for as long as it takes, and comes back with the result. Your compute
 You    ▸ find three freight forwarders in Pune with weak websites, write each of them
          an intro email, and remind me tomorrow at 10 to check the replies
 
-Friday ▸ On it.
+Fridayy ▸ On it.
          ⋯ researching 14 companies, auditing their websites ⋯
          ⋯ drafting 3 personalised emails from your outreach inbox ⋯
          Done. Three companies, each with the page that shows the problem,
@@ -60,7 +60,7 @@ Friday ▸ On it.
 
 Anything you would otherwise sit at a computer for:
 
-| You say | Friday does |
+| You say | Fridayy does |
 |---|---|
 | *"Research the top 5 competitors and give me a report"* | Runs a research agent across the web, keeps sources with dates, flags contradictions, writes the report |
 | *"Fill in this registration form on that site"* | Opens it in your real Chrome on the laptop, fills it from your saved details, shows you the result |
@@ -83,7 +83,7 @@ Anything you would otherwise sit at a computer for:
 ### 🤖 Autonomous agents
 - **DSH agents** for research and coding in a bubblewrap / container sandbox, behind a filtering egress proxy
 - **Team tasks**: a big goal split into parallel subtasks across runtimes, merged into one report
-- **Hermes Agent** as a delegated runtime, with its approvals bridged into Friday's
+- **Hermes Agent** as a delegated runtime, with its approvals bridged into Fridayy's
 - **Self-learning playbooks**: successful runs become `SKILL.md` hints for next time
 - 35 skills (research, coding, sales, writing), third-party ones pinned and reviewed — see [`skills/`](skills)
 
@@ -95,7 +95,7 @@ Anything you would otherwise sit at a computer for:
 - Drives your real Chrome with **DOM refs**, not guessed coordinates
 - Whole-desktop control via AT-SPI accessibility (works on Wayland): open apps, read and press controls
 - Personal details are **placeholders** (`{{profile.phone}}`) filled at type-time; the model never sees them
-- A self-guard stops the agent from ever operating Friday's own approval page
+- A self-guard stops the agent from ever operating Fridayy's own approval page
 
 </td>
 </tr>
@@ -188,7 +188,7 @@ flowchart LR
     db[(SQLite<br/>one data dir)]
     agent[agent<br/>sandboxed DSH runner<br/>no inbound, no data]
     proxy[proxy<br/>egress filter]
-    deployer[deployer<br/>Friday's own apps]
+    deployer[deployer<br/>Fridayy's own apps]
     core --- db
     core -->|jobs| agent
     agent -->|only way out| proxy
@@ -219,7 +219,7 @@ flowchart LR
 
 ## Autonomy you control
 
-Friday works on her own by default. The few things that really matter — speaking in your name, spending money,
+Fridayy works on her own by default. The few things that really matter — speaking in your name, spending money,
 deleting, security — wait for a single tap, and you decide where that line sits for each kind of work.
 It's enforced in code, not in the prompt, so it holds even when a web page tries to talk her into something.
 
@@ -295,7 +295,7 @@ node bin/friday.mjs backup [dir] | restore <file.tgz>          # secrets exclude
 <details>
 <summary><b>Connect your phone</b></summary>
 
-Put Friday behind Tailscale HTTPS (tailnet-only), open the URL on your phone and install the PWA:
+Put Fridayy behind Tailscale HTTPS (tailnet-only), open the URL on your phone and install the PWA:
 
 ```bash
 tailscale serve --https=443 http://127.0.0.1:4317
@@ -323,14 +323,14 @@ Full guide, permissions and the push-to-talk key: [`node/README.md`](node/README
 
 ## Deploy to a server
 
-Friday ships as a hardened Docker compose stack sized for a **6 GB RAM, no-GPU** Linux box:
+Fridayy ships as a hardened Docker compose stack sized for a **6 GB RAM, no-GPU** Linux box:
 
 | Container | Role | Limits |
 |---|---|---|
 | `friday` | core: API, UI, brain, scheduler, voice | 2.5 GB · read-only · `127.0.0.1` only |
-| `agent` | sandboxed DSH runner — no inbound, no Friday data | 2 GB · internal network only |
+| `agent` | sandboxed DSH runner — no inbound, no Fridayy data | 2 GB · internal network only |
 | `proxy` | the agent's only way out; blocks private / LAN / tailnet / metadata | 128 MB |
-| `deployer` *(profile `apps`)* | hosts Friday's own apps on the tailnet, fixed tiny API | optional |
+| `deployer` *(profile `apps`)* | hosts Fridayy's own apps on the tailnet, fixed tiny API | optional |
 
 ```bash
 docker compose up -d --build

@@ -1,6 +1,6 @@
-// Friday must never drive Friday: a page or message could talk the computer agent into opening Friday's own
+// Fridayy must never drive Fridayy: a page or message could talk the computer agent into opening Fridayy's own
 // site in the owner's signed-in browser and pressing Approve on its own request. So the node refuses
-// Friday's own addresses (internal browser and xdg-open), typing them, and any click/key/type while Friday's
+// Fridayy's own addresses (internal browser and xdg-open), typing them, and any click/key/type while Fridayy's
 // own tab is the focused window. Other subdomains (e.g. a portfolio on atharv.fridayy.site) stay allowed.
 export const DEFAULT_SELF_HOSTS = ['fridayy.site', 'www.fridayy.site', 'app.fridayy.site'];
 let hosts = new Set(DEFAULT_SELF_HOSTS);
@@ -22,8 +22,8 @@ export function mentionsSelf(text) {
   return null;
 }
 
-// Friday's app tab is titled exactly "Friday" (or "(3) Friday" with unread items); browsers append their name.
-const SELF_TITLE = /^(\(\d+\)\s+)?Friday(\s+[-–—]\s+(Google Chrome|Chromium|Brave|Microsoft Edge|Mozilla Firefox|Firefox|Vivaldi|Opera))?$/;
+// Fridayy's app tab is titled exactly "Fridayy" (or "(3) Fridayy" with unread items); browsers append their name.
+const SELF_TITLE = /^(\(\d+\)\s+)?Fridayy(\s+[-–—]\s+(Google Chrome|Chromium|Brave|Microsoft Edge|Mozilla Firefox|Firefox|Vivaldi|Opera))?$/;
 export const isSelfWindow = (title) => SELF_TITLE.test(String(title ?? '').trim());
 
-export const SELF_ERROR = 'friday_own_ui: Friday does not operate its own app or site (that is where approvals are decided). Ask the user to do it.';
+export const SELF_ERROR = 'friday_own_ui: Fridayy does not operate its own app or site (that is where approvals are decided). Ask the user to do it.';

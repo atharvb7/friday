@@ -7,7 +7,7 @@
 
 ## 0. What this enables
 
-- Phone (Tailnet only) → `https://<laptop-tailnet-name>` → Friday on
+- Phone (Tailnet only) → `https://<laptop-tailnet-name>` → Fridayy on
   `127.0.0.1:4317`.
 - The app itself is unchanged: it still binds `127.0.0.1:4317` only
   (`src/server.mjs`: `host = '127.0.0.1'`, `port = FRIDAY_PORT ?? 4317`).
@@ -39,7 +39,7 @@ Run on the **laptop**:
 tailscale status
 tailscale whoami   # note your user + tailnet name, e.g. you@github / laptop.example.ts.net
 
-# 1) Serve Friday's loopback port over tailnet HTTPS only (port 443).
+# 1) Serve Fridayy's loopback port over tailnet HTTPS only (port 443).
 #    --bg keeps it running after the shell exits. No --funnel flag, ever.
 tailscale serve --bg --https=443 http://127.0.0.1:4317
 
@@ -57,7 +57,7 @@ https://<laptop-tailnet-name> (--https 443)
 ```
 
 On the **phone** (connected to the same Tailnet, Tailscale ON + logged in
-as you): open `https://<laptop-tailnet-name>` and log in with the Friday
+as you): open `https://<laptop-tailnet-name>` and log in with the Fridayy
 access token. If the browser warns about certificates, **stop** — verify
 you typed the tailnet name correctly and Tailscale is on; do not bypass.
 
@@ -108,7 +108,7 @@ If serve is missing after wake/reboot, re-run the §2 serve command.
 
 ## 5. App-level re-auth rule for approvals (mandatory)
 
-Tailscale auth is **transport only**. Friday approvals stay app-gated:
+Tailscale auth is **transport only**. Fridayy approvals stay app-gated:
 
 1. On the phone, always start from a **fresh login**: clear the session
    (dashboard "Clear session token") and re-enter the access token before
@@ -134,7 +134,7 @@ tailscale serve reset
 tailscale serve status   # must show NO serve entries
 
 # C) Confirm phone can no longer load https://<laptop-tailnet-name>
-#    (expect connection failure, NOT the Friday UI).
+#    (expect connection failure, NOT the Fridayy UI).
 
 # D) Re-enable only when wanted:
 tailscale serve --bg --https=443 http://127.0.0.1:4317
@@ -142,7 +142,7 @@ tailscale serve --bg --https=443 http://127.0.0.1:4317
 
 ## 7. Suspend / lock behavior
 
-| State | Friday reachable via Serve? |
+| State | Fridayy reachable via Serve? |
 |---|---|
 | Screen locked, laptop awake | **YES — still serving.** Lock is not a kill switch; run §7-disable. |
 | Sleep / suspend / lid closed (suspends) | No (daemon asleep). May resume on wake — re-check §4. |
@@ -161,7 +161,7 @@ tailscale funnel status   # confirm OFF
 # If the phone is lost / you want the device gone entirely,
 # do this in the Tailnet admin console:
 #   Machines -> phone -> Remove / disable key expiry bypass.
-# Then rotate the Friday token on the laptop:
+# Then rotate the Fridayy token on the laptop:
 #   1) stop the service (systemctl --user stop friday  — if managed)
 #   2) delete data/access-token (it is re-created random on next start)
 #   3) start the service, copy the new token locally, log in fresh.

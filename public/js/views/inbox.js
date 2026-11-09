@@ -41,7 +41,7 @@ export function render({ app, api, toast, refresh }) {
     c.diff ? h('details', { open: true }, h('summary', { class: 'faint small' }, 'Exact diff that will be committed'), h('pre', { class: 'mono bubble payload-raw' }, String(c.diff).slice(0, 60000))) : null);
   // The daily open-source digest: every item as it will be posted, each with a Drop button (the card is then replaced).
   const dropItem = async (attempt) => {
-    const why = prompt('Drop this one? Optional: why (Friday keeps it as a lesson)');
+    const why = prompt('Drop this one? Optional: why (Fridayy keeps it as a lesson)');
     if (why === null) return;
     try { await api('/v1/oss/digest/drop', { method: 'POST', body: { attempt, note: why } }); toast('Dropped — the digest was updated.'); } catch (e) { toast(`Failed: ${e.message}`); }
     load(); refresh();
@@ -78,7 +78,7 @@ export function render({ app, api, toast, refresh }) {
     } else if (tab === 'approvals') {
       if (!a.approvals.length) body.append(h('div', { class: 'empty' }, h('div', { class: 'big' }, '✅'), 'Nothing waiting on you.'));
       for (const x of a.approvals) {
-        const note = h('input', { type: 'text', maxlength: '500', placeholder: 'Note for Friday (optional, e.g. why you deny)', 'aria-label': 'Note for Friday' });
+        const note = h('input', { type: 'text', maxlength: '500', placeholder: 'Note for Fridayy (optional, e.g. why you deny)', 'aria-label': 'Note for Fridayy' });
         body.append(h('div', { class: 'card stack' },
           h('div', { class: 'row wrap' }, h('strong', { class: 'grow' }, x.summary), h('span', { class: `chip ${x.risk === 'critical' ? 'bad' : 'warn'}` }, x.risk), h('span', { class: 'chip' }, x.category), h('span', { class: 'faint' }, timeAgo(x.created_at))),
           x.repeat ? h('div', { class: 'chip warn' }, `Repeat: same as the one you approved ${timeAgo(x.repeat.approved_at)}, which already ran`) : null,

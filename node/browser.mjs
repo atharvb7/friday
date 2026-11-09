@@ -1,5 +1,5 @@
 // Browser control on the laptop via Playwright + the system Chrome, using a
-// DEDICATED Friday profile (log into WhatsApp etc. once, manually; sessions persist).
+// DEDICATED Fridayy profile (log into WhatsApp etc. once, manually; sessions persist).
 // The model never sees cookies or passwords. Elements are addressed by short refs
 // produced by snapshot(), so clicks are DOM-based, not guessed pixel coordinates.
 import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs';
@@ -86,7 +86,7 @@ export function checkFile(path, allowedDirs) {
   const ok = allowedDirs.map((d) => { try { return realpathSync(d); } catch { return null; } }).filter(Boolean).find((d) => real === d || real.startsWith(`${d}/`));
   if (!ok) throw new Error('path_not_allowed');
   if (real.slice(ok.length).split('/').some((seg) => seg.startsWith('.'))) throw new Error('hidden_path_blocked');
-  // Never hand Friday's own secrets (or credential-looking files) to a web page, even inside an allowed dir.
+  // Never hand Fridayy's own secrets (or credential-looking files) to a web page, even inside an allowed dir.
   if (SECRET_NAME.test(real.split('/').pop())) throw new Error('sensitive_file_blocked');
   let dir = dirname(real);
   for (let i = 0; i < 4 && dir !== ok && dir.length > ok.length; i++, dir = dirname(dir)) {
@@ -114,7 +114,7 @@ const SETTLE_FN = ({ quietMs, maxMs, minInteractive }) => new Promise((resolve) 
 });
 
 export class BrowserController {
-  // proxy + sandbox=false: the server's browser container (node/server-browser.mjs) goes out only through Friday's egress
+  // proxy + sandbox=false: the server's browser container (node/server-browser.mjs) goes out only through Fridayy's egress
   // proxy and runs without Chrome's own sandbox (no user namespaces in a cap-dropped container; the container is the box).
   constructor({ chromium, profileDir, executablePath = '/usr/bin/google-chrome', headless = false, allowedDirs = [], allowPrivate = false, downloadRoot = null, proxy = null, sandbox = true }) {
     Object.assign(this, { chromium, profileDir, executablePath, headless, allowedDirs, allowPrivate, proxy, sandbox }); // allowPrivate is for tests only

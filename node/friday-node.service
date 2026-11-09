@@ -1,5 +1,5 @@
 [Unit]
-Description=Friday laptop node
+Description=Fridayy laptop node
 After=network-online.target graphical-session.target
 # Start with the desktop session: the browser needs the session's DISPLAY/WAYLAND_DISPLAY/XAUTHORITY.
 # (Started from default.target on GNOME/Wayland it can win the race against the session and never get XAUTHORITY,

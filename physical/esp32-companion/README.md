@@ -1,6 +1,6 @@
-# Friday desk companion (ESP32-S3) — v1 prototype
+# Fridayy desk companion (ESP32-S3) — v1 prototype
 
-One Friday, one body more. The device is a **display + senses**; all intelligence stays on the server.
+One Fridayy, one body more. The device is a **display + senses**; all intelligence stays on the server.
 Status: **protocol side is implemented and tested on the server; the firmware is untested on hardware.**
 
 ## Bill of materials (~US$40)
@@ -21,7 +21,7 @@ The server is on your tailnet: use `tailscale serve --https=443 http://127.0.0.1
 |---|---|---|
 | ↓ | `GET /v1/companion/stream` (SSE) | `event: state`, `{"state","detail","pet","unread","approvals","nodeOnline"}`; states: idle listening thinking planning researching browsing coding computer_use speaking waiting verifying success error offline |
 | ↑ | `POST /v1/companion/events` | `{"type":"presence"|"absence"|"button","distanceCm"?}` — telemetry only, no authority |
-| ↕ | `POST /v1/voice/ask` | wav (16 kHz mono) in → wav out; text in `X-Friday-Heard` / `X-Friday-Reply` (URL-encoded) |
+| ↕ | `POST /v1/voice/ask` | wav (16 kHz mono) in → wav out; text in `X-Fridayy-Heard` / `X-Fridayy-Reply` (URL-encoded) |
 
 Deterministic things stay on the device (blink timing, servo easing, LED); the model is never used for them.
 Voice needs server-side engines: set `FRIDAY_WHISPER_BIN/MODEL` (whisper.cpp) and `FRIDAY_PIPER_BIN/MODEL` (Piper).

@@ -23,7 +23,7 @@ function world({ settings: preset = {}, writer = null, judge = null, now = null,
   const settings = new Settings(store);
   settings.set('timezone', 'Asia/Kolkata');
   settings.set('outreach_signature', 'Atharv Bhosale');
-  settings.set('business_profile', { text: '# Profile\n## Proof and credibility\n- Friday: our own production agent.\n## Messaging\nWrite like the reference.' });
+  settings.set('business_profile', { text: '# Profile\n## Proof and credibility\n- Fridayy: our own production agent.\n## Messaging\nWrite like the reference.' });
   for (const [k, v] of Object.entries(preset)) settings.set(k, v);
   const serp = []; const sites = {};
   const fetchImpl = async (url) => {

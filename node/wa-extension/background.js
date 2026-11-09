@@ -1,4 +1,4 @@
-// Relays commands between the Friday laptop node (local HTTP on 127.0.0.1, token from config.js) and the WhatsApp tab.
+// Relays commands between the Fridayy laptop node (local HTTP on 127.0.0.1, token from config.js) and the WhatsApp tab.
 // Long-polls the node for the next command, hands it to the content script over its port, posts the result back.
 importScripts('config.js');
 const VERSION = chrome.runtime.getManifest().version;

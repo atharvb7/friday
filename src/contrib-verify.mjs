@@ -1,9 +1,9 @@
 // Deterministic verification of a proposed open-source change — no language model involved.
 // In a fresh clone at the exact upstream commit: run the setup commands, run the targeted test BEFORE the change (a bug
 // fix's new test must fail there), apply the patch with `git apply`, then run the targeted test, the full suite and the
-// linter AFTER it. Friday only trusts what these exit codes say, never the coding agent's own report of its tests.
+// linter AFTER it. Fridayy only trusts what these exit codes say, never the coding agent's own report of its tests.
 // Runs inside the agent container (the container is the sandbox) or locally through a sandbox `wrap`.
-// The commands get a minimal environment: no Friday secrets, no GitHub token.
+// The commands get a minimal environment: no Fridayy secrets, no GitHub token.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,7 +13,7 @@ const SHA_RE = /^[0-9a-f]{40}$/;
 const TAIL = 3000;
 export const VERIFY_LIMITS = Object.freeze({ setupMs: 12 * 60_000, stepMs: 10 * 60_000, totalMs: 30 * 60_000, maxSetup: 6, maxCmd: 500 });
 
-// Python projects run inside a fresh virtualenv that Friday creates and activates (Debian's system pip refuses installs,
+// Python projects run inside a fresh virtualenv that Fridayy creates and activates (Debian's system pip refuses installs,
 // PEP 668), so the agent's own "make a venv / activate it" steps are dropped: its venv path does not exist in a clean clone.
 const VENV_PART = /^\s*(?:(?:python3?|uv)\s+(?:-m\s+)?venv\b.*|(?:source|\.)\s+\S*bin\/activate\s*)$/;
 export function normalizeCmd(c) {

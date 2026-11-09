@@ -81,7 +81,7 @@ export class Sources {
   // Free structured sources -> same shape as search results.
   async api(kind, query) {
     const q = encodeURIComponent(clip(query, 200));
-    const j = async (url) => { const r = await this.fetchImpl(url, { headers: { 'User-Agent': 'Friday-research/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(15_000) }); if (!r.ok) throw new Error(`http_${r.status}`); return r.json(); };
+    const j = async (url) => { const r = await this.fetchImpl(url, { headers: { 'User-Agent': 'Fridayy-research/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(15_000) }); if (!r.ok) throw new Error(`http_${r.status}`); return r.json(); };
     try {
       if (kind === 'hn') return (await j(`https://hn.algolia.com/api/v1/search?query=${q}&hitsPerPage=8&tags=(story,comment)`)).hits.map((h) => ({ title: h.title ?? clip(h.comment_text, 90), url: h.url ?? `https://news.ycombinator.com/item?id=${h.objectID}`, snippet: clip(h.story_text ?? h.comment_text ?? `${h.points ?? 0} points, ${h.num_comments ?? 0} comments on HN`, 300), site: 'Hacker News', date: h.created_at?.slice(0, 10) ?? null }));
       if (kind === 'github') return (await j(`https://api.github.com/search/repositories?q=${q}&per_page=8&sort=stars`)).items.map((r) => ({ title: r.full_name, url: r.html_url, snippet: clip(`${r.description ?? ''} · ★${r.stargazers_count} · ${r.language ?? ''} · updated ${r.pushed_at?.slice(0, 10)}`, 300), site: 'GitHub', date: r.pushed_at?.slice(0, 10) ?? null }));

@@ -1,4 +1,4 @@
-# Friday on the server (Docker) — as deployed 2026-10-11
+# Fridayy on the server (Docker) — as deployed 2026-10-11
 
 Host: `atharvsserver` (Ubuntu 26.04, 6.8 GB RAM, NVMe SSD), reachable on the tailnet. No sudo needed: everything runs in Docker as your user.
 
@@ -8,12 +8,12 @@ tailnet device ──HTTPS──► tailscale serve :4317 (tailnet-only, NOT Fun
                                                                             │
   ┌──────────── docker compose project "friday" ────────────────────────────┼──────────────┐
   │  friday  (core: API, UI, brain, Whisper/Kokoro voice)  ◄──── internal net ────► agent   │
-  │        └──────────► egress net (internet)                       (DSH, no Friday data)    │
+  │        └──────────► egress net (internet)                       (DSH, no Fridayy data)    │
   │                                         proxy ◄── only way out for the agent ──┘        │
   └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 - **friday** — 2 GB limit, read-only rootfs, caps dropped. Data in `~/friday-data` (DB, token, voice models, backups) on the SSD.
-- **agent** — 2 GB limit (1.5 GB until 2026-11-09; big JS repos hit the OOM killer), internal network only, no Friday data/keys beyond the model key, runs as uid 10001. The container *is* the sandbox (the host has no bubblewrap and AppArmor blocks user namespaces).
+- **agent** — 2 GB limit (1.5 GB until 2026-11-09; big JS repos hit the OOM killer), internal network only, no Fridayy data/keys beyond the model key, runs as uid 10001. The container *is* the sandbox (the host has no bubblewrap and AppArmor blocks user namespaces).
 - **proxy** — the agent's only route to the internet. It refuses private/LAN/tailnet/docker/metadata addresses (verified: `example.com` 200, your tailnet service 403, metadata 403).
 - Restarts automatically (`unless-stopped`, docker enabled at boot). Nightly backup at 03:00 (user crontab, keeps 7) → `~/friday-data/backups`.
 - URL: **https://atharvsserver.tail117666.ts.net:4317** (the laptop node, phone and desk companion all use this).
@@ -32,7 +32,7 @@ Voice engine (done once, models live in `~/friday-data/voice`): `docker compose 
 Keys live in `~/friday/.env` (mode 600); after editing run `docker compose up -d`.
 
 ## Rolling back data after a bad deploy
-Each time new code starts on the existing database, Friday first copies it to `~/friday-data/snapshots/pre-deploy-<time>-<version>.db` (the newest 3 are kept; restarts of the same code never replace the copy). To go back to the data as it was right before a deploy:
+Each time new code starts on the existing database, Fridayy first copies it to `~/friday-data/snapshots/pre-deploy-<time>-<version>.db` (the newest 3 are kept; restarts of the same code never replace the copy). To go back to the data as it was right before a deploy:
 ```bash
 cd ~/friday && docker compose stop friday
 cd ~/friday-data && mv friday.sqlite friday.sqlite.bad && rm -f friday.sqlite-wal friday.sqlite-shm
@@ -52,12 +52,12 @@ Writes made after that deploy are lost (they stay in `friday.sqlite.bad`). For a
 core ~70 MB idle, ~1 GB while voice is loaded (unloads after 5 idle min; `FRIDAY_STT_MODEL=base` halves it); agent ~15 MB idle, ~190 MB per running task; STT ≈ 2.7 s per sentence, TTS ≈ 0.3–0.5 s on this server.
 
 ## Notes
-- Other apps on this host (Sorch, Supabase, Hermes, cloudflared) and the existing Funnel entries were not touched; Friday uses a new tailnet-only serve port.
+- Other apps on this host (Sorch, Supabase, Hermes, cloudflared) and the existing Funnel entries were not touched; Fridayy uses a new tailnet-only serve port.
 - The tmpfs mounts allow `exec` on purpose: DSH and espeak load native libraries from `/tmp`.
 - Not yet verified here: Web Push to a phone, phone PWA install, GitHub PR flow, sustained heavy concurrent load.
 
 ## Gmail (direct Google OAuth, free)
 1. console.cloud.google.com → new project → APIs & Services → Library → enable **Gmail API**.
-2. OAuth consent screen: External, app name "Friday", your email as support + test user, scope `.../auth/gmail.modify`. Then **Publish app** (In production) so the refresh token does not expire after 7 days; Google shows an "unverified app" warning for your own account — Advanced → continue.
+2. OAuth consent screen: External, app name "Fridayy", your email as support + test user, scope `.../auth/gmail.modify`. Then **Publish app** (In production) so the refresh token does not expire after 7 days; Google shows an "unverified app" warning for your own account — Advanced → continue.
 3. Credentials → Create credentials → OAuth client ID → **Web application** → Authorized redirect URI: `https://atharvsserver.tail117666.ts.net:4317/oauth/google/callback`.
 4. Put `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FRIDAY_PUBLIC_URL=https://atharvsserver.tail117666.ts.net:4317` in `~/friday/.env`, recreate the core container, then Settings → Connected apps → Gmail → Connect.

@@ -1,4 +1,4 @@
-// src/intent.mjs — Friday's built-in intent + risk classifier. Zero network,
+// src/intent.mjs — Fridayy's built-in intent + risk classifier. Zero network,
 // zero dependencies, deterministic. Used for chat routing while JEV stays
 // disconnected (JEV requires FRIDAY_JEV_ENABLED=1 to be called at all).
 //

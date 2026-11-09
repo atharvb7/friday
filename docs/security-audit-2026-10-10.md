@@ -11,7 +11,7 @@ Each finding below has a regression test unless marked otherwise.
 | 3 | High | SSRF bypass via IPv4-mapped IPv6 hex form `[::ffff:7f00:1]` (and NAT64/6to4/Teredo/site-local) | Byte-level IPv6 parsing; only global unicast allowed; same policy in the node |
 | 4 | High | Regex DoS in `htmlToText` (seconds per 200 KB) | Linear tokenizer + input cap (0–1 ms on the attack inputs) |
 | 5 | High | Laptop agent risk was self-declared by the model; approved goals auto-allowed uploads/UI actions | Risk now derived from the target element's label (send/post/buy/delete…); `submit=true`/Enter escalate; grants never cover uploads/messaging/spending/deletion; approval shows full goal and target |
-| 6 | High | Node file policy allowed Friday's own data/tokens under `~/Documents` | Blocks token/secret/sqlite/key-like names and any file next to Friday data |
+| 6 | High | Node file policy allowed Fridayy's own data/tokens under `~/Documents` | Blocks token/secret/sqlite/key-like names and any file next to Fridayy data |
 | 7 | Medium | Device tokens could not sign in to the UI (`whoami` needed admin) → users would paste the owner token | `whoami` needs `read` only |
 | 8 | Medium | Node URL policy skipped DNS and redirects (`nip.io`, 302, `[::ffff:…]`) | Per-request interception in Chrome with DNS resolution + private-address check; real-Chrome test |
 | 9 | Medium | No TOTP brute-force protection | 5 failures / 10 min → 15 min lockout |

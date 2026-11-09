@@ -37,7 +37,7 @@ export function render({ app, api, toast }) {
   async function load() {
     const { tasks } = await api('/v1/tasks');
     clear(list);
-    if (!tasks.length) list.append(h('div', { class: 'empty' }, h('div', { class: 'big' }, '⚙️'), 'No tasks yet. Ask Friday to research, code or browse — it shows up here.'));
+    if (!tasks.length) list.append(h('div', { class: 'empty' }, h('div', { class: 'big' }, '⚙️'), 'No tasks yet. Ask Fridayy to research, code or browse — it shows up here.'));
     for (const t of tasks) {
       list.append(h('div', { class: 'card click item', onclick: () => detail(t.id) }, h('div', { class: 'big' }, KIND[t.kind] ?? '🤖'),
         h('div', { class: 'grow' }, h('div', { class: 'title' }, t.title), h('div', { class: 'meta' }, `${t.kind} · ${timeAgo(t.updated_at)}`)),

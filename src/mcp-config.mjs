@@ -1,7 +1,7 @@
-// MCP servers for the background agent. Friday keeps a small JSON file
+// MCP servers for the background agent. Fridayy keeps a small JSON file
 // (<data>/config/mcp.json); this renders it into a DSH overlay. Secrets are never
 // written: servers name env vars (`envPassthrough`) which are forwarded to the
-// agent process from Friday's own environment and referenced via !!js.
+// agent process from Fridayy's own environment and referenced via !!js.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -66,7 +66,7 @@ export function envToForward(cfg) {
   return [...names];
 }
 
-// Servers Friday enables on its own when the matching credential exists in its
+// Servers Fridayy enables on its own when the matching credential exists in its
 // environment. User config with the same name always wins.
 export function withDefaults(cfg, env) {
   const servers = { ...cfg.servers };

@@ -54,7 +54,7 @@ test('wired server: static UI, governor status, true counts, cancel, hardening',
     assert.equal(index.status, 200);
     assert.match(index.headers.get('content-type'), /text\/html/);
     assert.match(index.headers.get('content-security-policy'), /default-src 'self'/);
-    assert.match(await index.text(), /Friday/);
+    assert.match(await index.text(), /Fridayy/);
     const appJs = await fetch(`http://127.0.0.1:${PORT}/app.js`);
     assert.equal(appJs.status, 200);
     assert.match(appJs.headers.get('content-type'), /javascript/);
@@ -72,7 +72,7 @@ test('wired server: static UI, governor status, true counts, cancel, hardening',
 
     // Status reports governor mode, a true task count, and worker state.
     let status = await (await api('/v1/status')).json();
-    assert.equal(status.name, 'Friday');
+    assert.equal(status.name, 'Fridayy');
     assert.ok(['normal', 'constrained', 'paused', 'emergency'].includes(status.resources.mode));
     assert.equal(status.tasks, 0);
     assert.equal(status.worker.running, false);

@@ -1,5 +1,5 @@
 // Research browser for the laptop node: a HIDDEN Chrome (own profile, never on his screen) that searches Google and
-// reads pages for Friday's research engine. Why the laptop: from his home connection Google answers like it does for
+// reads pages for Fridayy's research engine. Why the laptop: from his home connection Google answers like it does for
 // a person (0.5-1.5 s, real results incl. LinkedIn/X/Reddit pages), free, while the server is blocked or served junk
 // by search engines and has only a small SerpApi quota. Pages that need JavaScript (X, LinkedIn, Reddit) render here.
 // If he signs in to LinkedIn/X in this profile once (research_login), logged-in pages are readable too.
@@ -18,7 +18,7 @@ const RECENT = { day: 'qdr:d', week: 'qdr:w', month: 'qdr:m', year: 'qdr:y' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class ResearchBrowser {
-  // proxy: the server's browser goes out through Friday's egress proxy (no LAN/tailnet/metadata), like her agent.
+  // proxy: the server's browser goes out through Fridayy's egress proxy (no LAN/tailnet/metadata), like her agent.
   constructor({ chromium, profileDir, executablePath, headless = true, allowPrivate = false, proxy = null, sandbox = true }) {
     Object.assign(this, { chromium, profileDir, executablePath, headless, allowPrivate, proxy, sandbox });
     this.ctx = null; this.starting = null; this.lastQuery = 0; this.open = 0; this.idle = null; this.blockedUntil = 0;
@@ -32,7 +32,7 @@ export class ResearchBrowser {
       const ctx = await this.chromium.launchPersistentContext(this.profileDir, { executablePath: this.executablePath, headless: this.headless, userAgent: UA, locale: 'en-US',
         viewport: { width: 1280, height: 900 }, ...(this.proxy ? { proxy: { server: this.proxy } } : {}), chromiumSandbox: this.sandbox, ignoreDefaultArgs: ['--enable-automation'], args: ['--no-first-run', '--no-default-browser-check', '--disable-blink-features=AutomationControlled'] });
       ctx.on('close', () => { this.ctx = null; });
-      // Same rule as his browser: no private/LAN/loopback targets, nothing back to Friday herself; skip heavy media.
+      // Same rule as his browser: no private/LAN/loopback targets, nothing back to Fridayy herself; skip heavy media.
       if (!this.allowPrivate) await ctx.route('**/*', async (route) => {
         const req = route.request(); const u = new URL(req.url());
         if (['data:', 'blob:', 'about:'].includes(u.protocol)) return route.continue();
@@ -147,7 +147,7 @@ export class ResearchBrowser {
     });
   }
 
-  // He signs in to LinkedIn / X once in THIS profile (a visible window; Friday never types passwords). The window
+  // He signs in to LinkedIn / X once in THIS profile (a visible window; Fridayy never types passwords). The window
   // closes itself after 10 minutes; later searches run hidden again with the saved login.
   async login({ site = 'linkedin' } = {}) {
     const url = { linkedin: 'https://www.linkedin.com/login', x: 'https://x.com/i/flow/login', reddit: 'https://www.reddit.com/login' }[site];

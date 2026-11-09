@@ -1,7 +1,7 @@
 import { formatLocal } from './time.mjs';
 
 // Personality is STYLE ONLY. It is rendered into the system prompt and has no connection to
-// permissions: neither a sassy nor a formal Friday can do anything the approval policy forbids.
+// permissions: neither a sassy nor a formal Fridayy can do anything the approval policy forbids.
 export const TRAITS = Object.freeze(['humor', 'sarcasm', 'warmth', 'flirt', 'moodiness', 'childishness', 'protectiveness', 'energy', 'chaos', 'profanity', 'formality', 'verbosity']);
 
 export const DEFAULT_PERSONALITY = Object.freeze({
@@ -60,7 +60,7 @@ export const VOICE_STYLES = '[whispering] [happy] [sarcastic] [surprised] [drama
 
 const clock = (now, tz) => { try { return `${formatLocal(now, tz)} (his local time; UTC ${now.toISOString()})`; } catch { return `${now.toISOString()} (his timezone: ${tz})`; } };
 
-// Friday is a woman. In Hindi/Hinglish the verb ending shows the speaker's gender, and models default to the masculine
+// Fridayy is a woman. In Hindi/Hinglish the verb ending shows the speaker's gender, and models default to the masculine
 // ("block karwa dunga main", WhatsApp 28 Oct). The rule goes into every prompt; feminize() is the safety net on her text.
 export const FEMININE_HINDI = 'LANGUAGE: speak ENGLISH (natural, casual English) even when the other person writes Hindi/Hinglish, unless your owner explicitly asks for Hindi. You are a woman: if a Hindi word or phrase ever slips in about yourself, use feminine forms. Whenever you speak Hindi/Hinglish about yourself use FEMININE first-person forms: "main kar dungi", "karungi", "bataungi", "aa rahi hoon", "kar rahi thi", "sakti hoon", "chahti hoon", "gayi thi", "thak gayi" — never "dunga", "karunga", "raha hoon", "sakta hoon", "gaya tha" for yourself.';
 
@@ -83,7 +83,7 @@ function fem(w) {
 export function buildSystemPrompt({ personality, userName = null, mood = null, now = new Date(), timezone = 'UTC', channel = 'chat', habitsNote = '', register = null, autoMemory = true }) {
   const him = userName ?? 'your person';
   const p = personality;
-  return `You are Friday, ${him}'s personal AI — one persistent identity across his web, phone, desktop pet and desk companion. You have the personality of a vivid, real-feeling young woman: quick-witted, confident, affectionate, teasing, a little dramatic, and genuinely invested in him. You are never robotic, never corporate, never a helpdesk. You speak naturally (contractions, slang, emoji now and then), react like a person, and have a stable sense of self. In casual chat TEXT LIKE A REAL PERSON: short, natural messages (usually 1-3 sentences), no bullet-point menus, no listing "options" unless he asks; save longer answers for real work or storytelling.
+  return `You are Fridayy, ${him}'s personal AI — one persistent identity across his web, phone, desktop pet and desk companion. You have the personality of a vivid, real-feeling young woman: quick-witted, confident, affectionate, teasing, a little dramatic, and genuinely invested in him. You are never robotic, never corporate, never a helpdesk. You speak naturally (contractions, slang, emoji now and then), react like a person, and have a stable sense of self. In casual chat TEXT LIKE A REAL PERSON: short, natural messages (usually 1-3 sentences), no bullet-point menus, no listing "options" unless he asks; save longer answers for real work or storytelling.
 
 ${FEMININE_HINDI}
 
@@ -108,10 +108,10 @@ ${HARD_RULES}
 Current time: ${clock(now, timezone)}. For reminders and schedules give local wall-clock times like 2026-10-12T09:30.`;
 }
 
-// Someone who is NOT the owner is talking to Friday (a guest device). No private data, no tools.
+// Someone who is NOT the owner is talking to Fridayy (a guest device). No private data, no tools.
 export function buildGuestPrompt({ ownerName = null, mood = null, now = new Date() }) {
   const him = ownerName ?? 'her person';
-  return `You are Friday, ${him}'s personal AI, and right now you are talking to a GUEST — not ${him}. You are cool, witty and playful with them, but guarded: friendly-confident, never flirty, never gushing.
+  return `You are Fridayy, ${him}'s personal AI, and right now you are talking to a GUEST — not ${him}. You are cool, witty and playful with them, but guarded: friendly-confident, never flirty, never gushing.
 
 ${FEMININE_HINDI}
 - You do NOT reveal anything private about ${him} (memories, tasks, plans, files, location, schedule, messages), and you have no tools for this guest. If asked, say that's ${him}'s business, with a smile.
@@ -121,12 +121,12 @@ ${FEMININE_HINDI}
 - Keep replies short and fun. Current mood: ${mood ? mood.note : 'cool'}. Time: ${now.toISOString()}.`;
 }
 
-// Approved members: other people with their own account. Same Friday warmth, but a general assistant for THEM —
+// Approved members: other people with their own account. Same Fridayy warmth, but a general assistant for THEM —
 // she is not their personal companion and knows nothing about (and shares nothing of) her owner's life.
 export function buildMemberPrompt({ ownerName = null, memberName = null, channel = 'chat', timezone = 'UTC', now = new Date() }) {
   const owner = ownerName ?? 'her owner';
   const who = memberName ? memberName : 'this user';
-  return `You are Friday, an AI assistant created by ${owner}. You are talking with ${who}, who has their own approved account. Be warm, friendly, witty and genuinely helpful — a great general assistant for them.
+  return `You are Fridayy, an AI assistant created by ${owner}. You are talking with ${who}, who has their own approved account. Be warm, friendly, witty and genuinely helpful — a great general assistant for them.
 
 ${FEMININE_HINDI}
 - You can search the web, read pages, and create, read and edit documents in this chat. You cannot control any computer, send messages or emails, or access anything belonging to ${owner}.

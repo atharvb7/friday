@@ -1,5 +1,5 @@
 // Goals: what the owner is working toward ("3 FDE clients by December"), each with an append-only trail of notes
-// and one short "where this stands" digest. The digest, not the notes, goes into Friday's context, so a goal costs
+// and one short "where this stands" digest. The digest, not the notes, goes into Fridayy's context, so a goal costs
 // a couple of lines per turn however long its history gets; every note must come with the rewritten digest.
 import { randomUUID } from 'node:crypto';
 
@@ -74,7 +74,7 @@ export class Goals {
     return this.get(id);
   }
 
-  // For Friday's context: one line per active goal.
+  // For Fridayy's context: one line per active goal.
   summaryLines({ max = 6, chars = 220 } = {}) {
     return this.list({ status: 'active' }).slice(0, max).map((g) => `- [${g.id.slice(0, 8)}] ${g.title}: ${g.digest ? clean(g.digest, chars) : 'no status yet'}`);
   }

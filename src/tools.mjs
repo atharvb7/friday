@@ -1,4 +1,4 @@
-// src/tools.mjs — Friday typed tool registry with workspace confinement.
+// src/tools.mjs — Fridayy typed tool registry with workspace confinement.
 //
 // Safety rules (v1):
 // - No shell execution and no network access. URL inputs are validated

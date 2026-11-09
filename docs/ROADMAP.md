@@ -1,14 +1,14 @@
-# Friday roadmap (single source of truth)
+# Fridayy roadmap (single source of truth)
 
 Updated 2026-10-10. Status is only ticked when it works end to end and a test or measurement proves it.
 
 ## Decisions
-- Final host: Linux server, 6 GB RAM, no GPU, always on. Friday + DSH live there. Friday's cap: 5 GB, core + DSH target < 3 GB.
+- Final host: Linux server, 6 GB RAM, no GPU, always on. Fridayy + DSH live there. Fridayy's cap: 5 GB, core + DSH target < 3 GB.
 - No local model. Brain = Nemotron via model router, other remote providers as fallback, honest degraded mode last.
 - Computer use + logged-in browser run on the user's laptop via a "laptop node" that dials out to the server.
 - Build and prove everything on the laptop first (server + node on one machine), then deploy.
 - Autonomy tiers per category; irreversible actions (money, deletion, messaging others, security) ask first by default.
-- Friday DSH is separate from the user's DSH (own home, workspace, credentials, port).
+- Fridayy DSH is separate from the user's DSH (own home, workspace, credentials, port).
 
 ## Phase 0 — Hygiene  (in progress)
 - [x] Audit repo (docs/audit-and-phase-plan-2026-10-10.md)
@@ -34,7 +34,7 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - Measured live: Super turn ~2.5 s avg with tools, Ultra ~12 s (so Ultra is used for reason/plan, Super for chat)
 ## Phase 3 — Agent spine  (done; verified live 2026-10-10)
 - [x] Real DSH integration: `node <dsh>/apps/cli/lib/bin.js --profile headless --json`, task on stdin, JSONL events; ~190 MB RSS, ~3-10 s per run measured
-- [x] Isolation: Friday-owned DSH_HOME/HOME, minimal env, own settings (no key on disk); Friday's bubblewrap sandbox hides data dir/.env/home, read-only system, writes only the task workspace (proved by a real-bwrap test)
+- [x] Isolation: Fridayy-owned DSH_HOME/HOME, minimal env, own settings (no key on disk); Fridayy's bubblewrap sandbox hides data dir/.env/home, read-only system, writes only the task workspace (proved by a real-bwrap test)
 - [x] Worker pool (concurrency + governor admission, profile `server6g`), traces (`trace.*` events), cancel/emergency/retry (manual only), no auto-retry of agent runs
 - [x] Skills (shipped: research, coding, report-writing, daily-briefing, competitive-analysis; install from inbox with symlink/size checks; mirrored into DSH home; `skill_load` tool)
 - [x] MCP config -> DSH overlay (`/v1/mcp`), secrets by env-var name only
@@ -69,7 +69,7 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - [x] Dashboard + phone PWA (no build step): streaming chat with tool chips + voice in/out (browser speech), inbox with approvals (TOTP prompt for devices), tasks with execution trace, research browser with sources/contradictions, memory CRUD/pin/search, reminders, settings (personality, autonomy tiers, proactive, devices/TOTP, rules, health, models, skills), live SSE state orb, emergency stop, dark/light, responsive
 - [x] Web Push (VAPID + RFC 8291, dependency-free; encryption round-trip tested; NOT yet verified against a real push service/phone)
 - [x] Voice: Whisper (faster-whisper `small`, English + Hinglish prompt) for listening and Kokoro (soft/warm blend, selectable in Settings) for speaking, via an on-demand Python worker (~1 GB RAM while loaded, unloads after 5 idle min); browser recorder with pause detection; verified in real Chrome with a fake microphone; whisper.cpp/Piper CLI fallback; browser speech as last resort
-- [x] Image creation (2026-10-26): `image_create` tool on NVIDIA-hosted FLUX (same key as the brain): FLUX.2 klein 4B (fast, ~2-3 s) or FLUX.1-dev (best, ~10 s), 7 aspect presets, 1-4 options, falls back to the other model when one is down. Friday writes the prompt; images are chat files shown inline (tap to enlarge) and the history shows her own prompt so tweaks (`based_on`, same seed/size/model) start from it. Generation only: hosted Kontext editing takes NVIDIA demo images only, so his photos cannot be edited yet. Owner only (not in member tools). Verified live against the API and in the browser.
+- [x] Image creation (2026-10-26): `image_create` tool on NVIDIA-hosted FLUX (same key as the brain): FLUX.2 klein 4B (fast, ~2-3 s) or FLUX.1-dev (best, ~10 s), 7 aspect presets, 1-4 options, falls back to the other model when one is down. Fridayy writes the prompt; images are chat files shown inline (tap to enlarge) and the history shows her own prompt so tweaks (`based_on`, same seed/size/model) start from it. Generation only: hosted Kontext editing takes NVIDIA demo images only, so his photos cannot be edited yet. Owner only (not in member tools). Verified live against the API and in the browser.
 - [x] Laptop push-to-talk (2026-10-28, `node/voice-key.mjs` + `voice-key-install.sh`): a GNOME shortcut (` or Super+`) from any app -> beep, energy VAD (stop on silence / 30 s / second press) -> laptop Whisper (server fallback) -> `POST /v1/voice/turn` -> spoken on the laptop (laptop Kokoro, server voice fallback) + notification. Single resident instance (second press = stop / cancel / interrupt), follow-ups keep the conversation, clear errors for server down, bad token, mic missing/muted, muted speaker. Screen questions ("read this", "what does this error mean") attach a portal screenshot (1440 px JPEG, deleted after) that the `vision` chain (Gemini Flash-Lite -> Nemotron Omni -> Super-VL, ~1.2k tokens) turns into a text note for the brain; other questions send no image. Verified locally: real mic VAD, second-press stop, lock, wav -> laptop Whisper -> local server brain -> notification, laptop TTS playback, screenshot question against a local server (Flash-Lite 2.4 s). NOT verified: a live key press on the GNOME session (installer tested on a sandboxed gsettings backend), spoken audio (laptop speaker was muted), the production server.
 - [x] Softer, clearer default voice (2026-10-28): Kokoro `af_heart:50,af_nicole:50` at 0.92 for the laptop and as the server default (0 word errors in all runs, 149 wpm). Chatterbox Nano expressive stays opt-in: 3-6% misread words, ~185 wpm, 2/15 sentences cut short. Chatterbox Turbo on the laptop GPU measured (0% errors, RTF 0.45, 4 GB VRAM, uneven pauses) but not wired. Samples + scores: outputs/friday-voice-samples-v2.
 - [ ] Verify PWA install + push on the real phone over Tailscale HTTPS

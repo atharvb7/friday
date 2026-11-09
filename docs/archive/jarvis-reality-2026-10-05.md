@@ -1,8 +1,8 @@
-# Friday as Jarvis — what works, what's gated, what's honestly limited (5 Oct 2026)
+# Fridayy as Jarvis — what works, what's gated, what's honestly limited (5 Oct 2026)
 
 Your model file: `megaman_x_divemmdortwinkle_girl.glb` (0.7MB, 80 nodes, 1 skin,
 ZERO authored animations, ZERO face morphs, CC-BY-4.0 lucianone). Hands/face
-never had motion data — so Friday animates her procedurally: breathing (Spine),
+never had motion data — so Fridayy animates her procedurally: breathing (Spine),
 blink (Eyelid_L/R bones), wave (R arm), nod/shake (Head), talk = head-bob +
 subtitles (no jaw bones exist, lip-sync is impossible on this file).
 Open `/pet.html` (or `?compact=1` for screen-sitting popup). Needs network once

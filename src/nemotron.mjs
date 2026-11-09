@@ -1,4 +1,4 @@
-// src/nemotron.mjs — Nemotron direct HTTP provider for Friday.
+// src/nemotron.mjs — Nemotron direct HTTP provider for Fridayy.
 // Same adapter interface as DshAdapter: status() / run({taskId, instruction,
 // signal}). Calls NVIDIA's OpenAI-compatible Chat Completions endpoint, so no
 // `dsh` binary is needed. DSH remains the agent-turn runtime when its binary +
@@ -30,7 +30,7 @@ export class NemotronProvider {
       ?? [model ?? process.env.FRIDAY_NEMOTRON_MODEL ?? DEFAULT_MODEL];
     this.models = [...new Set(chain)];
     this.model = this.models[0];
-    this.systemPrompt = systemPrompt ?? 'You are Friday, a concise personal computer agent. Answer briefly, never claim an action you did not take, and ask for confirmation before anything consequential.';
+    this.systemPrompt = systemPrompt ?? 'You are Fridayy, a concise personal computer agent. Answer briefly, never claim an action you did not take, and ask for confirmation before anything consequential.';
     this.timeoutMs = timeoutMs;
     this.maxOutputChars = maxOutputChars;
     this.fetchImpl = fetchImpl;

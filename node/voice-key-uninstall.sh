@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Removes the Friday push-to-talk shortcuts added by voice-key-install.sh (the ` key types a backtick again).
+# Removes the Fridayy push-to-talk shortcuts added by voice-key-install.sh (the ` key types a backtick again).
 # Keeps ~/.friday-node/voice.json (the token); pass --forget to delete it too.
 set -euo pipefail
 SCHEMA='org.gnome.settings-daemon.plugins.media-keys'

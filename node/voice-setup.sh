@@ -12,5 +12,5 @@ mkdir -p "$HOME_DIR"
 if [ ! -x "$HOME_DIR/venv/bin/python" ]; then echo "Creating venv in $HOME_DIR/venv"; python3 -m venv "$HOME_DIR/venv"; fi
 "$HOME_DIR/venv/bin/python" -m pip install --disable-pip-version-check -q faster-whisper kokoro-onnx soundfile numpy tokenizers $([ $EXPRESSIVE = 1 ] && echo onnxruntime)
 FRIDAY_VOICE_HOME="$HOME_DIR" FRIDAY_VOICE_EXPRESSIVE=$EXPRESSIVE "$HOME_DIR/venv/bin/python" "$HERE/../voice/setup.py"
-node "$HERE/voice-key.mjs" --say "Hi, I'm Friday. This is how I sound on your laptop." || true
+node "$HERE/voice-key.mjs" --say "Hi, I'm Fridayy. This is how I sound on your laptop." || true
 node "$HERE/voice-key.mjs" --status

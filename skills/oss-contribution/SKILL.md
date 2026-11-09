@@ -6,7 +6,7 @@ description: Fix one issue (bug or requested feature) or hunt for one unreported
 
 You are working on a stranger's project. Maintainers are busy volunteers; a sloppy pull request costs them time and
 costs the owner his reputation. **Giving up is a good outcome. A wrong or noisy change is a bad one.** Nothing you
-produce is posted by you: Friday re-runs your tests in a fresh clone, a strict reviewer reads your diff, and the owner
+produce is posted by you: Fridayy re-runs your tests in a fresh clone, a strict reviewer reads your diff, and the owner
 approves it. Every claim you make will be checked, so never claim anything you did not see happen.
 
 Also read and use these skills when they apply: `systematic-debugging` (finding the root cause),
@@ -30,11 +30,11 @@ Also read and use these skills when they apply: `systematic-debugging` (finding 
    the code by searching (`grep -rn`), never by guessing paths. Read the issue AND its comments: maintainers often say
    there how they want it fixed.
 3. **Set up the project the way its docs say** (e.g. `npm ci`, `pip install -e .[dev]`, `pip install -r requirements-dev.txt`).
-   Write down every setup command that worked; Friday re-runs them in a clean clone OF THE SAME CONTAINER IMAGE, so list
+   Write down every setup command that worked; Fridayy re-runs them in a clean clone OF THE SAME CONTAINER IMAGE, so list
    only commands you actually ran here and saw succeed (available: python3/pip, uv, node/npm, pnpm, yarn, git, make, gcc).
    Do not add or upgrade dependencies.
    **Python:** system pip refuses installs here. First run `python3 -m venv ../friday-contrib/venv && . ../friday-contrib/venv/bin/activate`
-   (from ./repo) and keep it active. Do NOT put venv creation or activation in `setup`/`test`/`suite`/`lint`: Friday runs
+   (from ./repo) and keep it active. Do NOT put venv creation or activation in `setup`/`test`/`suite`/`lint`: Fridayy runs
    every command with bash inside its own fresh, already-active venv, so list only e.g. `pip install -e .[test]`.
    Avoid `--no-build-isolation`; it fails in a fresh venv.
 4. **Run the existing tests first.** If the suite is already broken on the given commit, or you cannot get it to run
@@ -93,7 +93,7 @@ Also read and use these skills when they apply: `systematic-debugging` (finding 
   each point, or why you did not; no apologies, no filler) and `"commit_message"` (one line).
 
 Found a DIFFERENT real bug while working (not the issue you were given) and it is not already reported? You may instead
-write `"status":"found_bug"` with a `bug` object exactly as in the Bug hunt section. Friday re-runs it; if it does not
+write `"status":"found_bug"` with a `bug` object exactly as in the Bug hunt section. Fridayy re-runs it; if it does not
 reproduce, nothing is reported.
 
 ## Bug hunt (when the job says BUG HUNT)
@@ -110,7 +110,7 @@ A wrong report wastes a maintainer's time and hurts the owner's name, so `nothin
    time zones, Windows paths), error paths, recently changed code (`git log -p -20`), parsing/serialisation round trips,
    off-by-one in slicing/pagination. Write small probing scripts or tests under ./friday-contrib/probes (outside ./repo).
 4. When a probe fails, confirm it is a bug and not your misuse: re-read the docs for that function, check open AND
-   closed issues mentioning it (`gh` is not available: search the code, CHANGELOG and docs; Friday also searches issues).
+   closed issues mentioning it (`gh` is not available: search the code, CHANGELOG and docs; Fridayy also searches issues).
 5. Make it a ONE-line reproduction that runs from the repository root after `setup`, exits non-zero and prints a
    distinctive error, e.g. `python -c "from pkg import f; assert f('') == [], f('')"` or `node -e "..."`.
 
@@ -131,7 +131,7 @@ result.json for a hunt:
 }
 ```
 
-- `location` = the lines (at most 40) where the bug is, in the ORIGINAL commit. Friday checks they exist.
+- `location` = the lines (at most 40) where the bug is, in the ORIGINAL commit. Fridayy checks they exist.
 - `expect` = text that really appears in the command's output (copy it from your run).
 - Or `{"status": "nothing_found", "reason": "what you checked"}`.
 

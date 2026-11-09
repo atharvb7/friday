@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Friday laptop node. Dials OUT to the Friday server (SSE command stream + HTTP
+// Fridayy laptop node. Dials OUT to the Fridayy server (SSE command stream + HTTP
 // results), executes browser/desktop commands locally, and tells the server when
 // the user is actively using the machine so automation can step aside.
 //   friday-node pair --server https://host --token fdv_... [--name laptop]
@@ -55,12 +55,12 @@ const input = new InputDevice();
 setSelfHosts([new URL(server).hostname, ...(Array.isArray(conf.selfHosts) ? conf.selfHosts : [])]); // node/selfguard.mjs
 const desktop = makeDesktop({ allowedDirs, fullAccess, input });
 
-// WhatsApp in his own Chrome through the "Friday for WhatsApp Web" extension (live chats: no screenshots, no mouse).
+// WhatsApp in his own Chrome through the "Fridayy for WhatsApp Web" extension (live chats: no screenshots, no mouse).
 const hasAtspi = await atspiAvailable();
 const waConf = bridgeConfig(CONF_DIR);
 const waExtDir = ensureExtension({ srcDir: new URL('./wa-extension', import.meta.url).pathname, confDir: CONF_DIR, ...waConf });
 const wa = new WaBridge({ ...waConf, version: JSON.parse(readFileSync(join(waExtDir, 'manifest.json'), 'utf8')).version }).start();
-// Hidden Chrome for Friday's research (Google search + reading JS-heavy pages from his home connection).
+// Hidden Chrome for Fridayy's research (Google search + reading JS-heavy pages from his home connection).
 const research = chromePath ? new ResearchBrowser({ chromium, profileDir: join(CONF_DIR, 'research-profile'), executablePath: chromePath }) : null;
 const handlers = {
   ...(research ? { research_search: (a) => research.search(a), research_read: (a) => research.read(a), research_login: (a) => research.login(a) } : {}),
@@ -83,7 +83,7 @@ const handlers = {
     browser_wait: (a) => browser.wait(a), browser_click_text: (a) => browser.click_text(a), browser_screenshot: (a) => browser.screenshot(a),
     ig_dm_send: (a) => browser.ig_dm_send(a),
     browser_download_folder: (a) => browser.download_folder(a), browser_downloads: (a) => browser.downloads_list(a),
-    // Zip a reel folder and upload it to Friday, attached to the chat (the server posts the download card).
+    // Zip a reel folder and upload it to Fridayy, attached to the chat (the server posts the download card).
     reel_zip: async (a) => {
       const dir = reelFolder(a.folder, allowedDirs.find((d) => /\/Downloads$/.test(d)) ?? join(homedir(), 'Downloads'));
       const { zip, count } = zipFolder(dir);
@@ -109,7 +109,7 @@ async function execute(c) {
   try { await post('/v1/node/result', out); } catch (e) { log('result post failed', e.message); }
 }
 
-// Tell the server when the human is using the machine (GNOME idle monitor). Friday's own uinput events reset the
+// Tell the server when the human is using the machine (GNOME idle monitor). Fridayy's own uinput events reset the
 // idle timer too, so input that started before her last injection ended is hers, not the user's.
 setInterval(async () => {
   const idle = await idleMs();

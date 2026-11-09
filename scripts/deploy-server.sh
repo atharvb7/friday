@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy/update Friday on a Docker host over SSH.  Usage: scripts/deploy-server.sh user@host [branch]
+# Deploy/update Fridayy on a Docker host over SSH.  Usage: scripts/deploy-server.sh user@host [branch]
 # First run: clones the repo, creates the server .env from your local .env (keys only), builds and starts the stack.
 # Later runs: git pull + rebuild + restart.  Data lives in ~/friday-data on the server (never in the repo).
 set -euo pipefail
