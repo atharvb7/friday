@@ -209,6 +209,13 @@ export class Pipeline {
     return Math.min(limit, week < 2 ? 0 : RAMP[Math.min(week - 2, RAMP.length - 1)]);
   }
   cap() { return this.capAt(); }
+  // While the warm-up holds cold email at 0, the day it ends (cards and results say so, instead of a bare "cap of 0").
+  warmupEnds(t = this.now()) {
+    const start = Date.parse(this.settings.get('outreach_ramp', null)?.start ?? '');
+    if (Number.isNaN(start) || t >= start + 14 * DAY) return null;
+    return start + 14 * DAY;
+  }
+  #you(t) { const tz = this.#tzOf(null); return `${formatLocal(new Date(t), tz)} your time`; }
   sentToday() { return this.db.prepare("SELECT COUNT(*) n FROM lead_events WHERE kind='sent' AND at >= ?").get(this.#iso(this.now() - DAY)).n; }
   optOutLine() { return String(this.settings.get('outreach_opt_out_line', DEFAULT_OPT_OUT) ?? DEFAULT_OPT_OUT); }
 
@@ -352,8 +359,11 @@ export class Pipeline {
   summarize(emails) {
     let list; try { list = this.prepare(emails); } catch (e) { return `Outreach batch (invalid: ${e.message})`; }
     const ok = list.filter((m) => !m.blocked).length;
-    const left = Math.max(0, this.cap() - this.sentToday());
-    return `Send ${ok} outreach email${ok === 1 ? '' : 's'} from Gmail (${left} left in today's cap of ${this.cap()})${list.length - ok ? `, skip ${list.length - ok} blocked` : ''}: ${list.map((m) => `${m.company ?? m.to}${m.follow_up ? ' (follow-up)' : ''}${m.blocked ? ' [blocked]' : ''}`).join(', ')}`;
+    const left = Math.max(0, this.cap() - this.sentToday()); const warm = this.warmupEnds();
+    const when = warm ? `mailbox warm-up: nothing goes out before ${this.#you(warm)}, approving queues them until then`
+      : this.cap() === 0 ? 'the daily cap is 0, so nothing goes out until you raise outreach_daily_cap'
+        : `${left} left in today's cap of ${this.cap()}; each goes out in the prospect's business hours`;
+    return `Send ${ok} outreach email${ok === 1 ? '' : 's'} from Gmail (${when})${list.length - ok ? `, skip ${list.length - ok} blocked` : ''}: ${list.map((m) => `${m.company ?? m.to}${m.follow_up ? ' (follow-up)' : ''}${m.blocked ? ' [blocked]' : ''}`).join(', ')}`;
   }
 
   // ---- send queue ----
@@ -398,8 +408,14 @@ export class Pipeline {
       queued.push({ to: m.to, company: m.company, at_local: formatLocal(new Date(at), tz), timezone: tz });
       cursor = at + gap();
     }
-    if (queued.length) await this.flushOutbox();
-    return { queued: queued.length, schedule: queued, skipped, note: 'Emails go out one by one inside each prospect\'s business hours; replies cancel anything still queued for that lead.' };
+    const sentNow = queued.length ? await this.flushOutbox() : 0;
+    // Say plainly when the first one actually leaves: an approval that only queues must not read like "sent".
+    const next = this.db.prepare("SELECT MIN(scheduled_at) t FROM outbox WHERE status='queued'").get().t;
+    const warm = this.warmupEnds();
+    const message = !queued.length ? `Nothing queued${skipped.length ? ` (${skipped.map((x) => `${x.to}: ${x.skipped}`).join('; ')})` : ''}.`
+      : `Queued ${queued.length} outreach email${queued.length === 1 ? '' : 's'}${sentNow ? `, ${sentNow} sent already` : ''}.${next ? ` Next one goes out ${this.#you(Date.parse(next))} (prospect's local business hours${warm ? `; mailbox warm-up until ${this.#you(warm)}` : ''}).` : ''}${skipped.length ? ` Skipped ${skipped.length}.` : ''}`;
+    if (queued.length && !sentNow) this.notifications?.create({ level: 'info', title: `📬 ${message}`, body: queued.map((q) => `${q.company ?? q.to}: ${q.at_local} (${q.timezone})`).join('\n') });
+    return { queued: queued.length, sent_now: sentNow, schedule: queued, skipped, message, note: 'Emails go out one by one inside each prospect\'s business hours; replies cancel anything still queued for that lead.' };
   }
 
   // Emails (sent + queued) on the local calendar day of instant t in tz.

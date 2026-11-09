@@ -115,7 +115,7 @@ export class Approvals {
     this.db.prepare('UPDATE approvals SET result=? WHERE id=?').run(JSON.stringify(result).slice(0, 4000), id);
     if (inChat) {
       const said = note ? `\n\nYour note: ${note}` : '';
-      this.chat.addMessage(a.conversation_id, 'assistant', (result?.error ? `❌ I tried “${a.summary}” after your approval but it failed: ${result.explain ?? result.error}${result.fallback ? `\n\n${result.explain ? 'What I can do instead: ' : ''}${String(result.fallback).replace(/^Offer to /, '')}` : ''}` : `✅ Done after your approval: ${a.summary}`) + said);
+      this.chat.addMessage(a.conversation_id, 'assistant', (result?.error ? `❌ I tried “${a.summary}” after your approval but it failed: ${result.explain ?? result.error}${result.fallback ? `\n\n${result.explain ? 'What I can do instead: ' : ''}${String(result.fallback).replace(/^Offer to /, '')}` : ''}` : (typeof result?.message === 'string' ? `✅ ${result.message}` : `✅ Done after your approval: ${a.summary}`)) + said);
     }
     return this.get(id);
   }

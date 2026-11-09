@@ -324,8 +324,12 @@ test('deliverability guardrails: warm-up ramp, timed pauses, complaint and rate-
     assert.equal(s.p.capAt(Date.parse('2027-03-01T09:00Z')), 25, 'capped by outreach_daily_cap (25)');
     // during week 1 nothing is scheduled before week 3
     const l = s.p.save({ company: 'Ramp Co', email: 'a@ramp.example' });
-    await s.p.send([{ lead_id: l.id, subject: 'quick one', body: 'A specific, honest observation about your business. Want the plan?' }]);
+    const one = [{ lead_id: l.id, subject: 'quick one', body: 'A specific, honest observation about your business. Want the plan?' }];
+    assert.match(s.p.summarize(one), /mailbox warm-up: nothing goes out before .*8 Nov/, 'the card says when, not "cap of 0"');
+    const r = await s.p.send(one);
     assert.equal(s.sent.length, 0);
+    assert.match(r.message, /^Queued 1 outreach email\. Next one goes out .* your time .*warm-up until/);
+    assert.match(s.notes.at(-1).title, /📬 Queued 1/, 'an Inbox approval (no chat) still says when it goes out');
     assert.ok(Date.parse(s.store.db.prepare("SELECT scheduled_at FROM outbox WHERE status='queued'").get().scheduled_at) >= Date.parse('2026-11-08T00:00Z'));
     s.settings.set('outreach_ramp', null);
     s.store.db.prepare('DELETE FROM outbox').run();
