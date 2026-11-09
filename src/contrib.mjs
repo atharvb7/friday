@@ -18,7 +18,15 @@ import { isAway } from './away.mjs';
 import { loop } from './loops.mjs';
 
 export const CONTRIB_DEFAULTS = Object.freeze({ v: 1, enabled: false, run_at: '10:00', days: [1, 2, 3, 4, 5, 6, 7], languages: ['Python', 'JavaScript', 'TypeScript'],
-  labels: ['good first issue', 'help wanted'], min_stars: 30, max_open_prs: 3, daily_starts: 1, max_rounds: 2, skip_repos: [], mode: 'mixed' });
+  labels: ['good first issue', 'help wanted'], min_stars: 30, max_open_prs: 10, daily_starts: 1, max_rounds: 2, skip_repos: [], mode: 'mixed',
+  continuous: true, pr_cap: 5, issue_cap: 2, digest_at: '20:00', max_attempts_day: 24 });
+// continuous: work around the clock (next job as soon as one ends), within max_attempts_day.
+// Everything that passes waits for ONE daily digest card (digest_at). Approved items are posted spread over the following
+// hours (POST_SPACING), never more than pr_cap PRs + issue_cap issues a day and one per repository a day: a new account
+// opening many PRs at once looks like spam to maintainers and to GitHub.
+export const POST_SPACING_MS = 45 * 60_000;
+const STALE_MS = 3 * 86_400_000; // an approved-but-unposted change older than this is dropped (upstream moved on)
+const SUPERSEDED = '__superseded__';
 // mode: 'issues' = fix existing issues only; 'hunt' = look for unreported bugs and propose issues; 'mixed' = alternate.
 export const MODES = Object.freeze(['issues', 'hunt', 'mixed']);
 const MAX_OPEN_ISSUES = 3; // our bug reports still waiting on maintainers before hunting more
@@ -26,7 +34,8 @@ const MAX_OPEN_ISSUES = 3; // our bug reports still waiting on maintainers befor
 const CONFIRM_LABEL = /^(bug|confirmed|accepted|triaged|help wanted|good first issue|valid|reproduced|type: ?bug|kind\/bug)$/i;
 const LANGS = ['Python', 'JavaScript', 'TypeScript']; // what the agent container can build and test (node + python)
 const ACTIVE = ['working', 'verifying', 'reviewing'];
-const OPEN = [...ACTIVE, 'awaiting_approval', 'pr_open'];
+const QUEUED = ['ready', 'in_digest', 'scheduled']; // passed every check; waiting for the digest / its posting time
+const OPEN = [...ACTIVE, 'awaiting_approval', ...QUEUED, 'pr_open'];
 const OSI = new Set(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'GPL-2.0', 'GPL-3.0', 'LGPL-2.1', 'LGPL-3.0', 'AGPL-3.0', 'Unlicense', '0BSD', 'Zlib', 'EPL-2.0', 'BSL-1.0', 'PSF-2.0', 'Python-2.0', 'GPL-2.0-only', 'GPL-3.0-only', 'GPL-3.0-or-later', 'LGPL-3.0-only', 'AGPL-3.0-only']);
 const BAD_LABELS = /^(question|discussion|wontfix|won't fix|invalid|duplicate|needs[ -]design|needs[ -]decision|needs[ -]discussion|blocked|proposal|rfc|epic|meta|stale|on hold|breaking change|security)$/i;
 // Contribution guides that rule this work out. Matching errs towards skipping a repository.
@@ -48,8 +57,8 @@ export const REVIEWERS = Object.freeze([{ role: 'reason', maxTokens: 6000, timeo
 
 export class Contrib {
   #timer = null; #busy = false; #lastFollow = 0; #checking = new Set(); #handling = new Set();
-  constructor({ store, settings, ai, github, approvals, notifications = null, bus = null, verifier, readFiles, now = () => Date.now(), reviewers = REVIEWERS, cancelTask = null, agentGithubToken = false }) {
-    Object.assign(this, { store, settings, ai, gh: github, approvals, notifications, bus, verifier, readFiles, now, reviewers, cancelTask, agentGithubToken });
+  constructor({ store, settings, ai, github, approvals, notifications = null, bus = null, verifier, readFiles, now = () => Date.now(), reviewers = REVIEWERS, cancelTask = null, agentGithubToken = false, spacingMs = POST_SPACING_MS }) {
+    Object.assign(this, { store, settings, ai, gh: github, approvals, notifications, bus, verifier, readFiles, now, reviewers, cancelTask, agentGithubToken, spacingMs });
     this.db = store.db;
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS oss_attempts (
@@ -61,6 +70,8 @@ export class Contrib {
       CREATE INDEX IF NOT EXISTS oss_attempts_status ON oss_attempts(status, created_at);
       CREATE TABLE IF NOT EXISTS oss_repo_checks (repo TEXT PRIMARY KEY, ok INTEGER NOT NULL, reason TEXT, checked_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS oss_lessons (id TEXT PRIMARY KEY, repo TEXT, source TEXT NOT NULL, text TEXT NOT NULL, created_at TEXT NOT NULL);`);
+    const cols = new Set(this.db.prepare('PRAGMA table_info(oss_attempts)').all().map((c) => c.name));
+    for (const c of ['card', 'post_at', 'approved_hash', 'posted_at', 'ready_at']) if (!cols.has(c)) this.db.exec(`ALTER TABLE oss_attempts ADD COLUMN ${c} TEXT`);
     // A check cut off by a restart is picked up again by reconcile(); nothing is half-submitted (submits run only from approvals).
     this.unsubscribe = bus?.subscribe((e) => { if (e.type === 'approval.denied') this.#onDenied(e.data?.id, e.data?.note); });
   }
@@ -75,7 +86,12 @@ export class Contrib {
     if (p.languages !== undefined) { const l = (p.languages ?? []).map((x) => LANGS.find((y) => y.toLowerCase() === String(x).toLowerCase())).filter(Boolean); if (!l.length) throw new TypeError(`languages: any of ${LANGS.join(', ')}`); c.languages = [...new Set(l)]; }
     if (p.labels !== undefined) { const l = (p.labels ?? []).map((x) => clip(String(x).trim(), 40)).filter(Boolean).slice(0, 4); if (l.length) c.labels = l; }
     if (p.min_stars !== undefined) c.min_stars = Math.max(0, Math.min(100000, Math.round(Number(p.min_stars) || 0)));
-    if (p.max_open_prs !== undefined) c.max_open_prs = Math.max(1, Math.min(10, Math.round(Number(p.max_open_prs) || 3)));
+    if (p.max_open_prs !== undefined) c.max_open_prs = Math.max(1, Math.min(20, Math.round(Number(p.max_open_prs) || 10)));
+    if (p.continuous !== undefined) c.continuous = p.continuous === true;
+    if (p.pr_cap !== undefined) c.pr_cap = Math.max(1, Math.min(5, Math.round(Number(p.pr_cap) || 5))); // 5/day is the ceiling on purpose
+    if (p.issue_cap !== undefined) c.issue_cap = Math.max(0, Math.min(3, Math.round(Number(p.issue_cap) || 0)));
+    if (p.max_attempts_day !== undefined) c.max_attempts_day = Math.max(1, Math.min(40, Math.round(Number(p.max_attempts_day) || 24)));
+    if (p.digest_at !== undefined) { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(p.digest_at))) throw new TypeError('digest_at: HH:MM'); c.digest_at = p.digest_at; }
     if (p.daily_starts !== undefined) c.daily_starts = Math.max(1, Math.min(3, Math.round(Number(p.daily_starts) || 1)));
     if (p.max_rounds !== undefined) c.max_rounds = Math.max(1, Math.min(3, Math.round(Number(p.max_rounds) || 2)));
     if (p.mode !== undefined) { if (!MODES.includes(p.mode)) throw new TypeError(`mode: one of ${MODES.join(', ')}`); c.mode = p.mode; }
@@ -85,7 +101,7 @@ export class Contrib {
   }
 
   // ---- state ----
-  #row(r) { return r ? { ...r, result: r.result ? JSON.parse(r.result) : null, verify: r.verify ? JSON.parse(r.verify) : null, review: r.review ? JSON.parse(r.review) : null, files: r.files ? JSON.parse(r.files) : null, feedback: r.feedback ? JSON.parse(r.feedback) : null } : null; }
+  #row(r) { return r ? { ...r, card: r.card ? JSON.parse(r.card) : null, result: r.result ? JSON.parse(r.result) : null, verify: r.verify ? JSON.parse(r.verify) : null, review: r.review ? JSON.parse(r.review) : null, files: r.files ? JSON.parse(r.files) : null, feedback: r.feedback ? JSON.parse(r.feedback) : null } : null; }
   get(id) {
     const r = this.db.prepare('SELECT * FROM oss_attempts WHERE id=?').get(id) ?? this.db.prepare("SELECT * FROM oss_attempts WHERE id LIKE ? || '%' ORDER BY created_at DESC LIMIT 2").all(String(id)).filter((_, i, a) => a.length === 1)[0];
     return this.#row(r);
@@ -136,7 +152,7 @@ export class Contrib {
     const shown = [...OPEN, 'issue_open'];
     const active = this.db.prepare(`SELECT * FROM oss_attempts WHERE status IN (${shown.map(() => '?').join(',')}) ORDER BY created_at`).all(...shown).map((r) => this.#row(r));
     const totals = Object.fromEntries(this.db.prepare('SELECT status, COUNT(*) n FROM oss_attempts GROUP BY status').all().map((r) => [r.status, r.n]));
-    return { enabled: c.enabled, config: c, github_login: this.gh?.login ?? null, token_configured: Boolean(this.gh?.configured), open: active.map((a) => ({ id: a.id.slice(0, 8), repo: a.repo, issue: a.issue_number, status: a.status, round: a.round, pr: a.pr_url, kind: a.kind, waiting_on: a.status === 'issue_open' ? (a.feedback?.confirmed_at ? 'confirmed; fix started' : 'maintainers to confirm the bug') : a.status === 'awaiting_approval' ? 'your approval' : a.status === 'pr_open' ? (a.feedback?.pending ? 'your go-ahead to address maintainer feedback' : 'maintainers') : 'Friday' })),
+    return { enabled: c.enabled, config: c, github_login: this.gh?.login ?? null, token_configured: Boolean(this.gh?.configured), open: active.map((a) => ({ id: a.id.slice(0, 8), repo: a.repo, issue: a.issue_number, status: a.status, round: a.round, pr: a.pr_url, kind: a.kind, waiting_on: a.status === 'ready' ? `the next digest (${this.config().digest_at})` : a.status === 'in_digest' ? 'your approval (daily digest)' : a.status === 'scheduled' ? `posting at ${a.post_at}` : a.status === 'issue_open' ? (a.feedback?.confirmed_at ? 'confirmed; fix started' : 'maintainers to confirm the bug') : a.status === 'awaiting_approval' ? 'your approval' : a.status === 'pr_open' ? (a.feedback?.pending ? 'your go-ahead to address maintainer feedback' : 'maintainers') : 'Friday' })),
       totals, started_today: this.#startedToday(), recent: this.list({ limit: 8 }) };
   }
 
@@ -201,7 +217,7 @@ export class Contrib {
       const login = await this.#ready();
       const c = this.config();
       if (this.#count(ACTIVE) > 0) return { not_started: true, note: 'one contribution is already being worked on; one at a time' };
-      if (this.#count(['issue_open']) + this.db.prepare("SELECT COUNT(*) n FROM oss_attempts WHERE status='awaiting_approval' AND kind IN ('hunt','issue')").get().n >= MAX_OPEN_ISSUES)
+      if (this.#count(['issue_open']) + this.db.prepare("SELECT COUNT(*) n FROM oss_attempts WHERE status IN ('ready','in_digest','scheduled') AND kind='issue'").get().n >= MAX_OPEN_ISSUES)
         return { not_started: true, note: `${MAX_OPEN_ISSUES} bug reports are already waiting on you or on maintainers` };
       const candidates = [];
       if (repo) candidates.push(repo);
@@ -239,7 +255,7 @@ export class Contrib {
       const login = await this.#ready();
       const c = this.config();
       if (this.#count(ACTIVE) > 0) return { not_started: true, note: 'one contribution is already being worked on; one at a time' };
-      if (this.#count(['pr_open', 'awaiting_approval']) >= c.max_open_prs) return { not_started: true, note: `${c.max_open_prs} contributions are already waiting on you or on maintainers (max_open_prs)` };
+      if (this.#count(['pr_open', 'scheduled']) >= c.max_open_prs) return { not_started: true, note: `${c.max_open_prs} pull requests are already waiting on maintainers (max_open_prs)` };
       const candidates = [];
       if (repo && issue) candidates.push({ full: repo, n: Number(issue) });
       else {
@@ -398,10 +414,11 @@ ${lessons.length ? `--- WHAT MAINTAINERS TOLD US ON EARLIER PULL REQUESTS (apply
     this.#set(a.id, { review: rev });
     if (rev.verdict === 'reject') return this.#finish(a, 'rejected', `Review rejected it: ${rev.problems.map((p) => p.text).join('; ') || rev.advice}`);
     if (!rev.pass) return this.#retryOrDrop(a, `A strict maintainer review asked for changes (score ${rev.score}/10):\n- ${rev.problems.map((p) => `[${p.severity}] ${p.text}`).join('\n- ')}${rev.advice ? `\nAdvice: ${rev.advice}` : ''}`);
-    // 5. one approval card with the exact change
+    // 5. a revision answers a maintainer: its own card now. A new PR waits for the daily digest with its exact card.
     const stats = patchStats(files);
-    const fresh = this.#set(a.id, { status: 'awaiting_approval', patch_hash: sha256(a.patch), files: out });
-    return pr ? this.#requestUpdate(fresh, stats) : this.#requestSubmit(fresh, stats);
+    const fresh = this.#set(a.id, { patch_hash: sha256(a.patch), files: out });
+    if (pr) { this.#set(a.id, { status: 'awaiting_approval' }); return this.#requestUpdate(this.get(a.id), stats); }
+    return this.#ready4digest(fresh, this.#prCard(fresh, stats));
   }
 
   // A strict maintainer's read. The code decides: approve needs verdict approve, score >= 8, solves the issue, no blocker/major.
@@ -459,13 +476,14 @@ _${DISCLOSURE}_
       proof: (a.verify?.steps ?? []).filter((s) => /^(setup_|test_|suite_|lint_)/.test(s.name)).map((s) => ({ step: s.name, cmd: s.cmd, exit: s.exit })),
       review: { score: a.review?.score, notes: (a.review?.problems ?? []).map((p) => p.text) }, ...extra };
   }
-  #requestSubmit(a, stats) {
+  #prCard(a, stats) {
     const r = a.result ?? {};
     const title = clip(String(r.pr_title ?? '').trim() || `Fix #${a.issue_number}: ${a.issue_title}`, 120);
-    const contribution = this.#cardContribution(a, stats, { action: 'open_pull_request', title, body: this.prBody(a), branch: this.#branch(a) });
-    const ap = this.approvals.request({ category: 'messaging', risk: 'consequential', tool: 'oss_submit', summary: `Open a pull request on ${a.repo}: ${title}`, payload: { attempt: a.id, contribution } });
-    this.#set(a.id, { approval_id: ap.id });
-    return { awaiting_approval: true, approval: ap.id };
+    return this.#cardContribution(a, stats, { action: 'open_pull_request', title, body: this.prBody(a), branch: this.#branch(a) });
+  }
+  #ready4digest(a, card) {
+    this.#set(a.id, { status: 'ready', card, ready_at: new Date(this.now()).toISOString(), approval_id: null });
+    return { ready: true, note: 'passed every check; waiting for the daily digest' };
   }
   #requestUpdate(a, stats) {
     const reply = clip(String(a.result?.reply ?? '').trim(), 2000);
@@ -532,13 +550,11 @@ ${expected}
 
 _${DISCLOSURE}_
 `;
-    this.#set(a.id, { status: 'awaiting_approval', kind: 'issue', issue_title: title });
+    this.#set(a.id, { kind: 'issue', issue_title: title });
     const contribution = { action: 'open_issue', repo: a.repo, title, body: issueBody, location: link,
       proof: steps.filter((s) => /^(setup_|repro)/.test(s.name)).map((s) => ({ step: s.name, cmd: s.cmd, exit: s.exit })),
       review: { score: Math.round(rev.confidence * 10), notes: [`${rev.severity} severity: ${rev.reason}`] } };
-    const ap = this.approvals.request({ category: 'messaging', risk: 'consequential', tool: 'oss_issue', summary: `Open an issue on ${a.repo}: ${title}`, payload: { attempt: a.id, contribution } });
-    this.#set(a.id, { approval_id: ap.id });
-    return { awaiting_approval: true, approval: ap.id };
+    return this.#ready4digest(this.get(a.id), contribution);
   }
 
   // Real bug or intended behaviour? Passes only on verdict real_bug with confidence >= 0.8.
@@ -571,15 +587,15 @@ _${DISCLOSURE}_
   async #guard(a, fn, onFail) {
     try { return await fn(); } catch (e) { this.#set(a.id, { ...onFail, reason: `posting failed after your approval: ${clip(e.message, 300)}` }); throw e; }
   }
-  submit(payload) { const a = this.#approved(payload); return this.#guard(a, () => this.#submit(a, payload), { status: 'failed' }); }
+  // Single-item cards (oss_submit / oss_issue) are no longer created; kept so a card made by an older version still works.
+  submit(payload) { const a = this.#approved(payload); return this.#guard(a, () => this.#submit(a, payload.contribution), { status: 'failed' }); }
   update(payload) { const a = this.#approved(payload); return this.#guard(a, () => this.#update(a, payload), { status: 'pr_open', phase: 'pr' }); }
-  openIssue(payload) { const a = this.#approved(payload); return this.#guard(a, () => this.#openIssue(a, payload), { status: 'failed' }); }
-  async #submit(a, payload) {
-    const c = payload.contribution;
+  openIssue(payload) { const a = this.#approved(payload); return this.#guard(a, () => this.#openIssue(a, payload.contribution), { status: 'failed' }); }
+  async #submit(a, c) {
     const login = await this.#ready();
     const fork = await this.gh.ensureFork(a.repo);
     await this.gh.syncFork(fork, a.default_branch);
-    const head = await this.gh.commitFiles(fork, { parentSha: a.base_sha, branch: c.branch, message: `${c.title}\n\n${c.body.startsWith('Fixes') ? `Fixes #${a.issue_number}` : `Refs #${a.issue_number}`}`, files: a.files });
+    const head = await this.gh.commitFiles(fork, { parentSha: a.base_sha, branch: c.branch, message: `${c.title}\n\n${String(c.body).split('\n')[0]}`, files: a.files });
     let pull;
     try { pull = await this.gh.openPull(a.repo, { title: c.title, body: c.body, head: `${login}:${c.branch}`, base: a.default_branch }); }
     catch (e) {
@@ -601,9 +617,8 @@ _${DISCLOSURE}_
     this.#set(a.id, { status: 'pr_open', phase: 'pr', head_sha: head, feedback: { ...(a.feedback ?? {}), pending: null }, ci_seen: null });
     return { pushed: head.slice(0, 12), pr: a.pr_url };
   }
-  async #openIssue(a, payload) {
+  async #openIssue(a, c) {
     await this.#ready();
-    const c = payload.contribution;
     const i = await this.gh.openIssue(a.repo, { title: c.title, body: c.body });
     this.#set(a.id, { status: 'issue_open', pr_url: i.html_url, pr_number: i.number, issue_number: i.number, issue_url: i.html_url, last_seen: new Date(this.now()).toISOString() });
     this.#notify('success', `Issue opened on ${a.repo}`, `${c.title}\n${i.html_url}\nWhen a maintainer confirms it, I'll start the fix (the pull request still comes to you for approval).`);
@@ -611,6 +626,13 @@ _${DISCLOSURE}_
   }
   #onDenied(approvalId, note) {
     if (!approvalId) return;
+    if (note === SUPERSEDED) return; // the digest was re-issued without a dropped item
+    const inDigest = this.db.prepare("SELECT id FROM oss_attempts WHERE approval_id=? AND status='in_digest'").all(approvalId);
+    if (inDigest.length) {
+      if (note) this.#lesson(null, 'owner', `You declined a whole daily digest: ${note}`);
+      for (const r of inDigest) this.#set(r.id, { status: 'denied', reason: note ? `you declined the digest: ${note}` : 'you declined the digest' });
+      return;
+    }
     const r = this.db.prepare("SELECT id FROM oss_attempts WHERE approval_id=? AND status='awaiting_approval'").get(approvalId);
     if (!r) return;
     const a = this.get(r.id);
@@ -723,7 +745,8 @@ _${DISCLOSURE}_
   stop(id) {
     const a = this.get(id);
     if (!a) return { error: 'not found' };
-    if (!ACTIVE.includes(a.status) && a.status !== 'awaiting_approval') return { error: `it is ${a.status}` };
+    if (a.status === 'in_digest') return this.dropFromDigest(a.id);
+    if (!ACTIVE.includes(a.status) && !['awaiting_approval', 'ready', 'scheduled'].includes(a.status)) return { error: `it is ${a.status}` };
     if (a.task_id) try { this.cancelTask?.(a.task_id); } catch {}
     this.#set(a.id, a.phase === 'pr_revision' ? { status: 'pr_open', phase: 'pr' } : { status: 'cancelled', reason: 'stopped by you' });
     return { stopped: true };
@@ -737,6 +760,10 @@ _${DISCLOSURE}_
       if (!t) { this.#set(a.id, { status: 'failed', reason: 'the coding task disappeared' }); continue; }
       if (['completed', 'failed', 'blocked', 'cancelled'].includes(t.status)) await this.onTaskFinished(t.id, `task.${t.status}`).catch(() => {});
     }
+    for (const r of this.db.prepare("SELECT DISTINCT approval_id FROM oss_attempts WHERE status='in_digest'").all()) { // an unanswered digest: its items wait for the next one
+      const ap = r.approval_id ? this.approvals.get(r.approval_id) : null;
+      if (!ap || ap.status === 'expired' || (ap.status === 'pending' && Date.parse(ap.expires_at) < this.now())) this.db.prepare("UPDATE oss_attempts SET status='ready', approval_id=NULL WHERE status='in_digest' AND approval_id IS ?").run(r.approval_id);
+    }
     for (const a of this.db.prepare("SELECT * FROM oss_attempts WHERE status='awaiting_approval' AND approval_id IS NOT NULL").all()) {
       const ap = this.approvals.get(a.approval_id);
       if (ap?.status === 'expired' || (ap?.status === 'pending' && Date.parse(ap.expires_at) < this.now())) {
@@ -745,24 +772,110 @@ _${DISCLOSURE}_
     }
   }
 
+  // ---- the daily digest ----
+  #pendingDigest() {
+    const r = this.db.prepare("SELECT DISTINCT approval_id FROM oss_attempts WHERE status='in_digest' AND approval_id IS NOT NULL").get();
+    return r ? this.approvals.get(r.approval_id) : null;
+  }
+  #postedToday(kind) {
+    const day = this.#day();
+    return this.db.prepare(`SELECT posted_at FROM oss_attempts WHERE posted_at IS NOT NULL AND kind ${kind === 'issue' ? "= 'issue'" : "!= 'issue'"}`).all().filter((r) => this.#day(Date.parse(r.posted_at)) === day).length;
+  }
+  // One card with everything that passed, at most pr_cap PRs + issue_cap issues and one per repository.
+  sendDigest() {
+    const pending = this.#pendingDigest();
+    if (pending && pending.status === 'pending') return { already_pending: true, approval: pending.id };
+    const c = this.config();
+    const ready = this.db.prepare("SELECT * FROM oss_attempts WHERE status='ready' ORDER BY ready_at").all().map((r) => this.#row(r));
+    const picked = []; const repos = new Set(); let prs = 0, issues = 0;
+    for (const a of ready) {
+      if (this.now() - Date.parse(a.ready_at ?? a.updated_at) > STALE_MS) { this.#set(a.id, { status: 'stale', reason: 'waited too long for a digest; upstream has likely moved on' }); continue; }
+      const repo = a.repo.toLowerCase();
+      if (repos.has(repo)) continue;
+      if (a.kind === 'issue' ? issues >= c.issue_cap : prs >= c.pr_cap) continue;
+      repos.add(repo); picked.push(a); if (a.kind === 'issue') issues++; else prs++;
+    }
+    if (!picked.length) return { nothing: true };
+    const items = picked.map((a) => ({ attempt: a.id, ...a.card }));
+    const ap = this.approvals.request({ category: 'messaging', risk: 'consequential', tool: 'oss_digest',
+      summary: `Open-source digest: ${prs} pull request(s)${issues ? `, ${issues} issue(s)` : ''} on ${[...repos].slice(0, 4).join(', ')}${repos.size > 4 ? '…' : ''}`,
+      payload: { digest: this.#day(), spacing_minutes: Math.round(this.spacingMs / 60_000), items } });
+    for (const a of picked) this.#set(a.id, { status: 'in_digest', approval_id: ap.id });
+    return { digest: ap.id, prs, issues };
+  }
+  // The approved digest: every item is checked against what the card showed, then scheduled, spaced out.
+  approveDigest(payload, { approvalId } = {}) {
+    const out = [];
+    let i = 0;
+    const base = this.now();
+    for (const item of payload?.items ?? []) {
+      const a = this.get(item.attempt);
+      if (!a || a.status !== 'in_digest' || a.approval_id !== approvalId) { out.push({ attempt: item.attempt, skipped: `it is ${a?.status ?? 'gone'}` }); continue; }
+      if (item.patch_hash !== undefined && (a.card?.patch_hash !== item.patch_hash || sha256(a.patch) !== item.patch_hash)) { this.#set(a.id, { status: 'failed', reason: 'the change differs from the one you approved; nothing was posted' }); out.push({ attempt: a.id, error: 'changed' }); continue; }
+      if (item.body !== a.card?.body || item.title !== a.card?.title) { this.#set(a.id, { status: 'failed', reason: 'the text differs from the one you approved; nothing was posted' }); out.push({ attempt: a.id, error: 'changed' }); continue; }
+      const at = new Date(base + i * this.spacingMs).toISOString(); i++;
+      this.#set(a.id, { status: 'scheduled', post_at: at, approved_hash: item.patch_hash ?? sha256(item.body) });
+      out.push({ attempt: a.id.slice(0, 8), repo: a.repo, post_at: at });
+    }
+    return { scheduled: out.filter((x) => x.post_at).length, items: out };
+  }
+  // Drop one item: the open digest card is replaced by one without it (approving still runs exactly what is shown).
+  async dropFromDigest(id, note = '') {
+    const a = this.get(id);
+    if (!a || a.status !== 'in_digest') return { error: 'not in the open digest' };
+    const ap = this.approvals.get(a.approval_id);
+    this.#set(a.id, { status: 'dropped', reason: note ? `you dropped it: ${note}` : 'you dropped it from the digest' });
+    if (note) this.#lesson(a.repo, 'owner', `You dropped a contribution from the digest: ${note}`);
+    for (const r of this.db.prepare("SELECT id FROM oss_attempts WHERE status='in_digest' AND approval_id=?").all(a.approval_id)) this.#set(r.id, { status: 'ready', approval_id: null });
+    if (ap?.status === 'pending') await this.approvals.decide(ap.id, false, 'system', SUPERSEDED).catch(() => {});
+    return { dropped: true, digest: this.sendDigest() };
+  }
+  // Post the next approved item whose time has come (one per tick), within today's caps.
+  async postDue() {
+    const c = this.config();
+    const due = this.db.prepare("SELECT * FROM oss_attempts WHERE status='scheduled' AND post_at <= ? ORDER BY post_at LIMIT 1").get(new Date(this.now()).toISOString());
+    if (!due) return null;
+    const a = this.#row(due);
+    if (this.now() - Date.parse(a.ready_at ?? a.updated_at) > STALE_MS) { this.#set(a.id, { status: 'stale', reason: 'approved but not posted in time; upstream has likely moved on' }); return { stale: a.id }; }
+    const issue = a.kind === 'issue';
+    if (this.#postedToday(issue ? 'issue' : 'pr') >= (issue ? c.issue_cap : c.pr_cap)) return { waiting: 'daily cap reached; it goes out tomorrow' };
+    if (this.db.prepare("SELECT posted_at FROM oss_attempts WHERE lower(repo)=? AND posted_at IS NOT NULL").all(a.repo.toLowerCase()).some((r) => this.#day(Date.parse(r.posted_at)) === this.#day())) return { waiting: 'already posted to this repository today' };
+    if ((a.approved_hash ?? '') !== (issue ? sha256(a.card?.body ?? '') : sha256(a.patch ?? ''))) { this.#set(a.id, { status: 'failed', reason: 'changed after your approval; nothing was posted' }); return { error: 'changed' }; }
+    this.#set(a.id, { posted_at: new Date(this.now()).toISOString() });
+    try { return await this.#guard(a, () => (issue ? this.#openIssue(a, a.card) : this.#submit(a, a.card)), { status: 'failed' }); }
+    catch (e) { this.#notify('warning', `Could not post to ${a.repo}`, clip(e.message, 400)); return { error: clip(e.message, 200) }; }
+  }
+
   // ---- schedule ----
   async tick() {
     await this.reconcile().catch(() => {});
     if (this.now() - this.#lastFollow > 30 * 60_000) { this.#lastFollow = this.now(); await this.followUp().catch(() => {}); }
+    await this.postDue().catch(() => {});
     const c = this.config();
     if (!c.enabled || isAway(this.settings, this.now())) return null;
     const p = partsInTz(new Date(this.now()), this.settings.get('timezone', null) ?? 'Asia/Kolkata');
-    const [h, m] = c.run_at.split(':').map(Number);
-    if (!c.days.includes(p.dow) || p.h * 60 + p.mi < h * 60 + m) return null;
-    if (this.#startedToday() >= c.daily_starts) return null;
-    const last = this.settings.get('oss_last_try', null);
-    if (last && this.now() - Date.parse(last) < 2 * 3600_000) return null; // a fruitless search waits two hours before the next
-    this.settings.set('oss_last_try', new Date(this.now()).toISOString());
-    return this.startNext({ reason: 'scheduled' }).catch((e) => {
+    const mins = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+    if (p.h * 60 + p.mi >= mins(c.digest_at) && this.settings.get('oss_digest_day', null) !== this.#day()) { this.settings.set('oss_digest_day', this.#day()); try { this.sendDigest(); } catch {} }
+    if (this.#count(ACTIVE) > 0) return null;
+    if (c.continuous) {
+      if (this.#startedToday() >= c.max_attempts_day) return null;
+      if (this.#count(['ready', 'in_digest']) >= c.pr_cap + c.issue_cap) return null; // a full digest is already waiting for you
+      const last = this.settings.get('oss_last_fail', null); // nothing found last time: wait 20 minutes before searching again
+      if (last && this.now() - Date.parse(last) < 20 * 60_000) return null;
+    } else {
+      if (!c.days.includes(p.dow) || p.h * 60 + p.mi < mins(c.run_at)) return null;
+      if (this.#startedToday() >= c.daily_starts) return null;
+      const last = this.settings.get('oss_last_try', null);
+      if (last && this.now() - Date.parse(last) < 2 * 3600_000) return null; // a fruitless search waits two hours before the next
+      this.settings.set('oss_last_try', new Date(this.now()).toISOString());
+    }
+    const r = await this.startNext({ reason: 'scheduled' }).catch((e) => {
       if (this.settings.get('oss_warned_day', null) !== this.#day()) { this.settings.set('oss_warned_day', this.#day()); this.#notify('warning', 'Open source: could not start today', clip(e.tell_user ?? e.message, 400)); }
-      return null;
+      return { not_started: true };
     });
+    if (r?.not_started) this.settings.set('oss_last_fail', new Date(this.now()).toISOString()); else this.settings.set('oss_last_fail', null);
+    return r;
   }
-  start(intervalMs = 10 * 60_000) { if (!this.#timer) { this.#timer = setInterval(loop('oss_contrib', () => this.tick(), { everyMs: intervalMs }), intervalMs); this.#timer.unref?.(); } }
+  start(intervalMs = 3 * 60_000) { if (!this.#timer) { this.#timer = setInterval(loop('oss_contrib', () => this.tick(), { everyMs: intervalMs }), intervalMs); this.#timer.unref?.(); } }
   stopTimer() { clearInterval(this.#timer); this.#timer = null; }
 }

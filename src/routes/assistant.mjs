@@ -56,6 +56,15 @@ export function assistantRoutes(router, ctx) {
     catch (e) { return bad(e, e.message === 'not_found' ? 404 : 409); }
   });
 
+  // Open-source digest: drop one item; the card is replaced by one without it (src/contrib.mjs).
+  router.post('/v1/oss/digest/drop', async ({ body }) => {
+    const b = await body();
+    if (!ctx.contrib) return [404, { error: 'not_configured' }];
+    if (typeof b.attempt !== 'string' || !/^[a-f0-9-]{8,36}$/.test(b.attempt)) return [400, { error: 'attempt must be an id' }];
+    const r = await ctx.contrib.dropFromDigest(b.attempt, typeof b.note === 'string' ? b.note.slice(0, 500) : '');
+    return [r.error ? 409 : 200, r];
+  });
+
   router.get('/v1/proactive', () => [200, { proactive: proactive.config() }]);
   router.post('/v1/proactive', async ({ body }) => { const b = await body(); try { return [200, { proactive: proactive.setConfig(b) }]; } catch (e) { return bad(e); } });
   router.post('/v1/briefing/now', async () => [200, { briefing: await proactive.composeBriefing(settings.get('timezone', null) ?? Intl.DateTimeFormat().resolvedOptions().timeZone) }]);

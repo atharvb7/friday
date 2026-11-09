@@ -325,6 +325,7 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.approvals.register('oss_submit', (p) => ctx.contrib.submit(p));
     ctx.approvals.register('oss_update', (p) => ctx.contrib.update(p));
     ctx.approvals.register('oss_issue', (p) => ctx.contrib.openIssue(p));
+    ctx.approvals.register('oss_digest', (p, o) => ctx.contrib.approveDigest(p, o));
     const prev = store.onEvent;
     store.onEvent = (e) => { prev?.(e); if (['task.completed', 'task.failed', 'task.blocked'].includes(e.kind)) setTimeout(() => { ctx.contrib.onTaskFinished(e.taskId, e.kind).catch(() => {}); }, 300).unref?.(); };
   }

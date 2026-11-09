@@ -39,6 +39,18 @@ export function render({ app, api, toast, refresh }) {
       ...c.proof.map((p) => { const before = p.step === 'test_before' || p.step === 'repro'; return h('div', { class: 'row' }, h('span', { class: `chip ${(before ? p.exit !== 0 : p.exit === 0) ? 'good' : 'bad'}` }, before ? (p.exit !== 0 ? (p.step === 'repro' ? 'bug reproduced ✓' : 'fails before ✓') : 'passes ✗') : (p.exit === 0 ? 'pass' : `exit ${p.exit}`)), h('code', { class: 'mono' }, p.cmd)); })) : null,
     c.review?.score ? h('div', { class: 'faint small' }, `${c.action === 'open_issue' ? 'Triage review (real bug?)' : 'Maintainer-style review'}: ${c.review.score}/10${c.review.notes?.length ? ` · ${c.review.notes.join(' · ')}` : ''}`) : null,
     c.diff ? h('details', { open: true }, h('summary', { class: 'faint small' }, 'Exact diff that will be committed'), h('pre', { class: 'mono bubble payload-raw' }, String(c.diff).slice(0, 60000))) : null);
+  // The daily open-source digest: every item as it will be posted, each with a Drop button (the card is then replaced).
+  const dropItem = async (attempt) => {
+    const why = prompt('Drop this one? Optional: why (Friday keeps it as a lesson)');
+    if (why === null) return;
+    try { await api('/v1/oss/digest/drop', { method: 'POST', body: { attempt, note: why } }); toast('Dropped — the digest was updated.'); } catch (e) { toast(`Failed: ${e.message}`); }
+    load(); refresh();
+  };
+  const digestPreview = (x) => h('div', { class: 'stack payload-digest' },
+    h('div', { class: 'faint small' }, `Approving posts these one by one, about ${x.payload.spacing_minutes ?? 45} minutes apart, at most one per repository per day.`),
+    ...x.payload.items.map((it, i) => h('div', { class: 'card stack' },
+      h('div', { class: 'row wrap' }, h('strong', { class: 'grow' }, `${i + 1}. ${it.title ?? it.repo}`), h('button', { class: 'btn small bad', onclick: () => dropItem(it.attempt) }, 'Drop')),
+      contribPreview(it))));
   async function markAll() { await api('/v1/notifications/read-all', { method: 'POST' }); load(); refresh(); }
 
   async function load() {
@@ -71,7 +83,8 @@ export function render({ app, api, toast, refresh }) {
           h('div', { class: 'row wrap' }, h('strong', { class: 'grow' }, x.summary), h('span', { class: `chip ${x.risk === 'critical' ? 'bad' : 'warn'}` }, x.risk), h('span', { class: 'chip' }, x.category), h('span', { class: 'faint' }, timeAgo(x.created_at))),
           x.repeat ? h('div', { class: 'chip warn' }, `Repeat: same as the one you approved ${timeAgo(x.repeat.approved_at)}, which already ran`) : null,
           ...(Array.isArray(x.payload?.emails) ? [emailPreview(x.payload.emails), h('details', {}, h('summary', { class: 'faint small' }, 'Exact payload'), rawPayload(x))]
-            : x.payload?.contribution ? [contribPreview(x.payload.contribution)] : [rawPayload(x)]),
+            : x.payload?.contribution ? [contribPreview(x.payload.contribution)]
+            : Array.isArray(x.payload?.items) && x.payload.digest ? [digestPreview(x)] : [rawPayload(x)]),
           note,
           h('div', { class: 'row' }, h('button', { class: 'btn good', onclick: () => decide(x, true, note.value) }, 'Approve'), h('button', { class: 'btn bad', onclick: () => decide(x, false, note.value) }, 'Deny'),
             h('span', { class: 'faint small' }, 'Approving runs exactly what is shown above.'))));

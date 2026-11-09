@@ -36,6 +36,17 @@ only after you approve it. Code: `src/contrib.mjs` (pipeline), `src/patch.mjs` (
 new behaviour, so it must fail before and pass after. The PR says "Closes #N / What this adds". Unrequested features are
 never sent as PRs.
 
+## 24/7 with one approval a day
+
+`continuous` (default on): the next job starts as soon as one ends, all day, up to `max_attempts_day` (24) jobs. Items
+that pass every check wait (status `ready`). At `digest_at` (20:00, your time zone) ONE digest card lists them all, at
+most `pr_cap` PRs (max 5) and `issue_cap` issues (2), one per repository. Drop any item from the card (Drop button, or
+"drop X from the digest"); the card is replaced by one without it, so approving still posts exactly what is shown.
+Approving schedules the items about 45 minutes apart; each is checked against what you approved right before it is
+posted, never more than the daily caps and never two to the same repository on one day. An unanswered digest returns
+its items for the next one; items older than 3 days are dropped as stale. Replies to maintainers (revisions) still get
+their own card. Work stops while a full digest is already waiting. "Send the digest now" sends it early.
+
 ## Bug hunt (finding bugs nobody reported)
 
 `mode` = `issues` (fix existing issues), `hunt`, or `mixed` (default: alternates day by day). A hunt picks an active repo

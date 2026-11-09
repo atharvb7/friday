@@ -177,17 +177,21 @@ function world({ gh = new FakeGitHub(), files = { 'friday-contrib/result.json': 
   const approvals = new Approvals({ store, notifications, chat: { getConversation: () => null }, bus });
   const verifies = [];
   const contrib = new Contrib({ store, settings, ai: { run: async (role, o) => review(role, o) }, github: gh, approvals, notifications, bus,
-    verifier: async (id, req) => { verifies.push(req); return verify(req); }, readFiles: async () => files, agentGithubToken });
+    verifier: async (id, req) => { verifies.push(req); return verify(req); }, readFiles: async () => files, agentGithubToken, spacingMs: 0 });
   approvals.register('oss_submit', (p) => contrib.submit(p));
   approvals.register('oss_update', (p) => contrib.update(p));
   approvals.register('oss_issue', (p) => contrib.openIssue(p));
+  approvals.register('oss_digest', (p, o) => contrib.approveDigest(p, o));
   const finishTask = async (status = 'completed') => {
     const t = store.claimNextQueuedTask(); assert.ok(t, 'a task was queued');
     store.transition(t.id, status, status === 'completed' ? { result: 'done' } : { error: 'boom' });
     await contrib.onTaskFinished(t.id, `task.${status}`);
     return t;
   };
-  return { store, settings, bus, approvals, contrib, gh, notes, verifies, finishTask };
+  // The daily digest card (everything that passed) and approving it + posting every scheduled item.
+  const digestCard = () => { contrib.sendDigest(); return approvals.list().find((a) => a.tool === 'oss_digest'); };
+  const approveDigest = async () => { const card = digestCard(); const done = await approvals.decide(card.id, true); for (let i = 0; i < 10; i++) await contrib.postDue(); return done; };
+  return { store, settings, bus, approvals, contrib, gh, notes, verifies, finishTask, digestCard, approveDigest };
 }
 
 test('contrib: issue -> agent -> verified -> reviewed -> ONE approval card -> approved -> fork, commit, PR', async () => {
@@ -205,17 +209,20 @@ test('contrib: issue -> agent -> verified -> reviewed -> ONE approval card -> ap
   assert.equal(w.verifies[0].cloneUrl, 'https://github.com/acme/calc.git');
   assert.equal(w.verifies[0].baseSha, SHA);
   assert.equal(w.verifies[0].testBefore, true);
-  const pending = w.approvals.list();
-  assert.equal(pending.length, 1);
-  const card = pending[0];
-  assert.equal(card.tool, 'oss_submit');
-  const c = card.payload.contribution;
+  assert.equal(w.approvals.list().length, 0, 'no card per item: it waits for the daily digest');
+  const card = w.digestCard();
+  assert.equal(card.tool, 'oss_digest');
+  assert.equal(card.payload.items.length, 1);
+  const c = card.payload.items[0];
   assert.equal(c.diff, FIX);
   assert.match(c.body, /^Fixes #7/);
   assert.match(c.body, /fails before this change and passes with it/);
   assert.ok(c.body.includes(DISCLOSURE));
   assert.equal(w.gh.calls.filter((x) => ['fork', 'commit', 'pull'].includes(x[0])).length, 0, 'nothing touches GitHub before approval');
   await w.approvals.decide(card.id, true);
+  assert.equal(w.contrib.list()[0].status, 'scheduled');
+  assert.equal(w.gh.calls.filter((x) => x[0] === 'commit').length, 0, 'approval schedules; posting happens at its time');
+  await w.contrib.postDue();
   const commit = w.gh.calls.find((x) => x[0] === 'commit');
   assert.equal(commit[1], 'atharvb7/calc');
   assert.equal(commit[2].parentSha, SHA);
@@ -256,10 +263,12 @@ test('contrib: a tampered change is never posted', async () => {
   const w = world();
   await w.contrib.startOne({ repo: 'acme/calc', issue: 7 });
   await w.finishTask();
-  const card = w.approvals.list()[0];
+  const card = w.digestCard();
   w.store.db.prepare('UPDATE oss_attempts SET patch=? ').run(FIX.replace('a + b', 'a * b'));
-  const done = await w.approvals.decide(card.id, true);
-  assert.match(JSON.parse(done.result).error, /differs from the one you approved/);
+  await w.approvals.decide(card.id, true);
+  await w.contrib.postDue();
+  assert.equal(w.contrib.list()[0].status, 'failed');
+  assert.match(w.contrib.list()[0].reason, /differs from the one you approved/);
   assert.equal(w.gh.calls.filter((x) => x[0] === 'commit').length, 0);
 });
 
@@ -295,7 +304,7 @@ test('contrib: follow-up records maintainer feedback as lessons, revise prepares
   const w = world();
   await w.contrib.startOne({ repo: 'acme/calc', issue: 7 });
   await w.finishTask();
-  await w.approvals.decide(w.approvals.list()[0].id, true);
+  await w.approveDigest();
   w.store.db.prepare("UPDATE oss_attempts SET last_seen='2000-01-01T00:00:00Z'").run();
   w.gh.comments = [{ user: { login: 'maintainer' }, created_at: new Date().toISOString(), body: 'Please also handle floats.' }, { user: { login: 'atharvb7' }, created_at: new Date().toISOString(), body: 'mine' }];
   await w.contrib.followUp();
@@ -328,7 +337,7 @@ test('contrib: a denied card is recorded with the note as a lesson', async () =>
   const w = world();
   await w.contrib.startOne({ repo: 'acme/calc', issue: 7 });
   await w.finishTask();
-  await w.approvals.decide(w.approvals.list()[0].id, false, 'owner', 'too trivial, pick meatier issues');
+  await w.approvals.decide(w.digestCard().id, false, 'owner', 'too trivial, pick meatier issues');
   assert.equal(w.contrib.list()[0].status, 'denied');
   assert.match(w.contrib.lessons()[0].text, /meatier/);
 });
@@ -371,15 +380,16 @@ test('hunt: one proven bug -> issue card with code link, real output, expected -
   await w.finishTask();
   assert.equal(w.verifies[0].repro, BUG.repro);
   assert.equal(w.verifies[0].patch, undefined);
-  const card = w.approvals.list()[0];
-  assert.equal(card.tool, 'oss_issue');
-  const c = card.payload.contribution;
+  const card = w.digestCard();
+  const c = card.payload.items[0];
+  assert.equal(c.action, 'open_issue');
   assert.match(c.body, new RegExp(`https://github.com/acme/calc/blob/${SHA}/calc.py#L1-L2`));
   assert.match(c.body, /AssertionError: -1/);
   assert.match(c.body, /## What I expected\nadd\(2, 3\) == 5/);
   assert.equal(c.review.score, 9);
   assert.equal(w.gh.calls.filter((x) => x[0] === 'issue').length, 0);
   await w.approvals.decide(card.id, true);
+  await w.contrib.postDue();
   assert.equal(w.gh.calls.filter((x) => x[0] === 'issue').length, 1);
   assert.equal(w.contrib.status().open[0].waiting_on, 'maintainers to confirm the bug');
 });
@@ -388,7 +398,7 @@ test('hunt: when maintainers confirm the bug, the fix starts through the normal 
   const w = world({ files: { 'friday-contrib/result.json': JSON.stringify(HUNT) }, verify: REPRODUCED, review: triage('real_bug') });
   await w.contrib.startHunt({ repo: 'acme/calc' });
   await w.finishTask();
-  await w.approvals.decide(w.approvals.list()[0].id, true);
+  await w.approveDigest();
   await w.contrib.followUp();
   assert.equal(w.store.nextQueuedTask(), null, 'nothing starts before confirmation');
   w.gh.issued.labels = [{ name: 'bug' }];
@@ -436,7 +446,7 @@ test('feature requests: test must fail before; PR says what it adds and closes t
   await w.contrib.startOne({ repo: 'acme/calc', issue: 7 });
   await w.finishTask();
   assert.equal(w.verifies[0].testBefore, true);
-  const c = w.approvals.list()[0].payload.contribution;
+  const c = w.digestCard().payload.items[0];
   assert.match(c.body, /^Closes #7\n\n## What this adds\nAdds a --json flag\./);
   assert.match(c.body, /tests the new behaviour/);
   assert.match(c.branch, /^feat\/issue-7-/);
@@ -449,4 +459,71 @@ test('hunt: a bug that is already reported is not reported again', async () => {
   await w.finishTask();
   assert.equal(w.verifies.length, 0);
   assert.match(w.store.nextQueuedTask().instruction, /already reported .*issues\/3/);
+});
+
+// ---------- 24/7 + daily digest ----------
+async function readyIn(w, repos) { for (const r of repos) { const s = await w.contrib.startOne({ repo: r, issue: 7 }); assert.equal(s.started, true, JSON.stringify(s)); await w.finishTask(); } }
+
+test('digest: one card a day, at most pr_cap PRs and one per repository; dropping an item replaces the card', async () => {
+  const w = world();
+  await readyIn(w, ['acme/r1', 'acme/r2', 'acme/r3', 'acme/r4', 'acme/r5', 'acme/r6']);
+  assert.equal(w.approvals.list().length, 0);
+  const card = w.digestCard();
+  assert.equal(card.payload.items.length, 5, 'pr_cap 5');
+  assert.equal(new Set(card.payload.items.map((i) => i.repo)).size, 5);
+  assert.equal(w.contrib.sendDigest().already_pending, true, 'one digest at a time');
+  const dropped = card.payload.items[1].attempt;
+  const r = await w.contrib.dropFromDigest(dropped, 'not interesting');
+  assert.equal(r.dropped, true);
+  assert.equal(w.approvals.get(card.id).status, 'denied');
+  const next = w.approvals.list().find((a) => a.tool === 'oss_digest');
+  assert.notEqual(next.id, card.id);
+  assert.equal(next.payload.items.length, 5, 'the sixth one moves up');
+  assert.ok(!next.payload.items.some((i) => i.attempt === dropped));
+  assert.equal(w.contrib.get(dropped).status, 'dropped');
+  assert.ok(w.contrib.list(), 'superseded card did not deny the others');
+  assert.equal(w.contrib.status().open.filter((o) => o.status === 'denied').length, 0);
+});
+
+test('digest: approval schedules items spaced out; posting respects the daily cap', async () => {
+  const w = world();
+  await readyIn(w, ['acme/r1', 'acme/r2', 'acme/r3']);
+  w.contrib.spacingMs = 45 * 60_000;
+  await w.approvals.decide(w.digestCard().id, true);
+  const times = w.store.db.prepare("SELECT post_at FROM oss_attempts WHERE status='scheduled' ORDER BY post_at").all().map((r) => Date.parse(r.post_at));
+  assert.equal(times.length, 3);
+  assert.equal(times[1] - times[0], 45 * 60_000);
+  await w.contrib.postDue(); await w.contrib.postDue();
+  assert.equal(w.gh.calls.filter((x) => x[0] === 'pull').length, 1, 'only the first is due now');
+  w.store.db.prepare("UPDATE oss_attempts SET post_at='2000-01-01T00:00:00Z' WHERE status='scheduled'").run();
+  w.contrib.setConfig({ pr_cap: 2 });
+  for (let i = 0; i < 4; i++) await w.contrib.postDue();
+  assert.equal(w.gh.calls.filter((x) => x[0] === 'pull').length, 2, 'daily cap of 2');
+  assert.match(JSON.stringify(await w.contrib.postDue()), /daily cap/);
+});
+
+test('digest: an unanswered card puts its items back for the next digest', async () => {
+  const w = world();
+  await readyIn(w, ['acme/r1']);
+  const card = w.digestCard();
+  w.store.db.prepare("UPDATE approvals SET expires_at='2000-01-01T00:00:00Z' WHERE id=?").run(card.id);
+  await w.contrib.reconcile();
+  assert.equal(w.contrib.list()[0].status, 'ready');
+  assert.notEqual(w.digestCard().id, card.id);
+});
+
+test('24/7: the tick keeps starting work until a full digest is waiting or the daily job cap is reached', async () => {
+  const w = world();
+  w.contrib.setConfig({ enabled: true, mode: 'issues', digest_at: '23:59' });
+  w.settings.set('timezone', 'UTC');
+  const first = await w.contrib.tick();
+  assert.equal(first.started, true);
+  assert.equal(await w.contrib.tick(), null, 'one job at a time');
+  await w.finishTask();
+  w.contrib.setConfig({ max_attempts_day: 1 });
+  assert.equal(await w.contrib.tick(), null, 'daily job cap');
+  w.contrib.setConfig({ max_attempts_day: 24, pr_cap: 1, issue_cap: 0 });
+  assert.equal(await w.contrib.tick(), null, 'a full digest is already waiting');
+  assert.throws(() => w.contrib.setConfig({ digest_at: '25:00' }), /digest_at/);
+  assert.equal(w.contrib.setConfig({ pr_cap: 50 }).pr_cap, 5, 'pr_cap never above 5');
 });
