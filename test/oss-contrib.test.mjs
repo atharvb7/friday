@@ -144,6 +144,7 @@ class FakeGitHub {
   }
   async whoami() { this.login = 'atharvb7'; return { login: 'atharvb7', scopes: ['public_repo'], too_broad: [] }; }
   async repo(full) { return { full_name: full, default_branch: 'main', archived: false, fork: false, private: false, has_issues: true, owner: { login: full.split('/')[0] }, stargazers_count: 500, pushed_at: new Date().toISOString(), license: { spdx_id: 'MIT' }, size: 1000, language: 'Python' }; }
+  async languages() { return this.langs ?? { Python: 1000, Shell: 50 }; }
   async issue(full, n) { return n === this.issueData.number || !this.issued ? this.issueData : { ...this.issued, number: n }; }
   async searchRepos(q) { this.calls.push(['searchRepos', q]); return { items: [{ full_name: 'acme/calc' }] }; }
   async issueComments() { return this.comments; }
@@ -526,4 +527,14 @@ test('24/7: the tick keeps starting work until a full digest is waiting or the d
   assert.equal(await w.contrib.tick(), null, 'a full digest is already waiting');
   assert.throws(() => w.contrib.setConfig({ digest_at: '25:00' }), /digest_at/);
   assert.equal(w.contrib.setConfig({ pr_cap: 50 }).pr_cap, 5, 'pr_cap never above 5');
+});
+
+test('vetting: a repo whose code is largely in a language the container cannot run is skipped', async () => {
+  const gh = new FakeGitHub(); gh.langs = { JavaScript: 1700, PHP: 850, Vue: 180 };
+  const w = world({ gh });
+  const r = await w.contrib.startOne({ repo: 'acme/calc', issue: 7 });
+  assert.equal(r.not_started, true);
+  assert.match(r.skipped[0], /PHP/);
+  const ok = new FakeGitHub(); ok.langs = { Python: 1000, PHP: 50, HTML: 300 };
+  assert.equal((await world({ gh: ok }).contrib.startOne({ repo: 'acme/calc', issue: 7 })).started, true);
 });

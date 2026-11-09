@@ -54,6 +54,7 @@ export class GitHub {
   }
 
   repo(full) { return this.get(`/repos/${full}`); }
+  languages(full) { return this.get(`/repos/${full}/languages`); }
   issue(full, n) { return this.get(`/repos/${full}/issues/${n}`); }
   issueComments(full, n) { return this.get(`/repos/${full}/issues/${n}/comments?per_page=50`); }
   timeline(full, n) { return this.get(`/repos/${full}/issues/${n}/timeline?per_page=100`); }

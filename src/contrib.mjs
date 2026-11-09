@@ -33,6 +33,8 @@ const MAX_OPEN_ISSUES = 3; // our bug reports still waiting on maintainers befor
 // Labels a maintainer adds when an issue is real and wanted.
 const CONFIRM_LABEL = /^(bug|confirmed|accepted|triaged|help wanted|good first issue|valid|reproduced|type: ?bug|kind\/bug)$/i;
 const LANGS = ['Python', 'JavaScript', 'TypeScript']; // what the agent container can build and test (node + python)
+// Languages that ride along with those without needing another toolchain.
+const NEUTRAL_LANGS = new Set(['HTML', 'CSS', 'SCSS', 'Sass', 'Less', 'Shell', 'Makefile', 'Dockerfile', 'Jinja', 'MDX', 'Vue', 'Svelte', 'Astro', 'JSON', 'YAML', 'Jupyter Notebook', 'Cython', 'Batchfile', 'PowerShell', 'Procfile', 'Mako', 'Handlebars', 'EJS', 'Pug', 'Nunjucks', 'Starlark', 'TeX']);
 const ACTIVE = ['working', 'verifying', 'reviewing'];
 const QUEUED = ['ready', 'in_digest', 'scheduled']; // passed every check; waiting for the digest / its posting time
 const OPEN = [...ACTIVE, 'awaiting_approval', ...QUEUED, 'pr_open'];
@@ -175,6 +177,15 @@ export class Contrib {
     if (!OSI.has(r.license?.spdx_id)) return remember(false, `licence ${r.license?.spdx_id ?? 'missing'} is not a recognised open-source licence`);
     if ((r.size ?? 0) > 300_000) return remember(false, 'repository too large for the agent container');
     if (!c.languages.includes(r.language)) return remember(false, `language ${r.language ?? 'unknown'} is not one the agent can test`);
+    // The primary language is not enough (a JS front end over a PHP back end): more than 10% of code the container
+    // cannot build or test means its test suite will not run.
+    const langs = (await this.gh.languages?.(full).catch(() => null)) ?? null;
+    if (langs) {
+      const total = Object.values(langs).reduce((x, y) => x + y, 0);
+      const other = Object.entries(langs).filter(([l]) => !LANGS.includes(l) && !NEUTRAL_LANGS.has(l));
+      const share = total ? other.reduce((x, [, b]) => x + b, 0) / total : 0;
+      if (share > 0.1) return remember(false, `${Math.round(share * 100)}% of its code is ${other.sort((x, y) => y[1] - x[1]).slice(0, 2).map(([l]) => l).join('/')}, which the agent container cannot build or test`);
+    }
     let guide = '';
     for (const f of CONTRIB_FILES) { try { const t = await this.gh.fileAt(full, f, r.default_branch); if (t) guide += `\n=== ${f}\n${clip(t, 12000)}`; } catch {} }
     if (AI_BAN.some((re) => re.test(guide))) return remember(false, 'its contribution guide rules out AI-assisted contributions');
