@@ -26,10 +26,21 @@ export class RemoteDshAdapter {
   // Files the agent produced (research findings) for the finished task, handed over once.
   takeFiles(taskId) { const f = this.#files.get(taskId); this.#files.delete(taskId); return f ?? null; }
 
+  // Deterministic contribution check in the runner container (see src/contrib-verify.mjs). Long: up to ~30 minutes.
+  async verify(id, request, { signal } = {}) {
+    let res;
+    try {
+      res = await this.fetchImpl(`${this.url}/verify`, { method: 'POST', signal: signal ?? AbortSignal.timeout(35 * 60_000), headers: { Authorization: `Bearer ${this.secret}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id, request }) });
+    } catch (e) { return { ok: false, verdict: 'error', steps: [], error: `runner_unreachable: ${e.message}`.slice(0, 200) }; }
+    let j = null; try { j = await res.json(); } catch {}
+    if (!res.ok) return { ok: false, verdict: 'error', steps: [], error: j?.error ?? `runner_http_${res.status}` };
+    return j;
+  }
+
   async run({ taskId, instruction, signal, onTrace = () => {}, kind = 'agent', workspace = null } = {}) {
     if (!this.#healthy.ready) { await this.#poll(); if (!this.#healthy.ready) return { status: 'failed', error: this.#healthy.reason }; }
     if (signal?.aborted) throw abortError(signal.reason?.message);
-    let prep = {}; try { prep = this.prepare?.() ?? {}; } catch { prep = {}; }
+    let prep = {}; try { prep = this.prepare?.({ kind, workspace }) ?? {}; } catch { prep = {}; }
     let res;
     try {
       res = await this.fetchImpl(`${this.url}/run`, { method: 'POST', signal, headers: { Authorization: `Bearer ${this.secret}`, 'Content-Type': 'application/json' },

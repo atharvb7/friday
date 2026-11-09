@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 RUN npm install -g @deepseek-ai/dsh@0.2.0-rc.2 && npm cache clean --force
 RUN useradd -m -u 10001 agent && mkdir -p /agent/home /agent/work /agent/state && chown -R agent:agent /agent
 WORKDIR /srv/runner
-COPY src/dsh.mjs src/safefs.mjs src/sandbox.mjs src/research-memory.mjs ./src/
+COPY src/dsh.mjs src/safefs.mjs src/sandbox.mjs src/research-memory.mjs src/contrib-verify.mjs ./src/
 COPY agent-runner ./agent-runner
 ENV DSH_BIN=/usr/local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js AGENT_HOME=/agent/home AGENT_WORK=/agent/work AGENT_STATE=/agent/state
 USER agent

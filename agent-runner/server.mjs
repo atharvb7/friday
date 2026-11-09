@@ -3,11 +3,13 @@
 // the sandbox, so DSH runs with full permissions *inside* it as an unprivileged user.
 //   POST /run   (Bearer secret)  -> NDJSON stream: {t:'trace'|'result', ...}
 //   GET  /health (Bearer secret) -> {ready, active, max}
+//   POST /verify (Bearer secret)  -> JSON: deterministic test run of a contribution patch (src/contrib-verify.mjs, no model)
 import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join, normalize, isAbsolute } from 'node:path';
 import { DshAdapter } from '../src/dsh.mjs';
+import { runVerify } from '../src/contrib-verify.mjs';
 import { ensureRealDir, readRegularFile, writeFileReplacing } from '../src/safefs.mjs';
 
 const env = process.env;
@@ -55,6 +57,17 @@ function writeSkills(skills) {
 createServer(async (req, res) => {
   if (!authed(req)) return json(res, 401, { error: 'unauthorized' });
   if (req.method === 'GET' && req.url === '/health') { const s = adapter.status(); return json(res, 200, { ready: s.ready, reason: s.reason ?? null, model: s.model ?? null, active, max: MAX }); }
+  if (req.method === 'POST' && req.url === '/verify') {
+    if (active >= MAX) return json(res, 429, { error: 'runner_busy' });
+    let body;
+    try { body = await readJson(req); } catch (e) { return json(res, e.message === 'body_too_large' ? 413 : 400, { error: e.message }); }
+    active++;
+    try {
+      // Commands get the network plumbing only (proxy), never the model key or a GitHub token.
+      return json(res, 200, await runVerify(body.request ?? {}, { workRoot: WORK, id: String(body.id ?? ''), passEnv: adapter.passEnv }));
+    } catch (e) { return json(res, 400, { error: String(e.message).slice(0, 300) }); }
+    finally { active--; }
+  }
   if (req.method !== 'POST' || req.url !== '/run') return json(res, 404, { error: 'not_found' });
   if (active >= MAX) return json(res, 429, { error: 'runner_busy' });
   let body;
@@ -81,6 +94,10 @@ createServer(async (req, res) => {
     const files = {};
     if (result.status === 'completed' && body.kind === 'research' && result.workDir) {
       for (const f of ['findings.json', 'report.md']) { try { files[f] = readRegularFile(join(result.workDir, f), 2 * 1024 * 1024).toString('utf8'); } catch { /* optional */ } }
+    }
+    // Open-source contribution workspaces leave their result + patch beside (not inside) the clone.
+    if (result.status === 'completed' && body.kind === 'coding' && /^oss-/.test(body.workspace ?? '') && result.workDir) {
+      for (const f of ['result.json', 'change.patch']) { try { files[`friday-contrib/${f}`] = readRegularFile(join(result.workDir, 'friday-contrib', f), 512 * 1024).toString('utf8'); } catch { /* optional */ } }
     }
     send({ t: 'result', status: result.status, output: result.output ?? null, error: result.error ?? null, tokens: result.tokens ?? 0, files });
   } catch (e) {

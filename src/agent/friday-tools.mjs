@@ -166,6 +166,49 @@ export async function findYouTube(query, { fetchImpl = globalThis.fetch, timeout
   return { id, title: un(title) ?? query, channel: un(channel) };
 }
 
+// Open-source contributions (src/contrib.mjs). Nothing here posts to GitHub: every PR, push or issue is an approval card.
+export function ossTools(contrib) {
+  const run = async (fn) => { try { return await fn(); } catch (e) { return { error: e.message, ...(e.tell_user ? { tell_user: e.tell_user } : {}) }; } };
+  return [
+    {
+      name: 'oss_setup', risk: 'gated', category: 'system', riskClass: 'routine',
+      description: 'Configure Friday\'s daily open-source contributions: enabled, run_at (HH:MM, his time), days (1-7, Mon=1), languages (Python, JavaScript, TypeScript), labels (issue labels to search, default "good first issue" and "help wanted"), min_stars, max_open_prs (PRs waiting on him or maintainers before she stops starting new ones), daily_starts (1-3), max_rounds (fix attempts per issue, 1-3), skip_repos (owner/repo). Each day she picks an issue in a repo that welcomes contributors, fixes it, proves it with tests in a clean clone, has it reviewed, and sends ONE approval card; nothing reaches GitHub without his approval. Needs approval.',
+      parameters: obj({ enabled: { type: 'boolean' }, run_at: { type: 'string' }, days: { type: 'array', items: { type: 'integer' } }, languages: { type: 'array', items: { type: 'string', enum: ['Python', 'JavaScript', 'TypeScript'] } },
+        labels: { type: 'array', items: { type: 'string' } }, min_stars: { type: 'integer' }, max_open_prs: { type: 'integer' }, daily_starts: { type: 'integer' }, max_rounds: { type: 'integer' }, skip_repos: { type: 'array', items: { type: 'string' } } }, []),
+      summarize: (a) => `Open-source contributions: ${a.enabled === false ? 'OFF' : a.enabled ? 'ON' : 'settings'}${a.languages ? ` · ${a.languages.join('/')}` : ''}${a.run_at ? ` · at ${a.run_at}` : ''}${a.daily_starts ? ` · ${a.daily_starts}/day` : ''}${a.max_open_prs ? ` · max ${a.max_open_prs} open` : ''}`,
+      run: (a) => ({ saved: true, config: contrib.setConfig(a) }),
+    },
+    {
+      name: 'oss_status', risk: 'safe',
+      description: 'Open-source contributions: whether GitHub is connected (and as whom), the configuration, contributions in progress / waiting for approval / open PRs with what each waits on, and recent results (merged, closed, dropped with the reason).',
+      parameters: obj({ check_connection: { type: 'boolean', description: 'also verify the GitHub token now' } }, []),
+      run: (a = {}) => run(async () => ({ ...contrib.status(), ...(a.check_connection ? { github: await contrib.connection() } : {}) })),
+    },
+    {
+      name: 'oss_start', risk: 'safe',
+      description: 'Start one open-source contribution now in the background (one at a time; often 20-60 minutes before an approval card arrives, or a note saying why it was dropped). Without repo/issue she searches for a suitable issue; with repo ("owner/name") and issue (number) she checks that one (it is still skipped if the repo bans AI-assisted contributions, needs a CLA/DCO, or someone already claimed it).',
+      parameters: obj({ repo: { type: 'string' }, issue: { type: 'integer' } }, []),
+      run: (a = {}) => run(async () => {
+        if ((a.repo && !a.issue) || (!a.repo && a.issue)) return { error: 'give both repo and issue, or neither' };
+        if (a.repo && !/^[\w.-]+\/[\w.-]+$/.test(a.repo)) return { error: 'repo must be owner/name' };
+        return contrib.startOne({ repo: a.repo ?? null, issue: a.issue ?? null, reason: 'manual' });
+      }),
+    },
+    {
+      name: 'oss_revise', risk: 'safe',
+      description: 'Prepare changes for an open pull request: addresses the maintainer comments and failing CI Friday recorded (plus his note, if any). The result comes back as an approval card (push + reply comment). id = the contribution id from oss_status.',
+      parameters: obj({ id: { type: 'string' }, note: { type: 'string', description: 'what he wants changed, in his words' } }, ['id']),
+      run: (a) => run(() => contrib.revise(str(a.id, 'id', 40), a.note ?? '')),
+    },
+    {
+      name: 'oss_manage', risk: 'safe',
+      description: 'stop = stop a contribution that is being worked on or waiting for approval; resubmit = send a new approval card for one whose card expired; check_prs = check open PRs for reviews, CI and merges now.',
+      parameters: obj({ op: { type: 'string', enum: ['stop', 'resubmit', 'check_prs'] }, id: { type: 'string' } }, ['op']),
+      run: (a) => run(() => (a.op === 'check_prs' ? contrib.followUp() : a.op === 'stop' ? contrib.stop(str(a.id, 'id', 40)) : contrib.resubmit(str(a.id, 'id', 40)))),
+    },
+  ];
+}
+
 export function buildFridayTools(ctx) {
   const { memory, store, tools, indexer, skills, jobs, proactive, settings, researchMemory, nodes } = ctx;
   // Members (other people) may only touch files that live in their own conversations.
@@ -653,6 +696,7 @@ export function buildFridayTools(ctx) {
     },
     ...(ctx.pipeline ? businessTools(ctx.pipeline) : []),
     ...(ctx.prospector ? prospectingTools(ctx.prospector) : []),
+    ...(ctx.contrib ? ossTools(ctx.contrib) : []),
     {
       name: 'app_deploy', risk: 'gated', category: 'system', riskClass: 'consequential',
       description: 'Host one of your coding projects on the user\'s server, reachable on his Tailscale at https://<server>.ts.net:<port> (tailnet only, not the public internet). project = the code_task workspace name that holds the finished app (Dockerfile, or package.json with a start script, or a static index.html). Re-deploying the same name updates it in place and keeps its address. Needs approval. Build first with code_task, then deploy.',

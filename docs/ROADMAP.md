@@ -55,6 +55,7 @@ Updated 2026-10-10. Status is only ticked when it works end to end and a test or
 - [x] `research_start`, `research_search`, `code_task` (named persistent project workspaces), `task_trace`
 - [x] GitHub MCP config auto-enabled when GITHUB_TOKEN is set (needs a token from the user to test)
 - [ ] GitHub PR flow tested end-to-end (needs token + a scratch repo)
+- [x] Open-source contributions pipeline (2026-11-09, docs/OSS-CONTRIB.md): issue search + repo vetting -> coding agent (no GitHub access) -> patch policy -> no-model proof in a clean clone -> strict review -> one approval card -> fork/commit/PR from core -> CI/review follow-up + lessons. Unit/integration tested with stubs and real git; NOT yet run against real GitHub (needs FRIDAY_GITHUB_CONTRIB_TOKEN and GITHUB_TOKEN removed)
 ## Phase 6 — Laptop node (computer use)  (verified live 2026-10-10)
 - [x] Node protocol: outbound SSE command stream + HTTP results; scoped `node` device token; per-node answer binding; fail-fast `node_offline`; user-activity pause (GNOME idle monitor)
 - [x] `node/` program: Playwright + system Chrome with a dedicated persistent profile (manual login once), DOM-ref snapshot/click/type/upload/screenshot, AT-SPI desktop helper (Wayland-safe), allowed-dir file find, URL/file policies (real-Chrome tests)

@@ -21,6 +21,7 @@ import { join, resolve } from 'node:path';
 import { RESEARCH_CONTRACT } from './research-memory.mjs';
 import { bwrapPath, bwrapUsable, buildBwrapArgs, dshInstallRoot } from './sandbox.mjs';
 import { StringDecoder } from 'node:string_decoder';
+import { runVerify } from './contrib-verify.mjs';
 
 const DEFAULT_TIMEOUT_MS = 20 * 60_000;
 const DEFAULT_MAX_OUTPUT = 64 * 1024;
@@ -100,6 +101,17 @@ export class DshAdapter {
     return { cmd: bwrapPath(), args: [...args, '--chdir', workDir, this.nodePath, ...dshArgs] };
   }
 
+  // Deterministic contribution check (src/contrib-verify.mjs), in Friday's sandbox like an agent run. Fails closed without one.
+  async verify(id, request) {
+    const wrap = this.sandbox === 'bwrap'
+      ? (bwrapUsable() ? (cmd, args, cwd) => ({ cmd: bwrapPath(), args: [...buildBwrapArgs({ home: this.home, appRoot: this.appRoot, dataDir: this.dataDir, writable: [join(this.workRoot, '_verify')] }), '--chdir', cwd, cmd, ...args] }) : null)
+      : (cmd, args) => ({ cmd, args });
+    if (!wrap) return { ok: false, verdict: 'error', steps: [], error: 'sandbox_unavailable' };
+    mkdirSync(join(this.workRoot, '_verify'), { recursive: true, mode: 0o700 });
+    try { return await runVerify(request, { workRoot: this.workRoot, id, wrap, passEnv: this.passEnv }); }
+    catch (e) { return { ok: false, verdict: 'error', steps: [], error: String(e.message).slice(0, 300) }; }
+  }
+
   // DSH >= 0.2 imports settings.yaml into the profile on its FIRST run, so that first run
   // can fail at model selection (before any tool runs). Retrying once is therefore safe.
   async run(opts = {}) {
@@ -119,7 +131,7 @@ export class DshAdapter {
     if (signal?.aborted) return Promise.reject(abortError(signal.reason?.message));
     const workDir = this.workDirFor(taskId, workspace);
     let prep = {};
-    try { prep = this.prepare?.() ?? {}; } catch { prep = {}; } // MCP/skills prep must never block a run
+    try { prep = this.prepare?.({ kind, workspace }) ?? {}; } catch { prep = {}; } // MCP/skills prep must never block a run
     const { cmd, args } = this.buildCommand(workDir, prep.overlayPath ?? this.overlayPath);
     const extraEnv = prep.extraEnv ?? {};
     const secrets = [this.apiKey, ...Object.values(extraEnv)];

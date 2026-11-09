@@ -28,6 +28,8 @@ export const GROUPS = {
     match: /\b(draw|image|picture|pic|photo|illustrat\w*|poster|wallpaper|logo|meme|sketch|paint\w*|art|render|selfie|avatar)\b/i },
   research: { about: 'deep multi-source research with a saved report, search earlier research, sign in to LinkedIn/X for research', tools: ['research_start', 'research_search', 'research_login'],
     match: /\b(research|deep dive|investigate|study|analy[sz]\w*|compare|comparison|report on|market|competitors?|earlier research|you found)\b/i },
+  oss: { about: 'open-source contributions: daily issue fixes in other people\'s GitHub repos, approval cards, PR follow-up', tools: ['oss_setup', 'oss_status', 'oss_start', 'oss_revise', 'oss_manage'],
+    match: /\b(open[- ]?source|oss|contribut\w*|pull requests?|prs?|github issues?|maintainers?|good first issues?|merged?)\b/i },
   dev: { about: 'software work: coding agent, deploy/host apps on his server, Hermes agent, parallel team of agents', tools: ['code_task', 'app_deploy', 'app_list', 'app_logs', 'app_control', 'app_remove', 'hermes_task', 'team_task'],
     match: /\b(code|coding|program\w*|script|repo\w*|github|git|bug|debug|deploy\w*|host\w*|server|app|apps|website|landing page|api|frontend|backend|build (me|a|an)|hermes|team|agents?|docker|logs?)\b/i },
   automation: { about: 'recurring/scheduled agent jobs, watches (keep an eye on something and react), standing rules', tools: ['schedule_task', 'watch_create', 'watch_list', 'watch_cancel', 'rule_create'],

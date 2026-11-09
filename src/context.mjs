@@ -38,6 +38,8 @@ import { Notifications } from './notifications.mjs';
 import { Mood } from './mood.mjs';
 import { Habits } from './habits.mjs';
 import { AutoMemory } from './agent/auto-memory.mjs';
+import { Contrib } from './contrib.mjs';
+import { GitHub } from './github.mjs';
 import { Jobs } from './jobs.mjs';
 import { Proactive } from './proactive.mjs';
 import { Policy } from './policy.mjs';
@@ -111,8 +113,11 @@ export function createContext({ appRoot, env = process.env }) {
   const skills = new Skills({ roots: [resolve(appRoot, 'skills'), resolve(dataDir, 'skills')] });
   const overlayPath = resolve(dataDir, 'config', 'friday-overlay.yml'); // host-only: the agent can read it (ro) but never write it
   const agentsSkillsDir = resolve(dataDir, 'dsh-agents', 'skills');
-  const dshPrepare = () => {
-    const cfg = withDefaults(loadMcpConfig(mcpPath), env);
+  // Open-source contribution jobs (workspaces oss-*) read untrusted repositories: they get NO GitHub tools or token, so
+  // nothing reaches GitHub except through an approved card in core (src/contrib.mjs).
+  const mcpFor = (opts) => { const cfg = withDefaults(loadMcpConfig(mcpPath), env); if (/^oss-/.test(opts?.workspace ?? '')) for (const [k, v] of Object.entries(cfg.servers)) if (/github/i.test(`${k} ${v.url ?? ''} ${v.command ?? ''} ${(v.args ?? []).join(' ')}`)) delete cfg.servers[k]; return cfg; };
+  const dshPrepare = (opts) => {
+    const cfg = mcpFor(opts);
     ensureRealDir(dirname(overlayPath));
     writeFileReplacing(overlayPath, renderOverlay(cfg));
     skills.syncTo(agentsSkillsDir);
@@ -125,8 +130,8 @@ export function createContext({ appRoot, env = process.env }) {
     // Containerised deployment: agents run in a separate, isolated container (no Friday data, filtered egress).
     dshInner = new RemoteDshAdapter({
       url: env.FRIDAY_AGENT_URL, secret: env.FRIDAY_AGENT_SECRET ?? '',
-      prepare: () => {
-        const cfg = withDefaults(loadMcpConfig(mcpPath), env);
+      prepare: (opts) => {
+        const cfg = mcpFor(opts);
         return { overlay: renderOverlay(cfg), skills: packSkills(skills) };
       },
     });
@@ -195,6 +200,7 @@ export function createContext({ appRoot, env = process.env }) {
     if (!['task.completed', 'task.failed', 'task.blocked'].includes(e.kind)) return;
     const t = store.getTask(e.taskId);
     if (!t || String(t.kind).startsWith('sub:') || t.kind === 'watch') return; // team subtasks report through their parent
+    if (/"contrib":/.test(t.meta ?? '')) return; // open-source jobs report through src/contrib.mjs
     const ok = e.kind === 'task.completed';
     if (ok && ctx.jobs?.reportResult(t)) return; // a scheduled run with a result block is filed by Jobs (only needs_you pings)
     const full = ok ? String(t.result ?? '') : String(t.error ?? e.kind);
@@ -305,6 +311,23 @@ export function createContext({ appRoot, env = process.env }) {
   ctx.salesJudge = new SalesJudge({ jev: new JevClient({ apiKey: env.FRIDAY_JEV_KEY ?? null, timeoutMs: 20_000, meter: (m) => ai.recordExternal({ role: 'sales_judge', ...m }) }) });
   ctx.pipeline = new Pipeline({ store, settings, gmail: ctx.gmailOutreach, notifications: ctx.notifications, bus, judge: ctx.salesJudge });
   ctx.prospector = new Prospector({ store, settings, ai, judge: ctx.salesJudge, pipeline: ctx.pipeline, approvals: ctx.approvals, notifications: ctx.notifications, bus, serpKey: env.SERPAPI_API_KEY ?? null, hunterKey: env.HUNTER_API_KEY ?? null, reoonKey: env.REOON_API_KEY ?? null });
+  { // Open-source contributions (src/contrib.mjs). The token lives only here in core, never in the agent container.
+    const token = env.FRIDAY_GITHUB_CONTRIB_TOKEN || null;
+    ctx.github = new GitHub({ token: token && token !== env.GITHUB_TOKEN ? token : null });
+    const readLocal = (t) => {
+      const out = {};
+      for (const f of ['result.json', 'change.patch']) { try { out[`friday-contrib/${f}`] = readFileSync(join(dshInner.pathFor(t.id, t.workspace), 'friday-contrib', f), 'utf8'); } catch {} }
+      return out;
+    };
+    ctx.contrib = new Contrib({ store, settings, ai, github: ctx.github, approvals: ctx.approvals, notifications: ctx.notifications, bus,
+      verifier: (id, request) => dshInner.verify(id, request), readFiles: async (t) => dshInner.takeFiles?.(t.id) ?? readLocal(t),
+      agentGithubToken: Boolean(env.GITHUB_TOKEN), cancelTask: (taskId) => { worker.cancel(taskId); try { store.transition(taskId, 'cancelled'); } catch {} } });
+    ctx.approvals.register('oss_submit', (p) => ctx.contrib.submit(p));
+    ctx.approvals.register('oss_update', (p) => ctx.contrib.update(p));
+    ctx.approvals.register('oss_issue', (p) => ctx.contrib.openIssue(p));
+    const prev = store.onEvent;
+    store.onEvent = (e) => { prev?.(e); if (['task.completed', 'task.failed', 'task.blocked'].includes(e.kind)) setTimeout(() => { ctx.contrib.onTaskFinished(e.taskId, e.kind).catch(() => {}); }, 300).unref?.(); };
+  }
   ctx.fridayTools = buildFridayTools(ctx);
   { // gated tools get their approved-execution path registered automatically
     const register = ctx.fridayTools.register;
@@ -354,6 +377,7 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.watches.start();
     ctx.pipeline.start();
     ctx.prospector.start();
+    ctx.contrib.start();
     ctx.dmChats.start_timer();
     if (ctx.waChats.list().length) ctx.waChats.start_timer(); // a session that was running before a restart
     pruneTimer = setInterval(loop('retention_prune', () => prune(store.db), { everyMs: 6 * 3600_000 }), 6 * 3600_000); pruneTimer.unref();
@@ -367,6 +391,7 @@ export function createContext({ appRoot, env = process.env }) {
     ctx.watches.stop();
     ctx.pipeline.stop();
     ctx.prospector.stop();
+    ctx.contrib.stopTimer();
     ctx.dmChats.stop_timer(); ctx.waChats.stop_timer();
     ctx.nodes?.stopAll();
     ctx.voiceServer?.stop();
